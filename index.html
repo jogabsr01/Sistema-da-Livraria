@@ -158,6 +158,8 @@
     .church-division{border-left:1px solid #d4ddd7;padding-left:12px;display:flex;flex-direction:column;line-height:1.35}
     .church-division strong{font-size:14px;color:#0F3D2E}
     .church-division span{font-size:11px;color:#64748b}
+    .dev-environment-badge{display:table;margin:0 auto 8px;padding:2px 6px;border:1px solid #FDE68A;border-radius:6px;background:#FFFBEB;color:#92400E;font-size:9px;font-weight:700;line-height:1.4}
+    .dev-environment-badge[hidden]{display:none!important}
     .advanced-switch{margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:1px solid #d7e4de;background:#f8fbf9;border-radius:12px;padding:11px 13px;color:#0f3d2e;font-weight:750;text-align:left}
     .advanced-panel{border:1px solid #d7e4de;border-top:0;border-radius:0 0 14px 14px;padding:14px;background:#f9fcfa;margin-top:-4px;margin-bottom:8px}
     .advanced-panel[hidden]{display:none!important}
@@ -358,6 +360,7 @@
         <button class="btn btn-outline btn-sm" onclick="LoginUI.logout()" title="Sair e bloquear demonstração" aria-label="Sair">🔒</button>
       </div>
     </div>
+    <span id="devEnvironmentBadge" class="dev-environment-badge" hidden>AMBIENTE DE TESTES — DEV</span>
   </header>
   <main class="shell">
     <nav class="nav" aria-label="Seções">
@@ -375,6 +378,11 @@
 </section>
     </div>
   </main>
+  <script>
+    document.getElementById('devEnvironmentBadge').hidden =
+      window.location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app';
+  </script>
+
   <nav class="bottom-nav" aria-label="Navegação no celular">
     <button data-tab="pdv" class="active" onclick="UI.tab('pdv')"><b>🛒</b>Caixa</button>
     <button data-tab="catalogo" onclick="UI.tab('catalogo')"><b>📖</b>Catálogo</button>
