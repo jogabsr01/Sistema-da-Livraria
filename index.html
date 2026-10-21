@@ -124,7 +124,7 @@
     .bar{height:9px;border-radius:30px;background:#E7F2ED;overflow:hidden}.bar span{display:block;background:var(--brand);height:100%;border-radius:30px}
     .hint{font-size:12px;color:var(--muted);margin:9px 0 0}.notice{padding:13px;border-radius:12px;border:1px solid #BAE6FD;background:#F0F9FF;color:#075985;font-size:13px}
     .notice.warn{border-color:#FDE68A;background:#FFFBEB;color:#92400E}.notice.danger{border-color:#FECACA;background:#FEF2F2;color:#991B1B}
-    .modal-wrap{position:fixed;inset:0;background:rgba(7,26,19,.65);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px;overflow:auto}
+    .modal-wrap{position:fixed;inset:0;background:rgba(7,26,19,.65);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;overflow:auto}
     .modal{background:#fff;border-radius:22px;width:100%;max-width:560px;max-height:min(94vh,900px);overflow:auto;padding:23px;box-shadow:0 35px 90px rgba(0,0,0,.25)}
     .modal h3{font-size:21px;letter-spacing:-.7px;margin:0 0 5px;font-weight:800}.modal .subtitle{font-size:13px;color:var(--muted);margin-bottom:17px}
     .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-group{margin-bottom:13px}.form-group label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
@@ -240,7 +240,7 @@
     .scanner-preview{position:relative;background:#122D24;border-radius:15px;overflow:hidden}
     .scanner-preview video{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
     .scanner-preview::after{content:'';position:absolute;inset:20% 7%;border:2px solid #38BDF8;border-radius:13px;box-shadow:0 0 0 999px rgba(0,0,0,.07);pointer-events:none}
-    .scanner-file-label{cursor:pointer;display:flex}
+    .scanner-file-label{cursor:pointer;display:flex;white-space:normal;text-align:center;min-width:0}
     .scanner-preview-info{font-size:12px;color:#64748b;margin-top:7px}
     .scanner-alert{border-radius:12px;padding:10px 12px;font-size:13px;margin:7px 0;background:#EFF6F3;color:#0F3D2E}
     .scanner-alert.warn{background:#FFFBEB;color:#92400E}
@@ -514,6 +514,7 @@
     p.codigoBarras=p.semCodigo?'':(p.codigoBarras||p.isbn);
     p.codigoInterno=p.semCodigo?p.isbn:(p.codigoInterno||'');
     p.capaUrl=String(p.capaUrl||'').trim();
+    p.capaFonte=String(p.capaFonte||'').trim();
     p.anoPublicacao=String(p.anoPublicacao||'').trim();
     p.numeroPaginas=Number(p.numeroPaginas||0)||0;
     p.descricao=String(p.descricao||'').trim();
@@ -589,6 +590,7 @@
       row.codigoBarras=row.semCodigo?'':p.isbn;
       row.codigoInterno=row.semCodigo?p.isbn:'';
       row.capaUrl=coverValue(p.capaUrl);
+      row.capaFonte=row.capaUrl?String(p.capaFonte||'').trim():'';
       row.anoPublicacao=String(p.anoPublicacao||'').trim();
       row.numeroPaginas=Number(p.numeroPaginas||0)||0;
       row.descricao=String(p.descricao||'').trim();
@@ -613,6 +615,7 @@
         row[key]=key==='capaUrl'?coverValue(value):value;
       }
       row.numeroPaginas=Number(p.numeroPaginas||0)||0;
+      row.capaFonte=row.capaUrl?String(p.capaFonte??row.capaFonte??'').trim():'';
       save();return {ok:true,data:clone(row)};
     }
     if(action==='addStock'){
@@ -962,6 +965,7 @@ const Bibliografia={
       numeroPaginas:Number(livro.page_count||livro.pageCount||0)||0,
       descricao:String(livro.synopsis||livro.description||'').slice(0,1500),
       capaUrl:coverHTTPS(livro.cover_url||livro.coverUrl||''),
+      capas:[livro.cover_url,livro.coverUrl],
       fonte:'BrasilAPI ('+provider+')'
     };
   },
@@ -980,6 +984,7 @@ const Bibliografia={
       numeroPaginas:Number(info.pageCount)||0,
       descricao:description.slice(0,1500),
       capaUrl:coverHTTPS(info.imageLinks?.thumbnail||info.imageLinks?.smallThumbnail||''),
+      capas:['extraLarge','large','medium','thumbnail','smallThumbnail'].map(k=>info.imageLinks?.[k]),
       fonte:'Google Books'
     };
   },
@@ -1005,6 +1010,8 @@ const Bibliografia={
       descricao:(typeof desc==='string'?desc:desc?.value||'').slice(0,1500),
       capaUrl:coverHTTPS(data?.cover?.large||data?.cover?.medium||
         (edition?.covers?.[0]?'https://covers.openlibrary.org/b/id/'+edition.covers[0]+'-M.jpg?default=false':'')),
+      capas:[data?.cover?.large,data?.cover?.medium,data?.cover?.small,
+        ...(edition?.covers||[]).slice(0,4).filter(id=>Number(id)>0).map(id=>'https://covers.openlibrary.org/b/id/'+id+'-M.jpg?default=false')],
       fonte:'Open Library'
     };
   },
@@ -1036,6 +1043,16 @@ const Bibliografia={
       return sum%11===0;
     }
     return false;
+  },
+  async buscarCapa(fontes,isbn){
+    const candidatos=[
+      ...fontes.filter(Boolean).flatMap(source=>
+        [source.capaUrl,...(source.capas||[])].map(url=>({url:coverHTTPS(url),fonte:source.fonte}))),
+      {url:'https://covers.openlibrary.org/b/isbn/'+isbn+'-M.jpg?default=false',fonte:'Open Library Covers (ISBN)'}
+    ].filter((c,i,all)=>c.url && all.findIndex(other=>other.url===c.url)===i);
+    // Cada validação tem timeout; uma imagem quebrada não atrasa todas as demais.
+    const validas=await Promise.all(candidatos.map(async c=>await testarImagem(c.url,4000)?c:null));
+    return validas.find(Boolean)||null;
   },
   async consultar(raw){
     const isbn=isoCode(raw);
@@ -1082,26 +1099,15 @@ const Bibliografia={
     const mercado=this.normalizarBrasil(value(1),isbn);
     const google=this.normalizarGoogle(value(2),isbn);
     const international=this.normalizarOpen(value(3),value(4),isbn);
-    const dados=this.combinar([cbl,mercado,google,international,referencia]);
+    let dados=this.combinar([cbl,mercado,google,international,referencia]);
+    const capa=await this.buscarCapa([cbl,mercado,google,international],isbn);
+    // Covers pode responder mesmo sem ficha bibliográfica: os demais campos ficam manuais.
+    if(!dados && capa)dados={titulo:'',fontes:[],ilustrativo:false};
     const trace='Consultas: '+status.map(s=>s.label+': '+s.info).join(' · ')+'.';
     if(dados){
-      // Mesmo quando não há ISBN catalogado na Open Library, sua API de capas
-      // pode ter uma imagem indexada separadamente. default=false evita imagem em branco.
-      const capaPeloISBN='https://covers.openlibrary.org/b/isbn/'+isbn+'-M.jpg?default=false';
-      const candidatos=[
-        {url:coverHTTPS(dados.capaUrl),fonte:''},
-        {url:capaPeloISBN,fonte:'Open Library Covers (ISBN)'}
-      ].filter(c=>c.url);
-      dados.capaUrl='';
-      let fonteCapa='';
-      for(const candidato of candidatos){
-        if(await testarImagem(candidato.url,4000)){
-          dados.capaUrl=candidato.url;
-          fonteCapa=candidato.fonte;
-          break;
-        }
-      }
-      if(fonteCapa && !dados.fontes.includes(fonteCapa))dados.fontes.push(fonteCapa);
+      dados.capaUrl=capa?.url||'';
+      dados.capaFonte=capa?.fonte||'';
+      if(capa && !dados.fontes.includes(capa.fonte))dados.fontes.push(capa.fonte);
       const used=dados.fontes.join(' + ');
       const specialOnly=dados.fontes.length===1&&!!referencia &&
         dados.fontes[0]===referencia.fonte;
@@ -1262,11 +1268,14 @@ const UI = {
     const form=input.closest('form');
     const localField=form?.elements?.capaLocal;
     if(!form||!localField)return;
+    const target=$('stockCoverPreview')||$('editCoverPreview');
+    const token=Symbol();if(target)target.coverToken=token;
     const tempUrl=URL.createObjectURL(file);
     try{
       const image=await new Promise((resolve,reject)=>{
         const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(Error('Imagem inválida'));i.src=tempUrl;
       });
+      if(!form.isConnected||target?.coverToken!==token)return;
       const ratio=Math.min(1,560/image.naturalWidth,780/image.naturalHeight);
       const c=document.createElement('canvas');
       c.width=Math.max(1,Math.round(image.naturalWidth*ratio));
@@ -1279,8 +1288,8 @@ const UI = {
       if(encoded.length>430000)encoded=c.toDataURL('image/jpeg',0.47);
       if(!coverValue(encoded))throw Error('Imagem muito grande depois de otimizar');
       localField.value=encoded;
+      if(form.elements.capaFonte)form.elements.capaFonte.value='Foto manual';
       form.elements.capaUrl.value='';
-      const target=$('stockCoverPreview')||$('editCoverPreview');
       if(target)target.innerHTML=bookCover({capaUrl:encoded,titulo:form.elements.titulo?.value||'Livro'},'cover-large');
       const hint=$('stockCoverHint');
       if(hint)hint.textContent='Foto adicionada ao protótipo. Na integração real, a imagem será enviada ao Google Drive.';
@@ -1288,18 +1297,23 @@ const UI = {
     }catch(e){toast('Não foi possível usar esta foto: '+e.message,'error');}
     finally{URL.revokeObjectURL(tempUrl);input.value='';}
   },
-  coverInput(value){
+  async coverInput(value){
     const form=$('stockCoverPreview')?.closest('form')||$('editCoverPreview')?.closest('form');
     if(form?.elements?.capaLocal)form.elements.capaLocal.value='';
 
     const target=$('stockCoverPreview')||$('editCoverPreview');
     if(!target)return;
     const url=coverHTTPS(value);
-    target.innerHTML=bookCover({capaUrl:url,
-      titulo:$('stockTitle')?.value||$('editCoverPreview')?.closest('form')?.elements?.titulo?.value||'Livro'},'cover-large');
+    if(form?.elements?.capaFonte)form.elements.capaFonte.value=value?'Link manual':'';
+    const token=Symbol();target.coverToken=token;
+    target.innerHTML=bookCover({titulo:'Livro'},'cover-large');
     const hint=$('stockCoverHint');
-    if(hint)hint.textContent=value&&!url?'Informe um link HTTPS válido.':
-      'A imagem é apenas uma prévia; se falhar, o ícone de livro será mostrado.';
+    if(hint)hint.textContent=value&&!url?'Informe um link HTTPS válido.':url?'Verificando imagem…':'Selecione uma capa, se desejar.';
+    if(!url)return;
+    const valid=await testarImagem(url);
+    if(!target.isConnected||target.coverToken!==token)return;
+    if(valid)target.innerHTML=bookCover({capaUrl:url,titulo:form?.elements?.titulo?.value||'Livro'},'cover-large');
+    if(hint)hint.textContent=valid?'Imagem verificada. Confira se corresponde ao exemplar.':'A imagem não carregou. Escolha outra URL ou envie uma foto.';
   },
   async checkNewBook(ev){
     ev.preventDefault();
@@ -1437,6 +1451,7 @@ const UI = {
       quantidade:Number(form.elements.quantidade.value),categoria:form.elements.categoria.value,
       nichos:this.selectedStockNiches(),
       capaUrl:coverValue(form.elements.capaLocal?.value||form.elements.capaUrl.value),
+      capaFonte:form.elements.capaFonte.value,
       anoPublicacao:form.elements.anoPublicacao.value,
       numeroPaginas:Number(form.elements.numeroPaginas.value||0),
       descricao:form.elements.descricao.value,
@@ -1451,6 +1466,8 @@ const UI = {
     }
     state.busy=true;View.setBusy(true);
     try {
+      if(p.capaUrl && !p.capaUrl.startsWith('data:') && !await testarImagem(p.capaUrl))
+        throw Error('A capa não carregou. Escolha outra imagem ou remova o link para salvar sem capa.');
       await Api.call('saveProduct',p);View.closeModal(true);
       try{
         await Api.refresh();
@@ -1470,6 +1487,7 @@ const UI = {
     const p={isbn:f.isbn.value,titulo:f.titulo.value,
       autor:f.autor.value,editora:f.editora.value,fornecedor:f.fornecedor.value,
       edicao:f.edicao.value,capaUrl:coverValue(f.capaLocal?.value||f.capaUrl.value),
+      capaFonte:f.capaFonte.value,
       anoPublicacao:f.anoPublicacao.value,numeroPaginas:Number(f.numeroPaginas.value||0),
       descricao:f.descricao.value};
     if(f.capaUrl.value && !coverHTTPS(f.capaUrl.value)){
@@ -1477,6 +1495,8 @@ const UI = {
     }
     state.busy=true;View.setBusy(true);
     try{
+      if(p.capaUrl && !p.capaUrl.startsWith('data:') && !await testarImagem(p.capaUrl))
+        throw Error('A capa não carregou. Escolha outra imagem ou remova o link para salvar sem capa.');
       await Api.call('updateProductDetails',p);
       View.closeModal(true);
       await Api.refresh();
@@ -1812,7 +1832,7 @@ const View = {
         <div class="searchbar"><input id="barcode" class="field" placeholder="Buscar por nome" autocomplete="off"
           value="${esc(state.search)}" oninput="UI.search(this.value,'sale')" onkeydown="UI.pdvSearchEnter(event)">
           <button class="btn btn-sky" onclick="UI.pdvLookup()">🔎 Buscar</button>
-          <button class="btn btn-outline" onclick="UI.scanner('pdv')">📷 Câmera</button><button class="btn btn-light" onclick="UI.gallery('pdv')">🖼️ Galeria</button></div>
+          <button class="btn btn-outline" onclick="UI.scanner('pdv')">📷 Câmera</button></div>
         <p class="search-note">Você também pode bipar o código de barras neste campo. Se for novo, o sistema oferece o cadastro.</p>
         ${this.advancedPanel('pdv')}
         <button class="btn btn-light btn-wide" style="margin-top:10px" onclick="UI.startNewBook()">➕ Cadastrar novo livro</button>
@@ -1847,7 +1867,7 @@ const View = {
           placeholder="Buscar por nome" value="${esc(state.catalogSearch)}"
           oninput="UI.search(this.value,'catalog')" onkeydown="UI.catalogSearchEnter(event)">
         <button class="btn btn-primary" onclick="UI.catalogLookup()">🔎 Buscar</button>
-        <button class="btn btn-sky" onclick="UI.scanner('catalogo')">📷 Câmera</button><button class="btn btn-light" onclick="UI.gallery('catalogo')">🖼️ Galeria</button>
+        <button class="btn btn-sky" onclick="UI.scanner('catalogo')">📷 Câmera</button>
       </div>
       <p class="search-note">Digite o nome ou use um leitor de código de barras; a consulta não adiciona o livro ao carrinho.</p>
       ${this.advancedPanel('catalogo')}
@@ -1873,11 +1893,11 @@ const View = {
       <div class="card-title">📦 Entrada de livros</div>
       <div class="searchbar"><input class="field" id="stockBarcode" autocomplete="off" placeholder="Bipe ou digite o ISBN..." onkeydown="UI.stockSearchEnter(event)">
         <button class="btn btn-primary" onclick="UI.scan($('stockBarcode').value,'estoque')">Verificar</button>
-        <button class="btn btn-sky" onclick="UI.scanner('estoque')">📷 Câmera</button><button class="btn btn-light" onclick="UI.gallery('estoque')">🖼️ Galeria</button></div>
+        <button class="btn btn-sky" onclick="UI.scanner('estoque')">📷 Câmera</button></div>
       <p class="hint">Se já estiver cadastrado, você poderá adicionar unidades; se for novo, abrirá o formulário de cadastro.</p>
       <button class="btn btn-light btn-wide" style="margin-top:10px" onclick="UI.startNewBook()">➕ Cadastrar novo livro (ISBN)</button>
       <button class="btn btn-outline btn-wide" style="margin-top:9px" onclick="UI.scanner('edicao')">📷 Bipar para editar um livro</button>
-      <button class="btn btn-light btn-wide" style="margin-top:7px" onclick="UI.gallery('edicao')">🖼️ Foto da galeria para editar</button>
+
       <input class="field" style="margin-top:13px" placeholder="Buscar por título ou ISBN..." value="${esc(state.inventorySearch)}" oninput="UI.search(this.value,'inventory')">
     </div><div class="card"><div class="card-title">Estoque atual <span class="small muted">${state.data.produtos.length} títulos</span></div>
     <div id="inventoryResults" class="scroll"></div></div>`;
@@ -2009,6 +2029,7 @@ const View = {
         <div class="book-meta">Publicação: <b>${esc(product.anoPublicacao||'Não informada')}</b> ·
           Páginas: <b>${product.numeroPaginas||'Não informado'}</b></div>
         ${product.fonteBibliografica?`<div class="book-meta">Dados consultados: ${esc(product.fonteBibliografica)}</div>`:''}
+        ${product.capaFonte?`<div class="book-meta">Origem da capa: ${esc(product.capaFonte)} · Confira a edição com o exemplar.</div>`:''}
         <div class="book-meta">Categoria: <b>${esc(product.categoria)}</b></div>
         <div class="book-meta"><b>Nichos vinculados:</b></div>
         ${nicheBadges(product)}
@@ -2091,6 +2112,7 @@ const View = {
           <span class="cover-upload-label">Se não houver imagem on-line, escolha uma foto da capa.</span>
         </div>
         <input type="hidden" name="capaLocal" value="${product.capaUrl?.startsWith('data:image/')?esc(product.capaUrl):''}">
+        <input type="hidden" name="capaFonte" value="${esc(product.capaFonte||'')}">
         <div class="form-group"><label>Link HTTPS da capa</label><input class="field" name="capaUrl" type="url"
           value="${esc(product.capaUrl?.startsWith('data:image/')?'':(product.capaUrl||''))}"
           oninput="UI.coverInput(this.value)"></div>
@@ -2109,11 +2131,6 @@ const View = {
           <span class="big" aria-hidden="true">📷</span>
           <span>Ler código pela câmera</span>
           <small>Reconhecimento automático, sem botão de capturar</small>
-        </button>
-        <button type="button" class="register-option register-option-gallery" onclick="UI.gallery('novoLivro')">
-          <span class="big" aria-hidden="true">🖼️</span>
-          <span>Ler código de foto da galeria</span>
-          <small>Escolha a foto do código de barras</small>
         </button>
         <button type="button" class="register-option register-option-secondary" onclick="UI.registerWithoutBarcode()">
           <span class="big" aria-hidden="true">📚</span>
@@ -2169,6 +2186,7 @@ const View = {
         </div>`:''}
       <form onsubmit="UI.stockSubmit(event)">
         <input type="hidden" name="fonteBibliografica" value="${esc((d.fontes||[]).join(' + '))}">
+        <input type="hidden" name="capaFonte" value="${esc(d.capaFonte||'')}">
         <input type="hidden" name="semCodigo" value="${semCodigo?'1':'0'}">
         <div class="form-group"><label>${semCodigo?'Código interno (não é ISBN)':'ISBN / Código de barras'}</label>
           <input class="field" name="isbn" value="${esc(isbn)}" readonly></div>
@@ -2364,6 +2382,12 @@ function stopDemoCamera(){
   }
 }
 const baseCloseDemo=View.closeModal.bind(View);
+const baseModalDemo=View.modal.bind(View);
+View.modal=inner=>{
+  // Trocar de formulário também encerra leituras/permissões ainda pendentes.
+  stopDemoCamera();
+  baseModalDemo(inner);
+};
 View.closeModal=(force=false)=>{
   if(!state.busy || force){stopDemoCamera();state.lookupToken++;}
   baseCloseDemo(force);
@@ -2376,8 +2400,8 @@ function normalizedScanCode(raw){
   const code=isoCode(raw);
   return /^[A-Z0-9]{6,32}$/.test(code) ? code : '';
 }
-async function demoBarcodeFound(value,mode){
-  if(demoCam.accepted)return;
+async function demoBarcodeFound(value,mode,session=demoCam.session){
+  if(session!==demoCam.session||demoCam.accepted)return;
   const code=normalizedScanCode(value);
   if(!code){
     scanStatus('Código não reconhecido como identificador de produto. Reposicione a câmera ou escolha outra foto.',true);
@@ -2414,33 +2438,42 @@ async function startDemoCamera(mode){
   try{
     const detector=await makeBarcodeDetector();
     if(session!==demoCam.session)return;
+    if(!detector&&!window.ZXing?.BrowserMultiFormatReader){
+      demoCam.active=false;
+      scanStatus('Leitor indisponível. Verifique sua conexão ou digite o código manualmente.',true);
+      return;
+    }
+    const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+    if(session!==demoCam.session){stream.getTracks().forEach(t=>t.stop());return;}
+    demoCam.stream=stream;
     if(detector){
-      const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
-      if(session!==demoCam.session){stream.getTracks().forEach(t=>t.stop());return;}
-      demoCam.stream=stream;
       video.srcObject=stream;await video.play();
+      if(session!==demoCam.session)return;
       scanStatus('📷 Câmera ativa. Basta enquadrar o código: a leitura é automática.');
       const poll=async()=>{
         if(!demoCam.active||demoCam.accepted||session!==demoCam.session||!video.isConnected)return;
         try{
           const codes=await detector.detect(video);
+          if(session!==demoCam.session)return;
           if(codes.length){
             const valid=codes.map(item=>normalizedScanCode(item.rawValue)).find(Boolean);
-            if(valid){await demoBarcodeFound(valid,mode);return;}
+            if(valid){await demoBarcodeFound(valid,mode,session);return;}
           }
         }catch(_){}
         if(demoCam.active && session===demoCam.session)demoCam.timer=setTimeout(poll,180);
       };
       poll();
     }else if(window.ZXing?.BrowserMultiFormatReader){
-      demoCam.reader=new ZXing.BrowserMultiFormatReader();
-      scanStatus('📷 Solicitando acesso à câmera. Depois, basta apontar o código.');
-      await demoCam.reader.decodeFromVideoDevice(undefined,video,(result,_error)=>{
+      const reader=new ZXing.BrowserMultiFormatReader();
+      demoCam.reader=reader;
+      scanStatus('📷 Câmera ativa. Basta apontar o código.');
+      await reader.decodeFromStream(stream,video,(result,_error)=>{
         if(result && demoCam.active && session===demoCam.session && !demoCam.accepted){
-          demoBarcodeFound(result.getText(),mode);
+          demoBarcodeFound(result.getText(),mode,session);
         }
       });
       if(session===demoCam.session)scanStatus('📷 Câmera ativa. A leitura acontece automaticamente.');
+      else {reader.reset();stream.getTracks().forEach(t=>t.stop());}
     }else{
       demoCam.active=false;
       scanStatus('Este navegador não dispõe de leitor. Verifique a conexão para carregar a biblioteca ZXing ou digite o código.',true);
@@ -2508,7 +2541,7 @@ async function decodeDemoGallery(input,mode){
     }
     if(session!==demoCam.session)return;
     if(detected){
-      await demoBarcodeFound(detected,mode);
+      await demoBarcodeFound(detected,mode,session);
     }else{
       scanStatus('Nenhum código legível encontrado na foto. Use uma imagem nítida da etiqueta (barras inteiras), tente outra foto ou pesquise pelo nome do livro.',true);
     }
@@ -2529,7 +2562,7 @@ UI.scanner=(mode,startCamera=true)=>{
     <div class="scanner-alert" id="demoCamStatus" role="status" aria-live="polite">${startCamera?'Preparando câmera…':'Escolha uma foto da galeria.'}</div>
     <div class="scanner-actions">
       <button type="button" class="btn btn-sky" onclick="startDemoCamera('${mode}')">📷 Ativar / tentar câmera</button>
-      <label class="btn btn-light scanner-file-label" for="demoBarcodeFile">🖼️ Ler foto da galeria</label>
+      <button type="button" class="btn btn-light scanner-file-label" onclick="document.getElementById('demoBarcodeFile').click()">Não tenho o livro — escolher foto da galeria</button>
       <input id="demoBarcodeFile" type="file" accept="image/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"
         aria-label="Selecionar foto do código de barras" onchange="decodeDemoGallery(this,'${mode}')">
     </div>
@@ -2543,11 +2576,6 @@ UI.scanner=(mode,startCamera=true)=>{
     </form>
     ${mode==='novoLivro'?'<button type="button" class="btn btn-light btn-wide" style="margin-top:10px" onclick="UI.registerWithoutBarcode()">📚 Livro sem código de barras</button>':''}`);
   if(startCamera)startDemoCamera(mode);
-};
-UI.gallery=mode=>{
-  UI.scanner(mode,false);
-  // Diretamente do clique do usuário; o navegador abre seu seletor de fotos.
-  $('demoBarcodeFile')?.click();
 };
 
 const reportDayKey = (input)=>{
