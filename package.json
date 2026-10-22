@@ -1,0 +1,12 @@
+{
+  "name": "livraria-ipb-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node scripts/build-public.mjs",
+    "schema:generate": "node scripts/generate-gas-schema.mjs",
+    "test": "node --test tests/backend/*.test.mjs"
+  }
+}
