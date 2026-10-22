@@ -1,0 +1,81 @@
+[
+  {
+    "source": "cbl",
+    "url": "https://brasilapi.com.br/api/isbn/v1/9786589806691?providers=cbl",
+    "status": 200,
+    "connect": 200,
+    "seconds": 0.689502,
+    "error": "",
+    "bytes": 374,
+    "data": {
+      "isbn": "9786589806691",
+      "title": "Mulher real",
+      "subtitle": "cumprindo sua missão",
+      "authors": [
+        "Junia Hayashi"
+      ],
+      "publisher": "Editora Quatro Ventos",
+      "synopsis": null,
+      "dimensions": null,
+      "year": 2023,
+      "format": "PHYSICAL",
+      "page_count": 170,
+      "subjects": [
+        "Cristianismo",
+        "Mulher",
+        "Posicionamento",
+        "missão"
+      ],
+      "location": "São Paulo, SP",
+      "retail_price": null,
+      "cover_url": null,
+      "provider": "cbl"
+    }
+  },
+  {
+    "source": "mercado",
+    "url": "https://brasilapi.com.br/api/isbn/v1/9786589806691?providers=mercado-editorial",
+    "status": 404,
+    "connect": 200,
+    "seconds": 0.729743,
+    "error": "",
+    "bytes": 76
+  },
+  {
+    "source": "google",
+    "url": "https://www.googleapis.com/books/v1/volumes?q=isbn%3A9786589806691&maxResults=5&printType=books",
+    "status": 429,
+    "connect": 200,
+    "seconds": 0.13208,
+    "error": "",
+    "bytes": 1306
+  },
+  {
+    "source": "open",
+    "url": "https://openlibrary.org/api/books?bibkeys=ISBN%3A9786589806691&jscmd=data&format=json",
+    "status": 200,
+    "connect": 200,
+    "seconds": 1.012967,
+    "error": "",
+    "bytes": 2,
+    "data": {}
+  },
+  {
+    "source": "edition",
+    "url": "https://openlibrary.org/isbn/9786589806691.json",
+    "status": 404,
+    "connect": 200,
+    "seconds": 1.162285,
+    "error": "",
+    "bytes": 43153
+  },
+  {
+    "source": "covers",
+    "url": "https://covers.openlibrary.org/b/isbn/9786589806691-M.jpg?default=false",
+    "status": 404,
+    "connect": 200,
+    "seconds": 0.833111,
+    "error": "",
+    "bytes": 0
+  }
+]
