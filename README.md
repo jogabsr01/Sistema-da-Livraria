@@ -10,6 +10,8 @@ npm test
 npm run build
 ```
 
+Para a regressão do artefato publicado: `npm run build` e `npm run test:browser`, com Python/Playwright/Pillow/Chromium e a biblioteca ZXing conforme `tests/README.md`.
+
 Node 22 ou superior. Sem dependências de runtime adicionais. O build publica somente os arquivos estáticos explicitamente permitidos em `dist/`; não publica backend, Apps Script, testes ou `.env`.
 
 - [Arquitetura e auditoria](docs/v17/ARQUITETURA.md)

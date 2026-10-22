@@ -45,3 +45,5 @@ Persistência compartilhada operacional, login real/convites/PIN/MFA/passkeys/se
 ## Critério para avançar
 
 Revisar e aprovar o PR exclusivo para `dev`. Nenhum merge automático. A execução Google DEV depende da autorização descrita no guia e é condição para declarar a fundação externamente instalada. Não avançar às fases B–E nem ativar operação real sem aprovação e testes próprios. PROD não será provisionada por esta entrega.
+
+Reprodução do teste de navegador contra `dist/`: `npm run build` seguido de `npm run test:browser` (pré-requisitos Python/Chromium/ZXing em `tests/README.md`). O runner está em `scripts/test-public-build.py`; um build ausente causa falha, não uma execução vazia.
