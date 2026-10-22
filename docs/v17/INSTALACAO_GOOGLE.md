@@ -14,7 +14,7 @@ O manifest usa Sheets e DriveApp. DriveApp exige escopo amplo de Drive: revisar 
 
 ## 2. Copiar o código e registrar a configuração privada
 
-Copiar `google-apps-script/Code.gs`, `Schema.gs` e o manifest `appsscript.json` para o projeto novo. O schema gerado deve acompanhar o JSON do mesmo commit; gerar com `npm run schema:generate` quando houver migração revisada.
+Copiar `google-apps-script/Code.gs`, `Schema.gs`, `Sales.gs` e o manifest `appsscript.json` para o projeto novo. O schema gerado deve acompanhar o JSON do mesmo commit; gerar com `npm run schema:generate` quando houver migração revisada.
 
 Em Apps Script → Configurações do projeto → Propriedades do script, preencher:
 
