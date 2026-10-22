@@ -939,7 +939,7 @@ const Bibliografia={
       anoPublicacao:'2019',
       numeroPaginas:224,
       descricao:'Redescubra o alimento que nutre a alma.',
-      capaUrl:'',
+      capaUrl:'https://www.mundocristao.com.br/wp-content/uploads/2021/12/Examinando-as-escrituras.png',
       fonteUrl:'https://www.mundocristao.com.br/produto/examinando-as-escrituras/',
       fonte:'Referência editorial verificada — Mundo Cristão'
     }
@@ -1100,7 +1100,7 @@ const Bibliografia={
     const google=this.normalizarGoogle(value(2),isbn);
     const international=this.normalizarOpen(value(3),value(4),isbn);
     let dados=this.combinar([cbl,mercado,google,international,referencia]);
-    const capa=await this.buscarCapa([cbl,mercado,google,international],isbn);
+    const capa=await this.buscarCapa([cbl,mercado,google,international,referencia],isbn);
     // Covers pode responder mesmo sem ficha bibliográfica: os demais campos ficam manuais.
     if(!dados && capa)dados={titulo:'',fontes:[],ilustrativo:false};
     const trace='Consultas: '+status.map(s=>s.label+': '+s.info).join(' · ')+'.';

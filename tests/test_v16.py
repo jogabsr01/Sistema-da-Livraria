@@ -227,6 +227,20 @@ class V16(unittest.TestCase):
         self.assertEqual(self.page.evaluate('isbn=>productOf(isbn).capaFonte',SEED),'Foto manual')
         self.page.reload(wait_until='load');self.login()
         self.assertTrue(self.page.evaluate('isbn=>productOf(isbn).capaUrl.startsWith("data:image/jpeg")',SEED))
+    def test_verified_editorial_cover_fallback(self):
+        self.mock_books('none')
+        url='https://www.mundocristao.com.br/wp-content/uploads/2021/12/Examinando-as-escrituras.png'
+        self.page.route(url,lambda r:r.fulfill(status=200,content_type='image/png',body=png()))
+        result=self.lookup('9788543303932')
+        self.assertEqual(result['dados']['capaUrl'],url)
+        self.assertEqual(result['dados']['capaFonte'],'Referência editorial verificada — Mundo Cristão')
+        self.assertEqual(result['dados']['titulo'],'Examinando as escrituras')
+    def test_unavailable_editorial_cover_is_not_reported_as_valid(self):
+        self.mock_books('none')
+        result=self.lookup('9788543303932')
+        self.assertEqual(result['dados']['capaUrl'],'')
+        self.assertEqual(result['dados']['capaFonte'],'')
+        self.assertIn('nenhuma capa',result['mensagem'])
     def test_primary_cover(self):
         self.mock_books('primary');data=self.lookup()['dados']
         self.assertEqual(data['titulo'],'Livro fictício de teste')
