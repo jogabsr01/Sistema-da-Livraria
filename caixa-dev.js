@@ -1,4 +1,4 @@
-/* Session storage retains only an anonymous command for response-loss recovery.
+/* Session storage retains only a technical command (no names, CPF or contacts) for response-loss recovery.
  * Server sessions/permissions/prices/stock are always authoritative. */
 (() => {
   'use strict';
@@ -7,7 +7,29 @@
   const methods = { PIX:'PIX', DINHEIRO:'Dinheiro', DEBITO:'Débito', CREDITO:'Crédito' };
   const records = new Map(), cart = new Map();
   let csrf = '', storageKey = '', pending = null, receipt = null, busy = false, refreshing = false, offset = 0, nextOffset = null;
-  const locked = () => !!pending || busy || !!receipt;
+  let customersEnabled=false,selectedCustomer=null,candidateCustomer=null,editingCustomer=null,customerPending=null,customerBusy=false;
+  const customerKeys=['name','cpf','email','phone','postalCode','street','number','complement','district','city','state','contactPreference','marketingConsent'];
+  const identified=()=>pending?pending.customerId!==null:customersEnabled&&$('customer-identified').checked;
+  const locked = () => !!pending || busy || !!receipt || customerBusy || !!customerPending;
+  function clearCustomer(){selectedCustomer=null;candidateCustomer=null;editingCustomer=null;customerPending=null;$('customer-search-form').reset();$('customer-form').reset();$('customer-match').hidden=true;$('customer-new').hidden=true;$('customer-selection').hidden=true;$('customer-selection').textContent='';$('customer-match-text').textContent='';$('customer-status').textContent='';$('customer-lookup').hidden=true;$('customer-anonymous').checked=true;$('customer-identified').checked=false;}
+  function customerFailure(e){if(e.status===401)return 'Confirme novamente seu acesso antes de consultar dados de clientes.';if(e.code?.includes('DUPLICATE'))return 'Este CPF já está cadastrado. Cancele e busque o cadastro existente.';if(e.code?.includes('CONFLICT'))return 'O cadastro foi atualizado em outro atendimento. Busque o CPF novamente.';if(e.code?.includes('INVALID_CUSTOMER'))return 'Confira o CPF, o endereço e a preferência de contato. A autorização de mensagens exige um canal com contato válido.';return 'Não foi possível confirmar o resultado. Mantenha a tela aberta e tente novamente.';}
+  function selectCustomer(c){selectedCustomer=c;$('customer-selection').textContent=c?'Cliente desta compra: '+c.name+' · CPF '+c.cpfMasked:'';$('customer-selection').hidden=!c;$('customer-use').hidden=!!c&&candidateCustomer?.id===c.id;renderCart();}
+  function openCustomer(c){if(locked())return;editingCustomer=c;$('customer-form').reset();for(const k of customerKeys){const el=$('customer-'+k);if(k==='marketingConsent')el.checked=c?.marketingConsent===true;else el.value=k==='cpf'?c?'':$('customer-search-cpf').value:c?.[k]??(k==='contactPreference'?'NONE':'');}
+   $('customer-cpf').disabled=!!c;$('customer-cpf').required=!c;$('customer-cpf-hint').textContent=c?'CPF '+c.cpfMasked+' — identidade preservada.':'';$('customer-editor-title').textContent=c?'Editar cliente':'Cadastrar cliente';$('customer-form-status').textContent='';$('customer-fields').disabled=false;$('customer-close').disabled=false;$('customer-save').textContent='Salvar e usar neste atendimento';$('customer-editor').showModal();$('customer-name').focus();
+  }
+  async function saveCustomer(){if(customerBusy)return;customerBusy=true;renderCart();$('customer-fields').disabled=true;$('customer-close').disabled=true;$('customer-save').disabled=true;
+   try{if(!customerPending){const record={};for(const k of customerKeys)record[k]=k==='marketingConsent'?$('customer-'+k).checked:$('customer-'+k).value;customerPending={commandId:crypto.randomUUID(),id:editingCustomer?.id||crypto.randomUUID(),expectedRevision:editingCustomer?.revision||0,record};}
+    const saved=await api('/api/v1/customers/save',customerPending),d=await api('/api/v1/customers/get',{id:saved.id});if(!d.customer)throw Error('CUSTOMER_MISSING');candidateCustomer=d.customer;customerPending=null;$('customer-editor').close();$('customer-form').reset();$('customer-match').hidden=true;selectCustomer(d.customer);$('customer-status').textContent='Cadastro salvo e selecionado para esta compra.';
+   }catch(e){$('customer-form-status').textContent=customerFailure(e);if(e.status>=400&&e.status<500)customerPending=null;else $('customer-save').textContent='Conferir e tentar novamente';}finally{customerBusy=false;$('customer-fields').disabled=!!customerPending;$('customer-close').disabled=!!customerPending;$('customer-save').disabled=false;renderCart();}
+  }
+  $('customer-form').addEventListener('submit',e=>{e.preventDefault();saveCustomer();});$('customer-close').addEventListener('click',()=>{if(customerBusy||customerPending)return;$('customer-editor').close();$('customer-form').reset();});$('customer-editor').addEventListener('cancel',e=>{if(customerBusy||customerPending)e.preventDefault();else $('customer-form').reset();});
+  for(const mode of ['customer-anonymous','customer-identified'])$(mode).addEventListener('change',()=>{if(locked())return;selectCustomer(null);candidateCustomer=null;$('customer-match').hidden=true;$('customer-new').hidden=true;$('customer-status').textContent='';$('customer-search-form').reset();$('customer-lookup').hidden=!identified();renderCart();});
+  $('customer-search-form').addEventListener('submit',async e=>{e.preventDefault();if(locked())return;customerBusy=true;candidateCustomer=null;selectCustomer(null);$('customer-match').hidden=true;$('customer-new').hidden=true;$('customer-status').textContent='Buscando cadastro…';renderCart();
+   try{const d=await api('/api/v1/customers/find',{cpf:$('customer-search-cpf').value});candidateCustomer=d.customer;if(d.customer){$('customer-match-text').textContent=d.customer.name+' · CPF '+d.customer.cpfMasked;$('customer-match').hidden=false;$('customer-use').hidden=false;$('customer-status').textContent='Confira a pessoa antes de usar o cadastro.';}else{$('customer-status').textContent='Nenhum cadastro encontrado. Cadastre o cliente ou conclua sem identificação.';$('customer-new').hidden=false;}}catch(error){$('customer-status').textContent=customerFailure(error);}finally{customerBusy=false;renderCart();}
+  });
+  $('customer-search-cpf').addEventListener('input',()=>{candidateCustomer=null;$('customer-match').hidden=true;$('customer-new').hidden=true;selectCustomer(null);});$('customer-use').addEventListener('click',()=>{if(!locked()&&candidateCustomer)selectCustomer(candidateCustomer);});$('customer-new').addEventListener('click',()=>openCustomer(null));$('customer-edit').addEventListener('click',()=>openCustomer(candidateCustomer));
+  window.addEventListener('beforeunload',e=>{if(customerPending){e.preventDefault();e.returnValue='';}});
+  window.addEventListener('pagehide',clearCustomer);
   async function api(path, body) {
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 25000);
     try {
@@ -48,8 +70,10 @@
     }
     $('total').textContent = 'Total: ' + money(pending?.expectedTotalCents ?? receipt?.totalCents ?? total);
     $('payment').disabled = locked();
-    $('confirm').textContent = pending ? 'Verificar resultado / tentar novamente' : 'Confirmar venda sem cadastro';
-    $('confirm').disabled = busy || !!receipt || !cart.size || !pending && (!Number.isSafeInteger(total) || [...cart].some(([id, quantity]) => { const p = records.get(id); return !p || !p.active || p.stock < quantity; }));
+    $('customer-options').disabled=locked();
+    $('cart-title').textContent=identified()?'Compra identificada':'Compra sem cadastro';
+    $('confirm').textContent = pending ? 'Verificar resultado / tentar novamente' : identified()?'Confirmar venda identificada':'Confirmar venda sem cadastro';
+    $('confirm').disabled = busy || customerBusy || !!customerPending || !!receipt || !cart.size || !pending&&identified()&&!selectedCustomer || !pending && (!Number.isSafeInteger(total) || [...cart].some(([id, quantity]) => { const p = records.get(id); return !p || !p.active || p.stock < quantity; }));
     $('new-sale').disabled = busy || !!pending;
     document.querySelectorAll('[data-add]').forEach(button => { const p = records.get(button.dataset.add); button.disabled = locked() || !p?.active || p.stock < 1; });
     return total;
@@ -94,7 +118,7 @@
     window.dispatchEvent(new Event('livraria:stock-changed'));
     receipt = data; $('receipt').hidden = false;
     $('receipt-text').textContent = 'Venda ' + data.saleId + ' · ' + money(data.totalCents) + ' · ' + methods[data.paymentMethod] + ' · ' +
-      new Date(data.createdAt).toLocaleString('pt-BR', { timeZone:'America/Sao_Paulo' }) + ' · Sem cadastro de cliente.';
+      new Date(data.createdAt).toLocaleString('pt-BR', { timeZone:'America/Sao_Paulo' }) + (data.customerId?' · Cliente identificado.':' · Sem cadastro de cliente.');
     $('sale-status').textContent = 'Venda confirmada pelo servidor. Estoque atualizado.';
     $('receipt').scrollIntoView({ block:'nearest' });
   }
@@ -103,7 +127,7 @@
     if (!pending) {
       const total = renderCart();
       if ($('confirm').disabled || !Number.isSafeInteger(total)) return;
-      const command = { idempotencyKey:crypto.randomUUID(), items:[...cart].map(([productId, quantity]) => ({ productId, quantity })), paymentMethod:$('payment').value, customerId:null, expectedTotalCents:total };
+      const command = { idempotencyKey:crypto.randomUUID(), items:[...cart].map(([productId, quantity]) => ({ productId, quantity })), paymentMethod:$('payment').value, customerId:identified()?selectedCustomer.id:null, expectedTotalCents:total };
       try { sessionStorage.setItem(storageKey, JSON.stringify(command)); }
       catch { $('sale-status').textContent = 'Não foi possível guardar a referência desta compra neste navegador. Libere espaço antes de confirmar. Nenhuma venda foi enviada.'; return; }
       pending = command;
@@ -120,7 +144,7 @@
       catch { $('sale-status').textContent = 'Venda confirmada. Recarregue esta página para recuperar o comprovante antes de iniciar outra compra.'; }
       await refresh();
     } catch (error) {
-      const rejected = ['WORKSPACE_INSUFFICIENT_STOCK', 'WORKSPACE_PRODUCT_UNAVAILABLE', 'WORKSPACE_SALE_PRICE_CHANGED', 'INVALID_SALE', 'WORKSPACE_INVALID_SALE'].includes(error.code);
+      const rejected = ['WORKSPACE_INSUFFICIENT_STOCK', 'WORKSPACE_PRODUCT_UNAVAILABLE', 'WORKSPACE_CUSTOMER_UNAVAILABLE', 'WORKSPACE_SALE_PRICE_CHANGED', 'INVALID_SALE', 'WORKSPACE_INVALID_SALE'].includes(error.code);
       if (rejected) {
         try { sessionStorage.removeItem(storageKey); pending = null; }
         catch { $('sale-status').textContent = 'Venda rejeitada. Não foi possível limpar a referência local; confira novamente antes de iniciar outra compra.'; return; }
@@ -131,7 +155,7 @@
   });
   $('new-sale').addEventListener('click', () => {
     if (pending || busy) return;
-    receipt = null; cart.clear(); $('receipt').hidden = true; $('sale-status').textContent = ''; $('payment').value = 'PIX'; renderCart(); refresh();
+    clearCustomer(); receipt = null; cart.clear(); $('receipt').hidden = true; $('sale-status').textContent = ''; $('payment').value = 'PIX'; renderCart(); refresh();
   });
   $('search-form').addEventListener('submit', event => { event.preventDefault(); if (!refreshing) { offset = 0; refresh(); } });
   $('refresh').addEventListener('click', refresh);
@@ -145,14 +169,16 @@
       const session = await api('/api/v1/session'); csrf = session.csrfToken; storageKey = 'checkout.pending.' + session.user.id;
       const capabilities = await api('/api/v1/catalog/niches');
       if (capabilities.checkoutEnabled !== true) { $('status').textContent = 'O Caixa compartilhado ainda não está disponível nesta instalação DEV.'; return; }
+      customersEnabled=capabilities.customersEnabled===true;$('customer-options').hidden=!customersEnabled;
       let raw; try { raw = sessionStorage.getItem(storageKey); } catch { throw Error('STORAGE_UNAVAILABLE'); }
       if (raw) {
         // Strictly validate local recovery data; never load identity or prices
         // from storage as authentication or authoritative business records.
         const value = JSON.parse(raw), uuid = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
         if (raw.length > 16000 || !value || Object.keys(value).sort().join() !== 'customerId,expectedTotalCents,idempotencyKey,items,paymentMethod' ||
-            !uuid(value.idempotencyKey) || value.customerId !== null || !Object.hasOwn(methods, value.paymentMethod) || !Number.isSafeInteger(value.expectedTotalCents) || value.expectedTotalCents < 0 ||
+            !uuid(value.idempotencyKey) || value.customerId !== null && !uuid(value.customerId) || !Object.hasOwn(methods, value.paymentMethod) || !Number.isSafeInteger(value.expectedTotalCents) || value.expectedTotalCents < 0 ||
             !Array.isArray(value.items) || !value.items.length || value.items.length > 100 || value.items.some(item => !item || Object.keys(item).sort().join() !== 'productId,quantity' || !uuid(item.productId) || !Number.isSafeInteger(item.quantity) || item.quantity < 1) || new Set(value.items.map(item => item.productId)).size !== value.items.length) throw Error('INVALID_RECOVERY');
+        if(value.customerId){$('customer-identified').checked=true;$('customer-anonymous').checked=false;$('customer-selection').hidden=false;$('customer-selection').textContent='Cliente identificado na compra pendente. Os dados pessoais não foram carregados.';}
         pending = value; for (const line of pending.items) cart.set(line.productId, line.quantity);
         $('payment').value = pending.paymentMethod; $('sale-status').textContent = 'Há uma compra aguardando confirmação. Verifique o resultado antes de iniciar outra.';
       }
