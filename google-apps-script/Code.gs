@@ -172,6 +172,10 @@ function processRequest_(request, c) {
     if (request.action === 'system.ping' && c.environment === 'dev') {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
+    if (['identity.guard.attempt', 'identity.challenge.create', 'identity.challenge.consume'].includes(request.action)) {
+      if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      return authControlOperation_(request, c);
+    }
     if (['identity.session.read', 'identity.session.revoke', 'identity.session.revokeOthers'].includes(request.action)) {
       if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return identitySessionOperation_(request, c);
@@ -204,7 +208,7 @@ function doPost(event) {
   } catch (_) { return jsonOutput_({ error: { code: 'UNAUTHORIZED' } }); }
   try { return signedResponse_(c, request, true, processRequest_(request, c)); }
   catch (error) {
-    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE'];
+    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED'];
     return signedResponse_(c, request, false, null, allowed.includes(error.message) ? error.message : 'UNAVAILABLE');
   }
 }

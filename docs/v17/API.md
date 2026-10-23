@@ -40,3 +40,7 @@ Não há CRUD público nem proxy genérico de ações do protótipo. O backend n
 Antes de implementar: DTOs com allowlist, identidade de servidor, paginação/versão incremental, preço em centavos, versões de registro/If-Match para edições, chave idempotente por comando e corpo canônico, CSRF/origem para mutações e controle de acesso por campo. Nenhum caminho futuro descrito nesta tabela deve ser considerado disponível.
 
 Detalhes e limites da parte de identidade: [SESSOES_E_PERMISSOES.md](SESSOES_E_PERMISSOES.md). Situação de todas as fases: [STATUS_V17.md](STATUS_V17.md).
+
+## Controles internos de primeiro acesso
+
+`identity.guard.attempt` e `identity.challenge.create/consume` usam a bridge assinada, com habilitação DEV independente. Não existem rotas públicas correspondentes nesta entrega. Os limites, pré-condições, armazenamento privado e pendências de ativação estão em [CONTROLES_PRIMEIRO_ACESSO.md](CONTROLES_PRIMEIRO_ACESSO.md).

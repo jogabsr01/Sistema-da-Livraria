@@ -40,3 +40,7 @@ Não cadastrar essas chaves nem habilitar as flags agora. Os valores padrão con
 77 testes de backend passaram em Node 22 e 24; build público passou. 26 testes de regressão Playwright/Chromium passaram, incluindo celular, PINs demo, Caixa, Catálogo, capas/ISBN e relatórios. O HTML do aplicativo permanece idêntico ao de dev.
 
 Os novos testes incluem contrato GAS descartável, transporte HTTP local real, cookies/CSRF, expiração, duplicidades, revogação entre chamadas, alteração de perfil/status/versão, disputa por lock, recuperação de interrupção e bloqueio de PROD. Não foram emitidas sessões reais ou gravadas contas no Google; não houve envio de e-mail, consentimento OAuth novo ou uso de dados pessoais reais. A evidência Google real existente continua sendo o diagnóstico de conexão confirmado pelo proprietário no deploy anterior.
+
+## Incremento posterior
+
+Os contadores persistentes e as provas temporárias de uso único estão implementados em revisão conforme [CONTROLES_PRIMEIRO_ACESSO.md](CONTROLES_PRIMEIRO_ACESSO.md). A orquestração com PIN/e-mail/MFA e o emissor de sessões continuam pendentes; não ativar as flags com base apenas nesses helpers.
