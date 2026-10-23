@@ -13,10 +13,31 @@
 
   <script id="demo-diagnostics">
   (function(){
-    const messages=[];
-    window.demoError=function(m){
-      const message=String(m?.message||m||'Erro desconhecido').slice(0,500);
-      messages.push(message);
+    const records=[];
+    const limit=24;
+    function safeText(value,max=1200){
+      // Do not copy URL queries/fragments, credentials or inline data images.
+      return String(value||'').replace(/(?:https?:|chrome-extension:|moz-extension:)\/\/[^\s<>"')]+/g,function(raw){
+        try{const url=new URL(raw);return url.protocol+'//'+url.host+url.pathname;}catch(_){return '[endereço]';}
+      }).replace(/data:[^\s]+/g,'[dados omitidos]').slice(0,max);
+    }
+    function errorSource(raw){
+      if(!raw)return 'Origem não identificada';
+      try{
+        const url=new URL(raw,location.href);
+        if(['chrome-extension:','moz-extension:'].includes(url.protocol))return 'Extensão do navegador';
+        if(url.origin===location.origin && url.pathname===location.pathname)return 'Página do protótipo';
+        return 'Outro script';
+      }catch(_){return 'Origem não identificada';}
+    }
+    window.demoError=function(error,details){
+      details=details||{};
+      const message=safeText(error?.message||error||'Erro desconhecido',500);
+      const stack=safeText(error?.stack||'',1800);
+      const file=safeText(details.file||'',400);
+      const record={message:message,file:file,line:Number(details.line)||0,column:Number(details.column)||0,
+        source:errorSource(details.file),stack:stack};
+      records.push(record);if(records.length>limit)records.shift();
       const paint=()=>{
         const el=document.getElementById('demoErrorBanner');
         if(!el)return;
@@ -27,17 +48,21 @@
       else paint();
     };
     window.addEventListener('error',function(e){
-      // Falhas de rede de recursos opcionais não devem bloquear a demonstração.
-      if(e.error)window.demoError(e.error);
+      // Resource load failures do not contain an ErrorEvent error object.
+      if(e.error)window.demoError(e.error,{file:e.filename,line:e.lineno,column:e.colno});
     });
     window.addEventListener('unhandledrejection',function(e){
-      window.demoError(e.reason?.message||e.reason||'Falha na operação.');
+      window.demoError(e.reason||'Falha na operação.');
     });
     window.demoCopyDiagnostic=function(){
-      const report='IPB Jardim Bonfiglioli V15 — diagnóstico\n'+
+      const report='IPB Jardim Bonfiglioli — diagnóstico v2\n'+
+        'Página: '+location.origin+location.pathname+'\n'+
         'Navegador: '+navigator.userAgent+'\n'+
         'Online: '+navigator.onLine+'\n'+
-        'Erros: '+(messages.join(' | ')||'Nenhum registrado')+'\n';
+        'Erros: '+(records.map(function(r){
+          return r.message+'\nOrigem: '+r.source+(r.file?'\nArquivo: '+r.file+':'+r.line+':'+r.column:'')+
+            (r.stack?'\nPilha: '+r.stack:'');
+        }).join('\n---\n')||'Nenhum registrado')+'\n';
       if(navigator.clipboard?.writeText){
         navigator.clipboard.writeText(report).catch(()=>prompt('Copie o diagnóstico:',report));
       }else prompt('Copie o diagnóstico:',report);
@@ -394,8 +419,9 @@
 
 
 <script>
-/* DEMONSTRAÇÃO LOCAL: dados inteiramente fictícios, sem Google Sheets. */
-(function () {
+/* DEMONSTRAÇÃO LOCAL: dados inteiramente fictícios, sem Google Sheets.
+   Transporte próprio: não substituir namespaces de scripts do navegador. */
+const DemoRPC = (function () {
   'use strict';
   const KEY = 'livraria_igreja_dados_demo_v7';
   const categories = [
@@ -685,8 +711,8 @@
     }
     return failure('INVALID_ACTION','Operação não disponível.');
   }
-  // Emular apenas o transporte google.script.run para usar a MESMA interface de produção.
-  window.google={script:{run:{
+  // Transporte exclusivo da demonstração; nunca escreve em window.google.
+  const run={
     withSuccessHandler(cb){
       return {withFailureHandler(errCb){
         return {api(action,payload,pin){
@@ -697,7 +723,7 @@
         }};
       }};
     }
-  }}};
+  };
   window.reiniciarDemo=async function(){
     if(!confirm('Restaurar SOMENTE os dados fictícios desta demonstração?'))return;
     db=initial();
@@ -718,6 +744,7 @@
     const banner=document.getElementById('demoErrorBanner');
     if(banner)banner.hidden=true;
   };
+  return run;
 })();
 </script>
 <script>
@@ -843,8 +870,8 @@ const Api = {
     return new Promise((resolve,reject)=>{
       // Protótipo usa API simulada local: funciona sem internet.
       // A versão de produção continuará verificando conectividade no backend.
-      if (!window.google?.script?.run) {const e=new Error('Abra pelo endereço /exec do Google Apps Script.');e.code='NO_RPC';reject(e);return;}
-      google.script.run.withSuccessHandler(res=>{
+      if (typeof DemoRPC === 'undefined') {const e=new Error('A demonstração local não inicializou. Copie o diagnóstico para verificar a falha.');e.code='DEMO_NOT_READY';reject(e);return;}
+      DemoRPC.withSuccessHandler(res=>{
         if (!res || !res.ok) {
           const e=new Error(res?.error || 'Erro do servidor.'); e.code=res?.code || 'INTERNAL'; reject(e);
         } else resolve(res.data);
