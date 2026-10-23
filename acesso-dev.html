@@ -8,12 +8,14 @@
   <title>Acesso DEV — Livraria IPB</title>
   <link rel="stylesheet" href="/acesso-dev.css">
   <script src="/acesso-dev.js" defer></script>
+  <script src="/notification-badge.js" defer></script>
 </head>
 <body>
   <main>
     <p class="badge">AMBIENTE DE TESTES — DEV</p>
     <h1>Acesso da conta proprietária</h1>
     <p>Livraria IPB Jardim Bonfiglioli</p>
+    <nav><a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a></nav>
     <p id="status" role="status" aria-live="polite">Conferindo disponibilidade…</p>
     <section id="initial" hidden>
       <form id="login-form">

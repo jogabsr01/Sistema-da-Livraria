@@ -16,6 +16,7 @@
     "test:catalog": "python3 scripts/test-catalog.py",
     "test:checkout": "python3 scripts/test-checkout.py",
     "test:stock": "python3 scripts/test-stock.py",
+    "test:notifications": "python3 scripts/test-notifications.py",
     "test:photos": "python3 scripts/test-cover-photos.py",
     "test:diagnostics": "python3 scripts/test-prototype-diagnostics.py",
     "test:isbn": "python3 scripts/test-shared-isbn.py",
