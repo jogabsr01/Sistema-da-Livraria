@@ -6,3 +6,4 @@
 .netlify/
 .clasp.json
 *.local.json
+__pycache__/

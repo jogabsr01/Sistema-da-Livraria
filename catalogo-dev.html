@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer">
+  <title>Catálogo DEV — Livraria IPB</title>
+  <link rel="stylesheet" href="/catalogo-dev.css"><script src="/catalogo-dev.js" defer></script>
+</head>
+<body>
+<main>
+  <header><p class="badge">AMBIENTE DE TESTES — DEV</p><h1>Catálogo da livraria</h1>
+    <p>Livros salvos na instalação Google DEV. Use apenas cadastros de teste nesta homologação.</p>
+    <nav><a href="/acesso-dev.html">Minha conta verificada</a> · <a href="/">Abrir protótipo</a></nav>
+  </header>
+  <p id="status" role="status" aria-live="polite">Conferindo acesso…</p>
+  <section id="catalog" hidden>
+    <div class="toolbar"><button id="new" type="button">Cadastrar livro</button><button id="refresh" type="button" class="secondary">Atualizar catálogo</button></div>
+    <form id="search-form" class="filters">
+      <label>Pesquisar título, autor ou código<input id="query" type="search" maxlength="100"></label>
+      <label>Nicho<select id="niche-filter"><option value="">Todos os nichos</option></select></label>
+      <label class="check"><input id="inactive" type="checkbox"> Incluir inativos</label><button>Pesquisar</button>
+    </form>
+    <p id="count"></p><div id="books" class="books"></div>
+    <div class="toolbar"><button id="previous" type="button" class="secondary" hidden>Anterior</button><button id="next" type="button" class="secondary" hidden>Próxima página</button></div>
+  </section>
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="book-form">
+      <div class="toolbar"><h2 id="editor-title">Cadastrar livro</h2><button id="close" type="button" class="secondary">Fechar</button></div>
+      <p id="form-status" role="status" aria-live="polite"></p>
+      <label>ISBN / código de barras<input id="isbn" maxlength="30" inputmode="numeric" autocomplete="off"></label>
+      <p>Sem ISBN? Deixe em branco: o livro receberá um código interno.</p>
+      <label>Título *<input id="title" maxlength="300" required></label>
+      <div class="columns"><label>Autor<input id="author" maxlength="300"></label><label>Editora<input id="publisher" maxlength="160"></label></div>
+      <div class="columns"><label>Edição<input id="edition" maxlength="80"></label><label>Fornecedor<input id="supplier" maxlength="160"></label></div>
+      <div class="columns"><label>Preço de venda (R$) *<input id="price" inputmode="decimal" placeholder="0,00" required></label><label>Estoque mínimo<input id="minimum-stock" type="number" min="0" max="1000000" step="1" value="0" required></label></div>
+      <p id="stock-info">Estoque inicial: 0. Entradas e vendas serão integradas na etapa de estoque.</p>
+      <label>Categoria<input id="category" maxlength="80"></label>
+      <fieldset><legend>Nichos *</legend><div id="niche-choices"></div></fieldset>
+      <label>Link HTTPS da capa<input id="cover" type="url" maxlength="2000" placeholder="https://…"></label>
+      <div id="cover-preview" class="cover-preview"><span>Capa não informada</span></div>
+      <p>A capa aparece quando o endereço permite carregar a imagem. Se falhar, confira o link ou a edição do livro.</p>
+      <div class="columns"><label>Ano<input id="year" type="number" min="1000" max="3000" step="1"></label><label>Páginas<input id="pages" type="number" min="0" max="100000" step="1"></label></div>
+      <label>Sinopse<textarea id="synopsis" maxlength="5000" rows="4"></textarea></label>
+      <label class="check"><input id="active" type="checkbox" checked> Livro ativo</label>
+      <button id="save" type="submit">Salvar livro</button><button id="reload-book" type="button" class="secondary" hidden>Carregar a versão mais recente</button>
+    </form>
+  </dialog>
+</main>
+</body>
+</html>

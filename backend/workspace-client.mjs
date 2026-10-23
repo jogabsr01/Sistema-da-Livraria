@@ -1,5 +1,6 @@
 import { ApiError } from './errors.mjs';
 import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
+import { catalogUuid, normalizeProduct, productFields } from './catalog-model.mjs';
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
   async function invoke(action, actor, payload = {}) {
     const request = requestMessage(config, actor);
@@ -22,6 +23,31 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > 180_000) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response');
       const data = verifyResponse(signed, request);
+      if (action.startsWith('catalog.')) {
+        const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
+        function product(value) {
+          if (!value || !catalogUuid(value.id) || !Number.isSafeInteger(value.stock) || value.stock < 0 || !Number.isSafeInteger(value.version) || value.version < 1 ||
+              typeof value.updatedAt !== 'string' || !Number.isSafeInteger(Date.parse(value.updatedAt))) invalid();
+          const input = Object.fromEntries(productFields.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
+          let record; try { record = normalizeProduct(input, value.id); } catch { invalid(); }
+          return { id: value.id, ...record, stock: value.stock, version: value.version, updatedAt: value.updatedAt };
+        }
+        if (action === 'catalog.save') {
+          if (data?.id !== payload.id || data.version !== payload.expectedVersion + 1) invalid(); return { id: data.id, version: data.version };
+        }
+        if (action === 'catalog.get') { const value = product(data?.product); if (value.id !== payload.id) invalid(); return { product: value }; }
+        if (action === 'catalog.list') {
+          if (!data || !Array.isArray(data.products) || data.products.length > 10 || !Number.isSafeInteger(data.total) || data.total < 0 || data.total > 5000 ||
+              data.nextOffset !== null && (!Number.isSafeInteger(data.nextOffset) || data.nextOffset !== payload.offset + data.products.length || data.nextOffset >= data.total)) invalid();
+          return { products: data.products.map(product), total: data.total, nextOffset: data.nextOffset };
+        }
+        if (action === 'catalog.niches') {
+          if (!Array.isArray(data?.niches) || data.niches.length > 200 || data.niches.some(n => !catalogUuid(n?.id) || typeof n.name !== 'string' || !n.name.trim() || n.name.length > 100 ||
+              !/^#[a-fA-F0-9]{6}$/.test(n.color) || !Number.isSafeInteger(n.order) || n.order < 0 || typeof n.active !== 'boolean')) invalid();
+          return { niches: data.niches.map(n => ({ id: n.id, name: n.name, color: n.color, order: n.order, active: n.active })) };
+        }
+        invalid();
+      }
       if (action.startsWith('identity.access.')) {
         const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
         const untrusted = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
@@ -110,6 +136,10 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    catalog: (operation, actor, payload) => {
+      if (!['list', 'get', 'niches', 'save'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
+      return invoke('catalog.' + operation, actor, payload);
+    },
     access: (operation, payload) => {
       if (!['start', 'lookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       return invoke('identity.access.' + operation, null, payload);

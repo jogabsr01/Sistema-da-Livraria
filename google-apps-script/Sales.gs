@@ -116,5 +116,8 @@ function recoverSales_(ss) {
 // Owner-only editor action; no public endpoint, no supplied actor impersonation.
 function recoverDevelopmentSales() {
   var c = baseSettings_(); requireOwnerDev_(c);
-  return withLock_(function () { return recoverSales_(storage_(c, false).spreadsheet); });
+  return withLock_(function () {
+    if (PropertiesService.getScriptProperties().getProperty('CATALOG_JOURNAL_ID')) recoverCatalog_(c);
+    return recoverSales_(storage_(c, false).spreadsheet);
+  });
 }

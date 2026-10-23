@@ -12,7 +12,8 @@
     "test": "node --test tests/backend/*.test.mjs",
     "test:browser": "python3 scripts/test-public-build.py",
     "test:passkeys": "python3 scripts/test-passkeys.py",
-    "test:access": "python3 scripts/test-owner-access.py"
+    "test:access": "python3 scripts/test-owner-access.py",
+    "test:catalog": "python3 scripts/test-catalog.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3"
