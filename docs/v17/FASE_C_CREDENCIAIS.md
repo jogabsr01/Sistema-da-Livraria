@@ -1,6 +1,6 @@
 # Fase C: núcleo de proteção de credenciais
 
-Entrega independente de ativação Google; depende da fundação e carrega os incrementos anteriores ainda não integrados. Não conclui autenticação nem libera o backend.
+Registro histórico do núcleo de credenciais, já integrado em dev. Os helpers descritos abaixo continuam internos. Para o estado atual de sessões, limites, WebAuthn e primeiro acesso/login do proprietário em revisão, consultar [STATUS_V17.md](STATUS_V17.md) e [PRIMEIRO_ACESSO_OWNER.md](PRIMEIRO_ACESSO_OWNER.md). O backend Google real permanece desligado.
 
 `backend/credential-core.mjs` fornece:
 
@@ -14,7 +14,7 @@ As chaves são recebidas por injeção no código servidor; não foram criadas v
 
 Quatro dígitos oferecem apenas 10.000 combinações; KDF e pepper não substituem limite persistente de tentativas, bloqueio e proteção contra enumeração. Implementar estado de tentativas compartilhado e atômico, matrícula com e-mail verificado, segundo fator em dispositivo novo, MFA/passkeys para administradores, autorização versionada e revogação de sessão. Não ligar este módulo diretamente ao login do protótipo.
 
-Ainda faltam emissão/leitura de cookies, expiração e revogação persistente, CSRF, fluxo de recuperação, gestão/rotação de chaves e integração com identidade comprovada. Nenhum cookie ou sessão autenticada é criado por esses helpers. `backend/auth.mjs` continua recusando autenticação real. Os PINs demonstrativos continuam restritos ao protótipo local.
+Leitura/revogação persistente, cookies, expiração, CSRF e verificações fortes já foram integrados em incrementos posteriores. O novo controlador em revisão emite sessão após e-mail/PIN/passkey; o leitor só aceita estado persistente completo. Recuperação de conta e gestão/rotação de chaves continuam pendentes. Nenhum cookie ou sessão autenticada é criado por esses helpers isolados. Os PINs demonstrativos continuam restritos ao protótipo local.
 
 A conta master não foi criada. O PIN divulgado em conversa não deve ser reutilizado na ativação. O responsável deverá comprovar a identidade por fluxo privado, sem publicar CPF, e-mail ou PIN em código, planilhas de teste, logs ou issues.
 

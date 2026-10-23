@@ -90,7 +90,7 @@ function passkeyOperation_(request, c) {
     authControlSave_(keys, { Credential_ID: p.credentialId, Subject_ID: p.subjectId, Public_Key: p.publicKey, Counter: p.counter,
       Transports_JSON: JSON.stringify(p.transports), Created_At: new Date(now).toISOString(), Updated_At: new Date(now).toISOString(),
       Authorization_Version: p.authorizationVersion, Revoked_At: '', Registration_Ceremony_ID: row.ID });
-    row.Completed_At = new Date(now).toISOString(); authControlSave_(ceremonies, row);
+    row.Credential_ID = p.credentialId; row.Completed_At = new Date(now).toISOString(); authControlSave_(ceremonies, row);
     return { stored: true };
   }
   if (row.Purpose !== 'AUTHENTICATE' || row.Credential_ID !== p.credentialId || row.Expected_Counter !== p.expectedCounter || !Number.isSafeInteger(p.expectedCounter) || !Number.isSafeInteger(p.newCounter) ||

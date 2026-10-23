@@ -1,6 +1,6 @@
 # Passkeys: verificação criptográfica e persistência DEV
 
-Incremento da fase C sobre dev após o PR #11. Implementa o verificador de WebAuthn e o armazenamento privado de desafios/credenciais. Não cria rotas públicas, contas, PINs ou sessões; não ativa o primeiro acesso nem configura MFA de pessoas reais.
+Registro do incremento PR #12, já integrado em dev: verificador WebAuthn e armazenamento privado de desafios/credenciais. O controlador que conecta esse verificador ao primeiro acesso/login está no incremento seguinte, em revisão: [PRIMEIRO_ACESSO_OWNER.md](PRIMEIRO_ACESSO_OWNER.md). Nenhuma conta real ou MFA de pessoa real foi configurada.
 
 ## Verificação Node
 
@@ -33,6 +33,6 @@ Comandos reproduzíveis: npm test; npm run build; npm run test:passkeys; ZXING_J
 
 ## Pendências antes de ativar login
 
-O controlador público de identidade ainda precisa unir: limite persistente/origem confiável, posse de e-mail comprovada e PIN antes de permitir inscrição/login com passkey. Para adicionar credenciais a conta já ativa, exigir reautenticação forte ou recuperação verificada. A lista de credenciais não pode ser exposta antes de comprovar o primeiro fator.
+O novo controlador do proprietário já conecta localmente limite persistente/origem confiável, e-mail/PIN, passkeys e emissão recuperável de sessão; tem revisão e homologação real pendentes. Para adicionar credenciais a conta já ativa, ainda será necessário reautenticação forte ou recuperação verificada. A lista de credenciais não pode ser exposta antes de comprovar o primeiro fator.
 
-O resultado interno do verificador não é um login autônomo nem cookie. A emissão futura deve consumir a prova concluída uma única vez, vinculada à conta/versão, e revalidar permissões no mesmo comando recuperável. Bootstrap, entrega de e-mail, armazenamento de PIN, emissor de sessão e interface permanecem pendentes. Também faltam limpeza/retenção, limitação de tráfego/quota e testes em aparelhos físicos/Google DEV real. Não solicitar novas chaves ou configuração do proprietário antes da integração completa e revisão.
+O resultado interno do verificador não é um login autônomo nem cookie. A emissão do novo controlador vincula a prova concluída a uma única sessão/fluxo/conta/versão, revalida permissões e recupera projeções sob lock. O schema privado atual desse novo incremento é v3; os resultados acima registram a entrega original do PR #12. Ainda faltam limpeza/retenção, limitação de tráfego/quota e testes em aparelhos físicos/Google DEV real. Não habilitar flags antes da revisão e combinação da homologação controlada.

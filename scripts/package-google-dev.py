@@ -13,7 +13,8 @@ if output == root or root in output.parents:
 files = [
     'google-apps-script/Code.gs', 'google-apps-script/Schema.gs',
     'google-apps-script/Sales.gs', 'google-apps-script/SessionStore.gs',
-    'google-apps-script/AuthControl.gs', 'google-apps-script/PasskeyStore.gs', 'google-apps-script/appsscript.json',
+    'google-apps-script/AuthControl.gs', 'google-apps-script/PasskeyStore.gs',
+    'google-apps-script/OwnerAccess.gs', 'google-apps-script/appsscript.json',
     'docs/v17/INSTALACAO_GOOGLE.md', 'docs/v17/BACKUP_RECUPERACAO.md',
 ]
 for name in files:

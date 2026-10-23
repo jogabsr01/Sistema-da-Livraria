@@ -22,6 +22,41 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > 180_000) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response');
       const data = verifyResponse(signed, request);
+      if (action.startsWith('identity.access.')) {
+        const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+        const untrusted = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
+        if (['identity.access.start', 'identity.access.login'].includes(action)) {
+          if (data?.accepted !== true) untrusted(); return { accepted: true };
+        }
+        if (action === 'identity.access.lookup') {
+          if (!data || !Object.hasOwn(data, 'account')) untrusted();
+          if (data.account === null) return { account: null };
+          const account = data.account, record = account.record;
+          if (!uuid(account.subjectId) || !Number.isSafeInteger(account.authorizationVersion) || account.authorizationVersion < 1 ||
+              record?.version !== 1 || record.algorithm !== 'scrypt-N32768-r8-p1' || !/^[a-f0-9]{64}$/.test(record.salt) || !/^[a-f0-9]{64}$/.test(record.hash)) untrusted();
+          return { account: { subjectId: account.subjectId, authorizationVersion: account.authorizationVersion, record: { version: 1, algorithm: record.algorithm, salt: record.salt, hash: record.hash } } };
+        }
+        if (action === 'identity.access.email') {
+          if (typeof data?.verified !== 'boolean') untrusted(); return { verified: data.verified };
+        }
+        if (['identity.access.pin', 'identity.access.bind'].includes(action)) {
+          if (data?.stored !== true) untrusted(); return { stored: true };
+        }
+        if (action === 'identity.access.read') {
+          if (!uuid(data?.flowId) || !uuid(data.subjectId) || !Number.isSafeInteger(data.authorizationVersion) || data.authorizationVersion < 1 ||
+              !['ACTIVATE', 'LOGIN'].includes(data.purpose) || !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE'].includes(data.state) ||
+              data.ceremonyId !== '' && !uuid(data.ceremonyId) || typeof data.proofReady !== 'boolean') untrusted();
+          return { flowId: data.flowId, subjectId: data.subjectId, authorizationVersion: data.authorizationVersion,
+            purpose: data.purpose, state: data.state, ceremonyId: data.ceremonyId, proofReady: data.proofReady };
+        }
+        if (action === 'identity.access.commit') {
+          if (!uuid(data?.id) || !uuid(data.sessionId) || data.role !== 'SUPER_ADMIN' || data.assurance !== 'passkey' ||
+              !Number.isSafeInteger(data.authenticatedAt) || !Number.isSafeInteger(data.expiresAt) || !Number.isSafeInteger(data.authorizationVersion)) untrusted();
+          return { id: data.id, sessionId: data.sessionId, role: data.role, assurance: data.assurance,
+            authenticatedAt: data.authenticatedAt, expiresAt: data.expiresAt, authorizationVersion: data.authorizationVersion };
+        }
+        untrusted();
+      }
       if (action === 'system.ping') {
         if (!data || data.ready !== true || data.environment !== config.environment || data.schemaVersion !== 1) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
         return { ready: true, environment: data.environment, schemaVersion: data.schemaVersion };
@@ -75,6 +110,10 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    access: (operation, payload) => {
+      if (!['start', 'lookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      return invoke('identity.access.' + operation, null, payload);
+    },
     listPasskeys: payload => invoke('identity.passkey.list', null, payload),
     beginPasskey: payload => invoke('identity.passkey.begin', null, payload),
     takePasskey: payload => invoke('identity.passkey.take', null, payload),

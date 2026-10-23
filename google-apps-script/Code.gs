@@ -172,6 +172,11 @@ function processRequest_(request, c) {
     if (request.action === 'system.ping' && c.environment === 'dev') {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
+    if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
+      var props = PropertiesService.getScriptProperties();
+      if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      return ownerAccessOperation_(request, c);
+    }
     if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
       if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return passkeyOperation_(request, c);
@@ -212,7 +217,7 @@ function doPost(event) {
   } catch (_) { return jsonOutput_({ error: { code: 'UNAUTHORIZED' } }); }
   try { return signedResponse_(c, request, true, processRequest_(request, c)); }
   catch (error) {
-    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED'];
+    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED', 'ACCESS_REJECTED'];
     return signedResponse_(c, request, false, null, allowed.includes(error.message) ? error.message : 'UNAVAILABLE');
   }
 }

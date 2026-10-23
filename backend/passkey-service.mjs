@@ -27,7 +27,7 @@ function responseSize(value) {
     if (data.crossOrigin !== undefined && data.crossOrigin !== false || data.topOrigin !== undefined) rejected();
   } catch { rejected(); }
 }
-// No public route. Future enrollment must verify email/current identity BEFORE
+// No standalone public route. The caller must verify email/current identity BEFORE
 // permitting registration; login must verify PIN + durable rate limits first.
 export function createPasskeyService(settings, { client }) {
   if (settings?.config?.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');

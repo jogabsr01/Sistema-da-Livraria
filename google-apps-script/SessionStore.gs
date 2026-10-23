@@ -32,6 +32,13 @@ function identitySession_(spreadsheet, tokenHash, now) {
   var matches = sessions.rows.filter(function (row) { return row.Token_Hash === tokenHash; });
   if (matches.length !== 1) failure_('UNAUTHENTICATED');
   var session = matches[0];
+  if (typeof session.Dispositivo === 'string' && session.Dispositivo.indexOf('identity-flow:') === 0) {
+    var flowId = session.Dispositivo.slice(14), c = baseSettings_();
+    var flows = accessFlows_(authControlStore_(c)).rows.filter(function (row) { return row.ID === flowId; });
+    if (flows.length !== 1 || flows[0].State !== 'COMPLETE' || flows[0].ID !== session.ID_Sessao ||
+        flows[0].Subject_ID !== session.ID_Usuario || flows[0].Session_Token_Hash !== tokenHash ||
+        flows[0].Authorization_Version !== session.Versao_Autorizacao) failure_('UNAUTHENTICATED');
+  }
   if (session.Revogado_Em !== '' || !['pin', 'mfa', 'passkey'].includes(session.Nivel_Autenticacao) ||
       !Number.isSafeInteger(session.Versao_Autorizacao) || session.Versao_Autorizacao < 1) failure_('UNAUTHENTICATED');
   var created = identityTime_(session.Criado_Em), expires = identityTime_(session.Expira_Em), activity = identityTime_(session.Ultima_Atividade);

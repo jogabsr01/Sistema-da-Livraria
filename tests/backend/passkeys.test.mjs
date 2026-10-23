@@ -30,21 +30,21 @@ function setup() {
   return { gas, main, priv, settings, client, context, execute, begin, register, service: createPasskeyService(settings, { client }) };
 }
 
-test('private schema upgrades v1 to v2 with a prior backup, preserves controls and is idempotent', () => {
+test('private schema upgrades v1 to current with a prior backup, preserves controls and is idempotent', () => {
   const s = setup(), schema = s.gas.context.AUTH_CONTROL_SCHEMA;
   s.priv.tables.delete('_Passkeys'); s.priv.tables.delete('_Passkey_Ceremonies');
   const history = s.priv.getSheetByName('_Control_Migrations');
   history.rows[1][0] = 1; history.rows[1][1] = '357da73009e9d28b09650f78dbc8c59b2114ee13f23dbe5b6a2a6334b11d75f2';
   s.priv.getSheetByName('_Auth_Limits').appendRow(['preserved-counter-fixture']);
   const before = s.gas.backupCount;
-  assert.equal(s.gas.call('provisionDevelopmentAuthControls').version, 2);
+  assert.equal(s.gas.call('provisionDevelopmentAuthControls').version, 3);
   assert.equal(s.gas.backupCount, before + 1); assert.equal(history.getLastRow(), 3);
   assert.equal(s.priv.getSheetByName('_Auth_Limits').rows[1][0], 'preserved-counter-fixture');
   assert.equal(s.gas.call('provisionDevelopmentAuthControls').changed, false);
   assert.equal(s.gas.backupCount, before + 1);
 });
 
-test('v2 upgrade resumes after interruption and refuses an unknown legacy hash before backup or mutation', () => {
+test('controls upgrade resumes after interruption and refuses an unknown legacy hash before backup or mutation', () => {
   for (const mode of ['partial', 'hash']) {
     const s = setup(), schema = s.gas.context.AUTH_CONTROL_SCHEMA;
     s.priv.tables.delete('_Passkeys'); s.priv.tables.delete('_Passkey_Ceremonies');
@@ -56,7 +56,7 @@ test('v2 upgrade resumes after interruption and refuses an unknown legacy hash b
       assert.equal(s.gas.writes, before); assert.equal(s.gas.backupCount, backups);
     } else {
       s.gas.failOnSheet = '_Passkeys'; assert.throws(() => s.gas.call('provisionDevelopmentAuthControls'), /INJECTED_STORAGE_FAILURE/);
-      s.gas.failOnSheet = null; assert.equal(s.gas.call('provisionDevelopmentAuthControls').version, 2);
+      s.gas.failOnSheet = null; assert.equal(s.gas.call('provisionDevelopmentAuthControls').version, 3);
       assert.equal(s.priv.getSheetByName('_Control_Migrations').getLastRow(), 3);
     }
   }

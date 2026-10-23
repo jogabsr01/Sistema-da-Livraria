@@ -1,11 +1,12 @@
 // CONTRACT DOUBLE ONLY: no Google APIs, IAM, quotas or real Drive persistence.
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 export function createGasEmulator(initialProperties = {}) {
   let counter = 0, backupCount = 0, writes = 0, owner = 'owner@example.invalid';
   let failOnSheet = null, locked = false;
-  const resources = new Map(), sheets = new Map(), props = { ...initialProperties };
+  const resources = new Map(), sheets = new Map(), props = { ...initialProperties }, outbox = [];
+  let mailQuota = 100, mailFailure = false;
   class Sheet {
     constructor(name) { this.name = name; this.rows = []; this.formats = []; }
     getLastRow() { let n = this.rows.length; while (n && !this.rows[n - 1].some(v => v !== '' && v !== undefined)) n--; return n; }
@@ -59,12 +60,15 @@ export function createGasEmulator(initialProperties = {}) {
     SpreadsheetApp: { create: name => { const f = new Resource('sheet', name), ss = new Spreadsheet(f); sheets.set(f.id, ss); return ss; }, openById: id => { if (!sheets.has(id)) throw new Error('UNKNOWN_SHEET'); return sheets.get(id); }, flush() {} },
     Utilities: { newBlob: blob, base64Encode: value => Buffer.from(value).toString('base64'), base64Decode: value => [...Buffer.from(value, 'base64')], computeHmacSha256Signature: (value, key) => [...createHmac('sha256', Buffer.from(key)).update(Buffer.from(value)).digest()], computeDigest: (_, value) => [...createHash('sha256').update(value).digest()], DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF-8' } },
     ContentService: { MimeType: { JSON: 'application/json' }, createTextOutput: text => ({ text, setMimeType() { return this; } }) },
+    MailApp: { getRemainingDailyQuota: () => mailQuota, sendEmail: value => { if (mailFailure) throw Error('FAKE_MAIL_FAILURE'); outbox.push(value); mailQuota--; } },
   });
-  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
-  return { context, props, resources, sheets,
+  context.Utilities.getUuid = randomUUID;
+  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs', 'OwnerAccess.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
+  return { context, props, resources, sheets, outbox,
     call(name, ...args) { return context[name](...args); },
     post(envelope) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(envelope) } }).text); },
     get backupCount() { return backupCount; }, get writes() { return writes; },
     set failOnSheet(value) { failOnSheet = value; }, set locked(value) { locked = value; }, set owner(value) { owner = value; },
+    set mailQuota(value) { mailQuota = value; }, set mailFailure(value) { mailFailure = value; },
   };
 }
