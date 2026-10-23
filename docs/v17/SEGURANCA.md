@@ -3,7 +3,7 @@
 ## Controles já implementados na fundação
 
 - Configuração restrita a `branch-deploy/dev/hostname DEV` ou `production/main/hostname PROD`. Deploy previews, contexto desconhecido e chaves/bindings ausentes recusam o backend.
-- Backend desativado por padrão. Autenticador real propositalmente não implementado; todas as chamadas administrativas reais permanecem fechadas. Nenhuma credencial fixa ou conta SUPER_ADMIN foi criada.
+- Backend desativado por padrão. Leitor de sessões persistentes implementado e desativado por padrão; primeiro acesso/emissor ainda não implementados. Todas as chamadas administrativas reais permanecem fechadas. Nenhuma credencial fixa ou conta SUPER_ADMIN foi criada.
 - Contrato administrativo exige ADMIN/SUPER_ADMIN, identidade UUID e MFA/passkey recente. Mesmo uma identidade válida de ATENDENTE é rejeitada no servidor.
 - Bridge HMAC-SHA256 com chave aleatória de 256 bits privada, mensagens UTF-8/base64, domínios separados para request/response e comparação de assinatura constante para tamanho fixo.
 - Envelope assina ambiente, instalação, IDs de recursos, ação, identidade afirmada pelo backend, timestamp, ID e nonce. Janela de 120 segundos e tolerância futura de 30 segundos. Nonce é armazenado em hash sob lock por cinco minutos; replay é recusado. Cache volátil não é a única defesa.
@@ -14,7 +14,7 @@
 
 Esses controles não equivalem a autenticação de usuário pronta nem a verificação de IAM no Google. O cliente HMAC e o emulador não são prova de instalação Google real.
 
-## Identidade para a Fase C — ainda não implementada
+## Identidade para a Fase C — parcialmente implementada, sem ativação
 
 O PIN de quatro dígitos tem apenas 10.000 possibilidades; hash com salt não resolve sozinho sua baixa entropia. O desenho exige:
 
@@ -26,7 +26,7 @@ O PIN de quatro dígitos tem apenas 10.000 possibilidades; hash com salt não re
 6. Proteção CSRF em mutações autenticadas, origem exata, token apropriado, reautenticação para PIN/e-mail/privilégios e revogação de outras sessões. Nunca aceitar `role`, `userId` ou preço autoritativo vindo do browser.
 7. Bootstrap de SUPER_ADMIN por procedimento privado, identidade verificada e execução de uso único auditada. `OWNER_EMAIL` do provisionamento Google não cria uma conta administrativa da livraria.
 
-A implementação e escolha final das bibliotecas/armazenamento de identidade pertencem ao PR da Fase C. A fundação não oferece um modo de contornar esse bloqueio por variável de ambiente.
+Leitura/revogação persistente de sessões, cookies, autorização e CSRF estão implementados conforme [SESSOES_E_PERMISSOES.md](SESSOES_E_PERMISSOES.md). Cadastro verificado, emissor, limites persistentes, prova de MFA/passkeys e recuperação continuam pendentes na fase C. A fundação não oferece um modo de contornar esse bloqueio por variável de ambiente.
 
 ## Separação e privacidade
 
@@ -40,4 +40,4 @@ O validador de importação desta fase recusa dados de clientes/vendas, identifi
 
 ## Riscos não resolvidos nesta fase
 
-Quotas e latência Google não medidas; bloqueio é por projeto e não um banco transacional; IAM/sharing não verificados; implementação de sessões/MFA/KDF/CSRF/limites persistentes ainda pendente; auditoria não é imutável contra o dono da planilha; front continua demo e armazena dados fictícios localmente. Não habilitar operação real ou carregar PII com essa entrega.
+Quotas e latência Google não medidas; bloqueio é por projeto e não um banco transacional; IAM/sharing não verificados; KDF, leitor/revogador de sessões e CSRF implementados, porém emissão/MFA/limites persistentes e homologação Google de identidade ainda pendentes; auditoria não é imutável contra o dono da planilha; front continua demo e armazena dados fictícios localmente. Não habilitar operação real ou carregar PII com essa entrega.

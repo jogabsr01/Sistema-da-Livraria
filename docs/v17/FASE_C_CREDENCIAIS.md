@@ -21,3 +21,7 @@ A conta master não foi criada. O PIN divulgado em conversa não deve ser reutil
 ## Validação
 
 Cinco testes de segurança verificam salt distinto, PIN incorreto, isolamento entre usuários/instalações/ambientes/peppers, recusa de registros malformados, configuração inválida e tokens canônicos exclusivos. São testes unitários reais do módulo crypto do Node, sem identidade Google real ou envio de e-mail.
+
+## Incremento seguinte
+
+O leitor/revogador de sessões persistentes, cookies, autorização e CSRF já estão implementados em revisão: [SESSOES_E_PERMISSOES.md](SESSOES_E_PERMISSOES.md). Primeiro acesso, emissor, prova de MFA e limites persistentes continuam pendentes. Esta nota atualiza o estado sem transformar as validações antigas em homologação real.
