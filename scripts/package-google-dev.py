@@ -14,8 +14,9 @@ files = [
     'google-apps-script/Code.gs', 'google-apps-script/Schema.gs',
     'google-apps-script/Sales.gs', 'google-apps-script/SessionStore.gs',
     'google-apps-script/AuthControl.gs', 'google-apps-script/PasskeyStore.gs',
-    'google-apps-script/OwnerAccess.gs', 'google-apps-script/appsscript.json',
+    'google-apps-script/OwnerAccess.gs', 'google-apps-script/Catalog.gs', 'google-apps-script/appsscript.json',
     'docs/v17/INSTALACAO_GOOGLE.md', 'docs/v17/BACKUP_RECUPERACAO.md',
+    'docs/v17/PRIMEIRO_ACESSO_OWNER.md', 'docs/v17/CATALOGO_COMPARTILHADO_DEV.md',
 ]
 for name in files:
     if (root / name).is_symlink():
@@ -28,11 +29,13 @@ with ZipFile(output, 'w', compression=ZIP_DEFLATED) as kit:
 Nao possui credenciais. Nao configura nem altera producao.
 Este codigo esta em revisao e nao conclui a integracao funcional.
 
-1. Abra https://script.google.com/ usando uma conta dedicada a DEV.
-2. Crie projeto novo e copie os arquivos da pasta google-apps-script.
-3. Siga docs/v17/INSTALACAO_GOOGLE.md para configurar propriedades privadas.
-4. Execute provisionDevelopment e autorize os escopos revisados no Google.
-5. Execute inspectDevelopmentSchema para conferir a instalacao.
+1. Abra https://script.google.com/ na conta proprietaria de DEV.
+2. Na instalacao existente, atualize os arquivos preservando propriedades,
+   recursos e URL da implantacao. Nao crie outra instalacao por cima dos dados.
+3. Para uma instalacao nova, siga docs/v17/INSTALACAO_GOOGLE.md primeiro.
+4. Para primeiro acesso e catalogo, siga PRIMEIRO_ACESSO_OWNER.md e
+   CATALOGO_COMPARTILHADO_DEV.md, somente apos revisao e homologacao combinada.
+5. Autorize os escopos revisados no Google e confira o ambiente DEV.
 
 Nao envie PIN, senha, tokens, chave de assinatura ou JSON de credenciais no chat.
 IDs e URL da implantacao nao concedem acesso por si so.

@@ -1,6 +1,6 @@
 # Primeiro acesso e login verificado da conta proprietária — DEV
 
-Incremento sobre o PR #12, integrado em dev no commit `3049072877f7c9aede7ac566796a8b140b62303e`. Este incremento tem implementação funcional local, em revisão; nenhuma flag, chave, permissão, conta ou implantação Google real foi alterada nesta entrega. Main e produção permanecem fora do trabalho.
+Incremento PR #13 integrado em dev no commit `1b7ca092a6283431de4b9c78c9e41e6afb1d774a`. Tem implementação funcional testada localmente; nenhuma flag, chave, permissão, conta ou implantação Google real foi alterada. Main e produção permanecem fora do trabalho. O catálogo compartilhado posterior está em revisão em [CATALOGO_COMPARTILHADO_DEV.md](CATALOGO_COMPARTILHADO_DEV.md).
 
 ## Comportamento entregue
 
