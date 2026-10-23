@@ -173,7 +173,7 @@ function processRequest_(request, c) {
     if (request.action === 'system.ping' && c.environment === 'dev') {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
-    if (['catalog.list', 'catalog.get', 'catalog.niches', 'catalog.save'].includes(request.action)) {
+    if (['catalog.list', 'catalog.get', 'catalog.niches', 'catalog.save', 'catalog.cover'].includes(request.action)) {
       var catalogProps = PropertiesService.getScriptProperties();
       if (c.environment !== 'dev' || catalogProps.getProperty('CATALOG_ENABLED') !== 'true' || catalogProps.getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('CATALOG_UNAVAILABLE');
       return catalogOperation_(request, c);
@@ -223,7 +223,7 @@ function doPost(event) {
   } catch (_) { return jsonOutput_({ error: { code: 'UNAUTHORIZED' } }); }
   try { return signedResponse_(c, request, true, processRequest_(request, c)); }
   catch (error) {
-    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED', 'ACCESS_REJECTED', 'CATALOG_UNAVAILABLE', 'CATALOG_INVALID', 'CATALOG_CONFLICT', 'CATALOG_DUPLICATE', 'CATALOG_NOT_FOUND', 'CATALOG_STOCK_HISTORY'];
+    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED', 'ACCESS_REJECTED', 'CATALOG_UNAVAILABLE', 'CATALOG_INVALID', 'CATALOG_CONFLICT', 'CATALOG_DUPLICATE', 'CATALOG_NOT_FOUND', 'CATALOG_STOCK_HISTORY', 'COVER_PHOTOS_UNAVAILABLE', 'COVER_PHOTO_INVALID'];
     return signedResponse_(c, request, false, null, allowed.includes(error.message) ? error.message : 'UNAVAILABLE');
   }
 }

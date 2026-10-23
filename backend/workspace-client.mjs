@@ -1,4 +1,5 @@
 import { ApiError } from './errors.mjs';
+import { createHash } from 'node:crypto';
 import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
 import { catalogUuid, normalizeProduct, productFields } from './catalog-model.mjs';
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
@@ -30,10 +31,18 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
               typeof value.updatedAt !== 'string' || !Number.isSafeInteger(Date.parse(value.updatedAt))) invalid();
           const input = Object.fromEntries(productFields.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
           let record; try { record = normalizeProduct(input, value.id); } catch { invalid(); }
-          return { id: value.id, ...record, stock: value.stock, version: value.version, updatedAt: value.updatedAt };
+          if (value.hasPhoto !== undefined && typeof value.hasPhoto !== 'boolean') invalid();
+          return { id: value.id, ...record, stock: value.stock, version: value.version, updatedAt: value.updatedAt,hasPhoto:value.hasPhoto === true,
+            photoUrl:value.hasPhoto === true ? `/api/v1/catalog/cover?id=${value.id}&v=${value.version}`:'' };
         }
         if (action === 'catalog.save') {
           if (data?.id !== payload.id || data.version !== payload.expectedVersion + 1) invalid(); return { id: data.id, version: data.version };
+        }
+        if (action === 'catalog.cover') {
+          if (typeof data?.bytes !== 'string' || data.bytes.length > 65536 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data.bytes) || typeof data.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(data.sha256)) invalid();
+          const bytes = Buffer.from(data.bytes,'base64');
+          if (bytes.length > 49152 || bytes.toString('base64') !== data.bytes || createHash('sha256').update(bytes).digest('hex') !== data.sha256 || bytes[0] !== 255 || bytes[1] !== 216) invalid();
+          return {bytes:data.bytes,sha256:data.sha256};
         }
         if (action === 'catalog.get') { const value = product(data?.product); if (value.id !== payload.id) invalid(); return { product: value }; }
         if (action === 'catalog.list') {
@@ -137,7 +146,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
     catalog: (operation, actor, payload) => {
-      if (!['list', 'get', 'niches', 'save'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
+      if (!['list', 'get', 'niches', 'save', 'cover'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {

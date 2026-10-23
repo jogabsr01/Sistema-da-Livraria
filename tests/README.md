@@ -31,3 +31,7 @@ Isso não substitui uma verificação em Android/iOS físico de foco, iluminaç�
 ## Teste aprofundado de capas
 
 Após npm run build, executar ZXING_JS=<biblioteca verificada> npm run test:cover-hardening. A suíte usa o PNG editorial real incluído no build, verifica persistência nas telas, quota cheia e corrupção, e executa câmera virtual. Metadados de APIs são fixtures/replays explícitos; o cenário de fotografia manual não significa que uma capa editorial foi encontrada. O experimento com consultas externas reais e seus limites está em docs/v17/QA_CAPAS_HARDENING.md.
+
+### Fotos privadas e ISBN combinados (PR #15 atualizado)
+
+`npm run test:photos` executa seis cenários originais; `npm run test:photo-isbn` acrescenta seis de preservação de fotos durante consultas atrasadas, remoção explícita, arquivo inválido e câmera/pagehide. Um cenário usa o PNG editorial real verificado, com upload/Sharp e persistência Google emulados e descartáveis; não afirma acesso ao Google real. O restante usa fixtures identificadas. A revisão combinada totaliza 160 testes backend e 86 Chromium, mantendo o protótipo do PR #17.

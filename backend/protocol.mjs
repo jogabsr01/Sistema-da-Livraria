@@ -24,7 +24,7 @@ export function verifyResponse(value, request, now = Date.now()) {
   if (!value || value.version !== 1 || value.environment !== request.environment || value.installationId !== request.installationId || value.requestId !== request.requestId || value.nonce !== request.nonce || !Number.isSafeInteger(value.sentAt) || Math.abs(now - value.sentAt) > 120_000 || typeof value.ok !== 'boolean') throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
   if (!value.ok) {
     const allowed = { REPLAY: 409, BUSY: 503, SCHEMA_REQUIRED: 503, FORBIDDEN: 403, BINDING_MISMATCH: 503, UNAUTHENTICATED: 401, IDENTITY_UNAVAILABLE: 503, CHALLENGE_REJECTED: 400, PASSKEY_REJECTED: 401, ACCESS_REJECTED: 401 };
-    Object.assign(allowed, { CATALOG_UNAVAILABLE: 503, CATALOG_INVALID: 400, CATALOG_CONFLICT: 409, CATALOG_DUPLICATE: 409, CATALOG_NOT_FOUND: 404, CATALOG_STOCK_HISTORY: 409 });
+    Object.assign(allowed, { CATALOG_UNAVAILABLE: 503, CATALOG_INVALID: 400, CATALOG_CONFLICT: 409, CATALOG_DUPLICATE: 409, CATALOG_NOT_FOUND: 404, CATALOG_STOCK_HISTORY: 409, COVER_PHOTOS_UNAVAILABLE:503,COVER_PHOTO_INVALID:400 });
     const code = value.error?.code;
     throw new ApiError(allowed[code] || 502, code === 'UNAUTHENTICATED' ? 'UNAUTHENTICATED' : Object.hasOwn(allowed, code) ? `WORKSPACE_${code}` : 'UPSTREAM_UNAVAILABLE');
   }

@@ -58,3 +58,7 @@ Capacidade inicial: 1.000 comandos de catálogo, 5.000 linhas por tabela de neg�
 ## Incremento ISBN em revisão
 
 [ISBN_COMPARTILHADO_DEV.md](ISBN_COMPARTILHADO_DEV.md) descreve a consulta autenticada de cinco fontes e a validação visual de capas. As descrições e contagens acima registram a entrega original do catálogo. O novo incremento não liga a flag real nem integra automaticamente o PR #15 de fotos; não há nova migração Google.
+
+## Incremento posterior em revisão — fotos privadas
+
+[FOTOS_CAPAS_DEV.md](FOTOS_CAPAS_DEV.md) documenta o próximo incremento: câmera/galeria, normalização JPEG no servidor e rota de imagem autenticada. As descrições e contagens acima registram a entrega original do PR #14. O incremento posterior amplia o limite HTTP somente para pedidos de foto e a CSP somente para prévias locais/câmera. A revisão atual combina as fotos com a consulta ISBN já integrada pelo PR #17. As flags reais continuam fechadas.
