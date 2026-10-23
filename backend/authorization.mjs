@@ -6,7 +6,7 @@ const roles = new Set(['ATENDENTE', 'ADMIN', 'SUPER_ADMIN']);
 const assurances = new Set(['pin', 'mfa', 'passkey']);
 const strong = new Set(['mfa', 'passkey']);
 const attendant = new Set([
-  'products.read', 'products.write', 'stock.receive', 'sales.create',
+  'customers.read', 'customers.write', 'products.read', 'products.write', 'stock.receive', 'sales.create',
   'profile.self.read', 'profile.self.write', 'schedule.self.read',
   'notifications.self.read', 'sessions.self.revoke',
 ]);

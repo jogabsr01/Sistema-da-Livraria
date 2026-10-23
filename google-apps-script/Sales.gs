@@ -22,7 +22,7 @@ function saleInteger_(value) { return Number.isSafeInteger(value) && value >= 0;
 function checkoutCommand_(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input) ||
       !same_(Object.keys(input).sort(), ['customerId', 'expectedTotalCents', 'idempotencyKey', 'items', 'paymentMethod']) ||
-      !saleUuid_(input.idempotencyKey) || input.customerId !== null || !saleInteger_(input.expectedTotalCents) ||
+      !saleUuid_(input.idempotencyKey) || input.customerId !== null && !saleUuid_(input.customerId) || !saleInteger_(input.expectedTotalCents) ||
       !['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'].includes(input.paymentMethod) || !Array.isArray(input.items) || !input.items.length || input.items.length > 100) failure_('INVALID_SALE');
   var quantities = {};
   input.items.forEach(function (item) {
@@ -32,7 +32,7 @@ function checkoutCommand_(input) {
     if (!Number.isSafeInteger(quantities[item.productId])) failure_('INVALID_SALE');
   });
   return { idempotencyKey: input.idempotencyKey, items: Object.keys(quantities).sort().map(function (id) { return { productId: id, quantity: quantities[id] }; }),
-    paymentMethod: input.paymentMethod, customerId: null, expectedTotalCents: input.expectedTotalCents };
+    paymentMethod: input.paymentMethod, customerId: input.customerId, expectedTotalCents: input.expectedTotalCents };
 }
 function checkoutOperation_(request, c) {
   if (c.environment !== 'dev' || !request.actor || !same_(Object.keys(request.actor), ['sessionTokenHash']) || !accessHash_(request.actor.sessionTokenHash)) failure_('UNAUTHENTICATED');
@@ -46,9 +46,10 @@ function checkoutOperation_(request, c) {
   var journal = saleTable_(ss, '_Eventos_Dominio'), prior = saleObjects_(journal).filter(function (row) { return row.ID_Evento === command.idempotencyKey; });
   if (prior.length) {
     var existing = JSON.parse(prior[0].Conteudo_JSON);
-    if (prior.length !== 1 || existing.version !== 2 || existing.commandHash !== hash || existing.actorId !== principal.id) failure_('IDEMPOTENCY_CONFLICT');
+    if (prior.length !== 1 || ![2,3].includes(existing.version) || existing.commandHash !== hash || existing.actorId !== principal.id) failure_('IDEMPOTENCY_CONFLICT');
     return existing.receipt;
   }
+  if(request.action==='sales.receipt')failure_('CUSTOMER_UNAVAILABLE');
   if (journal.rows.length >= 2000 || saleTable_(ss, 'Logs_Auditoria').rows.length >= 5000) failure_('JOURNAL_CAPACITY');
   // Command IDs share the audit namespace with catalog changes. Refuse a
   // chosen collision before appending an event that could never be projected.
@@ -59,6 +60,10 @@ function checkoutOperation_(request, c) {
       ID_Usuario: principal.id, Perfil: principal.role, Acao: 'SALE_REJECTED', Entidade: 'Vendas', ID_Entidade: command.idempotencyKey,
       Antes: '', Depois: JSON.stringify({ code: code, items: command.items }), Resultado: 'NEGADO', ID_Requisicao: request.requestId };
     ensureSaleRow_(audit, ['ID_Log'], log, true); failure_(code);
+  }
+  if(command.customerId!==null){
+    if(PropertiesService.getScriptProperties().getProperty('CUSTOMERS_ENABLED')!=='true')rejectBusiness('CUSTOMER_UNAVAILABLE');
+    recoverCustomers_(ss);if(!customerRows_(ss).rows.some(function(r){return r.ID_Cliente===command.customerId;}))rejectBusiness('CUSTOMER_UNAVAILABLE');
   }
   var products = catalogProducts_(ss), total = 0;
   var lines = command.items.map(function (item) {
@@ -72,11 +77,11 @@ function checkoutOperation_(request, c) {
       expectedVersion: product.Versao_Registro, stockAfter: product.Estoque_Atual - item.quantity };
   });
   if (total !== command.expectedTotalCents) rejectBusiness('SALE_PRICE_CHANGED');
-  var receipt = { saleId: command.idempotencyKey, totalCents: total, createdAt: new Date().toISOString(), customerId: null, paymentMethod: command.paymentMethod,
+  var receipt = { saleId: command.idempotencyKey, totalCents: total, createdAt: new Date().toISOString(), customerId: command.customerId, paymentMethod: command.paymentMethod,
     items: lines.map(function (line) { return { productId: line.productId, quantity: line.quantity, unitPriceCents: line.unitPriceCents, subtotalCents: line.subtotalCents }; }) };
-  var event = { version: 2, type: 'SALE_COMMITTED', idempotencyKey: command.idempotencyKey, commandHash: hash, actorId: principal.id, actorRole: principal.role, lines: lines, receipt: receipt };
+  var event = { version: command.customerId===null?2:3, type: 'SALE_COMMITTED', idempotencyKey: command.idempotencyKey, commandHash: hash, actorId: principal.id, actorRole: principal.role, lines: lines, receipt: receipt };
   var values = { ID_Evento: event.idempotencyKey, Tipo: event.type, Chave_Idempotencia: event.idempotencyKey, Hash_Comando: hash,
-    Conteudo_JSON: JSON.stringify(event), Estado_Projecao: 'PENDENTE', Criado_Em: receipt.createdAt, Versao_Esquema: 2 };
+    Conteudo_JSON: JSON.stringify(event), Estado_Projecao: 'PENDENTE', Criado_Em: receipt.createdAt, Versao_Esquema: event.version };
   validateSaleEvent_(event, values);
   // Durable append precedes ALL business projections. Repeating the same key
   // recovers this event and returns this exact receipt, even after response loss.
@@ -101,8 +106,9 @@ function validateSaleEvent_(event, row) {
   var command = { idempotencyKey: event.idempotencyKey, items: event.lines.map(function (line) {
     return { productId: line.productId, quantity: line.quantity };
   }).sort(function (a, b) { return a.productId.localeCompare(b.productId); }) };
-  if (event.version !== undefined && event.version !== 2) failure_('JOURNAL_INVALID');
-  if (event.version === 2) {
+  if (event.version !== undefined && ![2,3].includes(event.version)) failure_('JOURNAL_INVALID');
+  if ([2,3].includes(event.version)) {
+    if (event.version===2&&event.receipt.customerId!==null||event.version===3&&!saleUuid_(event.receipt.customerId))failure_('JOURNAL_INVALID');
     if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(event.actorRole)) failure_('JOURNAL_INVALID');
     command.paymentMethod = event.receipt.paymentMethod; command.customerId = event.receipt.customerId; command.expectedTotalCents = total;
     try { checkoutCommand_(command); } catch (_) { failure_('JOURNAL_INVALID'); }
@@ -111,7 +117,7 @@ function validateSaleEvent_(event, row) {
   }
   if (total !== event.receipt.totalCents || event.commandHash !== digest_(JSON.stringify(command)) ||
       row.ID_Evento !== event.idempotencyKey || row.Chave_Idempotencia !== event.idempotencyKey ||
-      row.Tipo !== event.type || row.Hash_Comando !== event.commandHash || row.Versao_Esquema !== (event.version === 2 ? 2 : 1) ||
+      row.Tipo !== event.type || row.Hash_Comando !== event.commandHash || row.Versao_Esquema !== ([2,3].includes(event.version) ? event.version : 1) ||
       row.Criado_Em !== event.receipt.createdAt || row.Estado_Projecao !== 'PENDENTE') failure_('JOURNAL_INVALID');
 }
 function ensureSaleRow_(table, keyColumns, values, write) {
@@ -160,13 +166,14 @@ function recoverSales_(ss) {
     }
     var sale = { ID_Venda: event.idempotencyKey, Data_Hora: event.receipt.createdAt,
       ID_Atendente: event.actorId, Valor_Total: event.receipt.totalCents,
-      Status: 'CONFIRMADA', Origem: event.version === 2 ? 'CAIXA_DEV' : 'DEV_TEST', Idempotency_Key: event.idempotencyKey };
-    if (event.version === 2) sale.Forma_Pagamento = event.receipt.paymentMethod;
+      Status: 'CONFIRMADA', Origem: [2,3].includes(event.version) ? 'CAIXA_DEV' : 'DEV_TEST', Idempotency_Key: event.idempotencyKey };
+    if ([2,3].includes(event.version)) sale.Forma_Pagamento = event.receipt.paymentMethod;
+    if(event.version===3)sale.ID_Cliente=event.receipt.customerId;
     plans.push({ table: sales, keys: ['ID_Venda'], values: sale });
-    if (event.version === 2) plans.push({ table: audit, keys: ['ID_Log'], values: {
+    if ([2,3].includes(event.version)) plans.push({ table: audit, keys: ['ID_Log'], values: {
       ID_Log: event.idempotencyKey, Data_Hora: event.receipt.createdAt, ID_Usuario: event.actorId, Perfil: event.actorRole,
       Acao: 'SALE_COMMITTED', Entidade: 'Vendas', ID_Entidade: event.idempotencyKey, Antes: '',
-      Depois: JSON.stringify({ totalCents: event.receipt.totalCents, paymentMethod: event.receipt.paymentMethod, customerId: null,
+      Depois: JSON.stringify({ totalCents: event.receipt.totalCents, paymentMethod: event.receipt.paymentMethod, customerId: event.receipt.customerId,
         items: event.receipt.items }), Resultado: 'SUCESSO', ID_Requisicao: event.idempotencyKey } });
     event.lines.forEach(function (line) {
       var product = byId[line.productId];
@@ -183,6 +190,10 @@ function recoverSales_(ss) {
         Motivo: 'VENDA', ID_Venda: event.idempotencyKey, ID_Usuario: event.actorId } });
     });
   });
+  var identified=events.filter(function(e){return e.version===3;}),customers=null,latest={};
+  if(identified.length){recoverCustomers_(ss);customers=customerRows_(ss);identified.forEach(function(e){var id=e.receipt.customerId;if(!latest[id]||latest[id]<e.receipt.createdAt)latest[id]=e.receipt.createdAt;});
+    Object.keys(latest).forEach(function(id){var r=customers.rows.filter(function(r){return r.ID_Cliente===id;})[0];if(!r||r.Ultima_Compra&&r.Ultima_Compra>latest[id])failure_('PROJECTION_CONFLICT');});
+  }
   // Validate ALL projections and stock checkpoints before any mutation.
   plans.forEach(function (plan) { ensureSaleRow_(plan.table, plan.keys, plan.values, false); });
   var missingAudit = plans.filter(function (plan) { return plan.table === audit && !audit.rows.some(function (row) { return row[audit.columns.indexOf('ID_Log')] === plan.values.ID_Log; }); }).length;
@@ -199,6 +210,8 @@ function recoverSales_(ss) {
     products.sheet.getRange(product.rowNumber, 1, 1, row.length).setValues([row]);
     SpreadsheetApp.flush();
   });
+  // Last purchase is derived from authoritative events, including response-loss repair.
+  if(customers)Object.keys(latest).forEach(function(id){var r=customers.rows.filter(function(r){return r.ID_Cliente===id;})[0];if(r.Ultima_Compra!==latest[id]){r.Ultima_Compra=latest[id];accessSaveMain_(customers,r);}});
   synchronizeStockNotifications_(ss);
   return { recoveredSales: events.filter(function (event) { return event.type === 'SALE_COMMITTED'; }).length };
 }

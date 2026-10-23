@@ -32,12 +32,12 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);
-      if (action.startsWith('staff.') || action.startsWith('identity.staffAccess.')) return data; // Validated by staff/access service before disclosure.
+      if (action.startsWith('customers.') || action.startsWith('staff.') || action.startsWith('identity.staffAccess.')) return data; // Validated by staff/access service before disclosure.
       if (action.startsWith('notifications.')) return validateNotificationResponse(action.slice('notifications.'.length), data, payload, request.requestId);
-      if (action === 'sales.checkout') {
+      if (['sales.checkout','sales.receipt'].includes(action)) {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
         if (!data || data.saleId !== payload.idempotencyKey || data.totalCents !== payload.expectedTotalCents ||
-            data.customerId !== null || data.paymentMethod !== payload.paymentMethod || !paymentMethods.includes(data.paymentMethod) ||
+            data.customerId !== payload.customerId || data.paymentMethod !== payload.paymentMethod || !paymentMethods.includes(data.paymentMethod) ||
             typeof data.createdAt !== 'string' || !Number.isFinite(Date.parse(data.createdAt)) ||
             !Array.isArray(data.items) || data.items.length !== payload.items.length) invalid();
         let total = 0;
@@ -49,7 +49,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
           return { productId: line.productId, quantity: line.quantity, unitPriceCents: line.unitPriceCents, subtotalCents: line.subtotalCents };
         });
         if (!Number.isSafeInteger(total) || total !== data.totalCents) invalid();
-        return { saleId: data.saleId, totalCents: data.totalCents, customerId: null, paymentMethod: data.paymentMethod, createdAt: data.createdAt, items };
+        return { saleId: data.saleId, totalCents: data.totalCents, customerId: data.customerId, paymentMethod: data.paymentMethod, createdAt: data.createdAt, items };
       }
       if (action.startsWith('catalog.')) {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
@@ -178,12 +178,14 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
     staff:(operation,actor,payload)=> { if(!['list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
     staffAccess:(operation,payload)=> { if(!['lookup','start'].includes(operation))throw new ApiError(400,'INVALID_AUTH_REQUEST');return invoke('identity.staffAccess.'+operation,null,payload); },
     notifications: (operation, actor, payload) => {
       if (!['summary','list','read','state','report'].includes(operation)) throw new ApiError(400,'INVALID_NOTIFICATION');
       return invoke('notifications.' + operation, actor, payload);
     },
+    checkoutReceipt:(actor,payload)=>invoke('sales.receipt',actor,payload),
     checkout: (actor, payload) => invoke('sales.checkout', actor, payload),
     catalog: (operation, actor, payload) => {
       if (!['list', 'get', 'niches', 'save', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');

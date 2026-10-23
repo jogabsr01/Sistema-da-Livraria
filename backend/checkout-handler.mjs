@@ -9,7 +9,7 @@ import { normalizeCheckout } from './checkout-command.mjs';
 const ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
 export function loadCheckoutSettings(env = process.env) {
   if (env.WORKSPACE_CHECKOUT_ENABLED !== 'true' || env.WORKSPACE_CATALOG_ENABLED !== 'true') throw new ApiError(503, 'CHECKOUT_NOT_ACTIVATED');
-  return loadSessionSettings(env);
+  return {...loadSessionSettings(env),customersEnabled:env.WORKSPACE_CUSTOMERS_ENABLED==='true'};
 }
 export function createCheckoutHandler(dependencies = {}) {
   return async request => {
@@ -40,8 +40,11 @@ export function createCheckoutHandler(dependencies = {}) {
         } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError(400, 'INVALID_SALE'); }
       }
       let input; try { input = JSON.parse(content); } catch { throw new ApiError(400, 'INVALID_SALE'); }
-      const command = normalizeCheckout(input);
-      const data = await client.checkout({ sessionTokenHash: principal.sessionTokenHash }, command);
+      const command = normalizeCheckout(input,{allowIdentified:true});
+      let data;
+      const receiptOnly=command.customerId!==null&&settings.customersEnabled!==true;
+      try { data=await client[receiptOnly?'checkoutReceipt':'checkout']({sessionTokenHash:principal.sessionTokenHash},command); }
+      catch(error){if(receiptOnly&&error.code==='WORKSPACE_CUSTOMER_UNAVAILABLE')throw new ApiError(400,'INVALID_SALE');throw error;}
       return json({ data, requestId });
     } catch (error) { return safeFailure(error, requestId); }
   };

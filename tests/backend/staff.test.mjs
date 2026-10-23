@@ -58,7 +58,9 @@ test('every interrupted staff projection recovers once and invalidates stale ses
   assert.equal((await s.http('save',update)).status,502,stage+after);
   // If failure preceded the durable intent, retry it before testing revocation.
   if(stage==='intent'&&!after)assert.equal((await s.http('save',update)).status,200);
+  s.gas.props.STAFF_ENABLED='false';
   await assert.rejects(s.client.readSession(worker.tokenHash),{code:'UNAUTHENTICATED'});
+  s.gas.props.STAFF_ENABLED='true';
   const retry=await result(await s.http('save',update));assert.equal(retry.status,200);assert.equal(retry.data.revision,2);
   const logs=s.main.getSheetByName('Logs_Auditoria');assert.equal(logs.rows.filter(r=>r[0]===update.commandId).length,1);
  }
