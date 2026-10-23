@@ -14,6 +14,7 @@
     "test:passkeys": "python3 scripts/test-passkeys.py",
     "test:access": "python3 scripts/test-owner-access.py",
     "test:catalog": "python3 scripts/test-catalog.py",
+    "test:checkout": "python3 scripts/test-checkout.py",
     "test:photos": "python3 scripts/test-cover-photos.py",
     "test:diagnostics": "python3 scripts/test-prototype-diagnostics.py",
     "test:isbn": "python3 scripts/test-shared-isbn.py",
