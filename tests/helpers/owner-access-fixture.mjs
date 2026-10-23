@@ -25,8 +25,8 @@ export function ownerFixture() {
     storageProof(tokenHash) {
       const flows = priv.getSheetByName('_Identity_Flows'), cols = flows.rows[0], row = flows.rows.find(row => row[cols.indexOf('Token_Hash')] === tokenHash);
       const subjectId = row[cols.indexOf('Subject_ID')], authorizationVersion = row[cols.indexOf('Authorization_Version')], ceremonyId = randomUUID();
-      const now = new Date().toISOString(), ceremony = priv.getSheetByName('_Passkey_Ceremonies'), credentialId = randomBytes(32).toString('base64url');
-      const c = { ID: ceremonyId, Subject_ID: subjectId, Purpose: 'REGISTER', Challenge: randomBytes(32).toString('base64url'), Created_At: now, Expires_At: new Date(Date.now() + 300000).toISOString(),
+      const nowMs = Date.now(), now = new Date(nowMs).toISOString(), ceremony = priv.getSheetByName('_Passkey_Ceremonies'), credentialId = randomBytes(32).toString('base64url');
+      const c = { ID: ceremonyId, Subject_ID: subjectId, Purpose: 'REGISTER', Challenge: randomBytes(32).toString('base64url'), Created_At: now, Expires_At: new Date(nowMs + 300000).toISOString(),
         Consumed_At: now, Authorization_Version: authorizationVersion, Completed_At: now, Credential_ID: credentialId, Expected_Counter: '' };
       ceremony.appendRow(ceremony.rows[0].map(key => c[key]));
       const key = { Credential_ID: credentialId, Subject_ID: subjectId, Public_Key: randomBytes(77).toString('base64url'), Counter: 0, Transports_JSON: '[]', Created_At: now, Updated_At: now,
