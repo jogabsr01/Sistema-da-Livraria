@@ -14,7 +14,7 @@ O manifest usa Sheets e DriveApp. DriveApp exige escopo amplo de Drive: revisar 
 
 ## 2. Copiar o código e registrar a configuração privada
 
-Copiar `google-apps-script/Code.gs`, `Schema.gs`, `Sales.gs` e o manifest `appsscript.json` para o projeto novo. O schema gerado deve acompanhar o JSON do mesmo commit; gerar com `npm run schema:generate` quando houver migração revisada.
+Copiar `google-apps-script/Code.gs`, `Schema.gs`, `Sales.gs`, `SessionStore.gs` e o manifest `appsscript.json` para o projeto novo. O schema gerado deve acompanhar o JSON do mesmo commit; gerar com `npm run schema:generate` quando houver migração revisada.
 
 Em Apps Script → Configurações do projeto → Propriedades do script, preencher:
 
@@ -80,3 +80,5 @@ O runtime Netlify precisará alcançar `script.google.com` e `script.googleuserc
 ## Diagnóstico assinado sem ativar as funcionalidades
 
 Após atualizar a implantação Apps Script com a operação de diagnóstico e integrar o código correspondente em dev mediante aprovação, seguir [TESTE_CONEXAO_DEV.md](TESTE_CONEXAO_DEV.md). O build da branch dev pode verificar a conexão com `WORKSPACE_VERIFY_CONNECTION=true`, mantendo `WORKSPACE_BACKEND_ENABLED=false`. O teste não substitui identidade/autorização real nem conclui as fases B–E.
+
+A entrega de sessões está em revisão e desativada. Não adicionar flags/chaves de identidade nem criar usuários manualmente: consultar [SESSOES_E_PERMISSOES.md](SESSOES_E_PERMISSOES.md). A conexão de serviço já confirmada não substitui a homologação de login.

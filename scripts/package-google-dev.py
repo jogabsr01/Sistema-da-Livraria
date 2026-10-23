@@ -12,7 +12,8 @@ if output == root or root in output.parents:
     raise SystemExit('Write the installation kit outside the repository/public build.')
 files = [
     'google-apps-script/Code.gs', 'google-apps-script/Schema.gs',
-    'google-apps-script/Sales.gs', 'google-apps-script/appsscript.json',
+    'google-apps-script/Sales.gs', 'google-apps-script/SessionStore.gs',
+    'google-apps-script/appsscript.json',
     'docs/v17/INSTALACAO_GOOGLE.md', 'docs/v17/BACKUP_RECUPERACAO.md',
 ]
 for name in files:

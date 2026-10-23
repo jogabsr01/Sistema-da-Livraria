@@ -1,9 +1,10 @@
 import { ApiError } from './errors.mjs';
 import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
-  async function invoke(action, actor) {
+  async function invoke(action, actor, payload = {}) {
     const request = requestMessage(config, actor);
     request.action = action;
+    request.payload = payload;
     const signal = AbortSignal.timeout(timeoutMs);
     let response;
     try {
@@ -24,6 +25,15 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         if (!data || data.ready !== true || data.environment !== config.environment || data.schemaVersion !== 1) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
         return { ready: true, environment: data.environment, schemaVersion: data.schemaVersion };
       }
+      if (action === 'identity.session.read') {
+        if (!data || typeof data !== 'object') throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        const { id, sessionId, role, assurance, authenticatedAt, expiresAt, authorizationVersion } = data;
+        return { id, sessionId, role, assurance, authenticatedAt, expiresAt, authorizationVersion };
+      }
+      if (action.startsWith('identity.session.')) {
+        if (data?.revoked !== true) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { revoked: true };
+      }
       if (!data || !Number.isSafeInteger(data.schemaVersion) || !Array.isArray(data.tables) || data.tables.some(t => typeof t !== 'string')) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       return { schemaVersion: data.schemaVersion, tables: data.tables };
     } catch (error) {
@@ -31,5 +41,9 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       throw new ApiError(502, signal.aborted ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE');
     }
   }
-  return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null) };
+  return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    readSession: tokenHash => invoke('identity.session.read', null, { tokenHash }),
+    revokeSession: tokenHash => invoke('identity.session.revoke', null, { tokenHash }),
+    revokeOtherSessions: tokenHash => invoke('identity.session.revokeOthers', null, { tokenHash }),
+  };
 }

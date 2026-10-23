@@ -172,8 +172,19 @@ function processRequest_(request, c) {
     if (request.action === 'system.ping' && c.environment === 'dev') {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
+    if (['identity.session.read', 'identity.session.revoke', 'identity.session.revokeOthers'].includes(request.action)) {
+      if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      return identitySessionOperation_(request, c);
+    }
     var actor = request.actor;
-    if (request.action !== 'system.schema' || !actor || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(actor.id || '') || !['ADMIN', 'SUPER_ADMIN'].includes(actor.role) || !['mfa', 'passkey'].includes(actor.assurance) || !Number.isSafeInteger(actor.authenticatedAt) || actor.authenticatedAt > Date.now() + 30000 || Date.now() - actor.authenticatedAt > 300000) failure_('FORBIDDEN');
+    if (request.action !== 'system.schema') failure_('FORBIDDEN');
+    if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+    if (!actor || !/^[a-f0-9]{64}$/.test(actor.sessionTokenHash || '')) failure_('UNAUTHENTICATED');
+    // Re-resolve INSIDE this operation's lock. A prior Node lookup cannot
+    // authorize metadata after a concurrent logout, disable or epoch change.
+    var principal = identitySessionOperation_({ action: 'identity.session.read', payload: { tokenHash: actor.sessionTokenHash } }, c);
+    if (actor.id !== principal.id || actor.role !== principal.role || actor.assurance !== principal.assurance || actor.authenticatedAt !== principal.authenticatedAt ||
+        !['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
   });
 }
@@ -193,7 +204,7 @@ function doPost(event) {
   } catch (_) { return jsonOutput_({ error: { code: 'UNAUTHORIZED' } }); }
   try { return signedResponse_(c, request, true, processRequest_(request, c)); }
   catch (error) {
-    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH'];
+    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE'];
     return signedResponse_(c, request, false, null, allowed.includes(error.message) ? error.message : 'UNAVAILABLE');
   }
 }
