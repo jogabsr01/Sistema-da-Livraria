@@ -26,6 +26,24 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         if (!data || data.ready !== true || data.environment !== config.environment || data.schemaVersion !== 1) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
         return { ready: true, environment: data.environment, schemaVersion: data.schemaVersion };
       }
+      if (action === 'identity.passkey.list') {
+        if (!data || !Array.isArray(data.credentials) || data.credentials.length > 5 || data.credentials.some(key => !key || typeof key.id !== 'string' || key.id.length > 1400 || !Array.isArray(key.transports))) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { credentials: data.credentials.map(key => ({ id: key.id, transports: key.transports })) };
+      }
+      if (action === 'identity.passkey.begin') {
+        if (data?.ceremonyId !== payload.ceremonyId) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { ceremonyId: data.ceremonyId };
+      }
+      if (action === 'identity.passkey.take') {
+        if (!data || typeof data.challenge !== 'string' || data.challenge.length !== 43 || !['REGISTER', 'AUTHENTICATE'].includes(data.purpose)) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        const key = data.credential;
+        if (data.purpose === 'AUTHENTICATE' && (!key || key.id !== payload.credentialId || typeof key.publicKey !== 'string' || key.publicKey.length > 4096 || !Number.isSafeInteger(key.counter) || key.counter < 0 || !Array.isArray(key.transports))) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { challenge: data.challenge, purpose: data.purpose, credential: key ? { id: key.id, publicKey: key.publicKey, counter: key.counter, transports: key.transports } : null };
+      }
+      if (['identity.passkey.register', 'identity.passkey.counter'].includes(action)) {
+        if (data?.stored !== true) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { stored: true };
+      }
       if (action === 'identity.guard.attempt') {
         if (!data || typeof data.allowed !== 'boolean' || !Number.isSafeInteger(data.retryAfterSeconds) ||
             data.retryAfterSeconds < 0 || data.retryAfterSeconds > 3600 || (data.allowed ? data.retryAfterSeconds !== 0 : data.retryAfterSeconds < 1)) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
@@ -57,6 +75,11 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    listPasskeys: payload => invoke('identity.passkey.list', null, payload),
+    beginPasskey: payload => invoke('identity.passkey.begin', null, payload),
+    takePasskey: payload => invoke('identity.passkey.take', null, payload),
+    registerPasskey: payload => invoke('identity.passkey.register', null, payload),
+    advancePasskeyCounter: payload => invoke('identity.passkey.counter', null, payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
     createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),
     consumeAuthChallenge: payload => invoke('identity.challenge.consume', null, payload),

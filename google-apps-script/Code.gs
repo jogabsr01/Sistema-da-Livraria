@@ -1,4 +1,4 @@
-/* Only signed service readiness and authorized schema inspection are remotely callable. No business writes. */
+/* Only signed service/identity controls and authorized schema inspection are remotely callable. No business writes. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
 function secretBytes_(secret) { return secret.match(/../g).map(function (h) { var n = parseInt(h, 16); return n > 127 ? n - 256 : n; }); }
@@ -172,6 +172,10 @@ function processRequest_(request, c) {
     if (request.action === 'system.ping' && c.environment === 'dev') {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
+    if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
+      if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      return passkeyOperation_(request, c);
+    }
     if (['identity.guard.attempt', 'identity.challenge.create', 'identity.challenge.consume'].includes(request.action)) {
       if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return authControlOperation_(request, c);
@@ -208,7 +212,7 @@ function doPost(event) {
   } catch (_) { return jsonOutput_({ error: { code: 'UNAUTHORIZED' } }); }
   try { return signedResponse_(c, request, true, processRequest_(request, c)); }
   catch (error) {
-    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED'];
+    var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED'];
     return signedResponse_(c, request, false, null, allowed.includes(error.message) ? error.message : 'UNAVAILABLE');
   }
 }
