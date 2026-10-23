@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
+<title>Equipe · Livraria IPB</title><link rel="stylesheet" href="/equipe-dev.css"><script src="/equipe-dev.js" defer></script><script src="/notification-badge.js" defer></script>
+</head>
+<body>
+<header class="masthead"><a class="brand" href="/catalogo-dev.html"><span class="brand-mark" aria-hidden="true">L</span><span>Livraria IPB<small>Jardim Bonfiglioli</small></span></a><nav aria-label="Módulos"><a href="/catalogo-dev.html">Catálogo</a><a href="/caixa-dev.html">Caixa</a><a href="/notificacoes-dev.html">Notificações <span data-notification-count></span></a><a href="/acesso-dev.html">Minha conta</a></nav></header>
+<main>
+<div class="eyebrow">ADMINISTRAÇÃO <span>AMBIENTE DEV</span></div>
+<div class="title-row"><div><h1>Uma equipe bem cuidada.</h1><p class="lead">Pessoas, responsabilidades e acesso seguro à livraria.</p></div><button id="new-user" hidden>＋ Cadastrar funcionário</button></div>
+<p id="status" role="status" aria-live="polite">Conferindo seu acesso…</p>
+<section id="access-help" hidden class="notice"><h2>Acesso administrativo</h2><p>Entre com PIN e passkey para gerenciar a equipe. Para operações sensíveis, confirme seu acesso novamente se já passaram cinco minutos.</p><a class="button" href="/acesso-dev.html">Confirmar meu acesso</a></section>
+<section id="team" hidden aria-labelledby="team-title">
+<div class="section-bar"><div><h2 id="team-title">Pessoas da livraria</h2><p id="count"></p></div><button id="refresh" class="secondary">Atualizar lista</button></div>
+<div class="notice compact"><strong>Cada pessoa, seu próprio acesso.</strong> O funcionário confirma o e-mail cadastrado, escolhe seu PIN e registra uma passkey. Alterações de perfil, e-mail, CPF ou status exigem uma nova ativação.</div>
+<div id="people" class="people"></div>
+<div class="pagination"><button id="previous" class="secondary" disabled>Anterior</button><span id="page-label"></span><button id="next" class="secondary" disabled>Próxima</button></div>
+</section>
+</main>
+<dialog id="editor" aria-labelledby="editor-title">
+<form id="staff-form">
+<div class="dialog-head"><div><p class="eyebrow">EQUIPE</p><h2 id="editor-title">Cadastrar funcionário</h2></div><button id="close-editor" type="button" class="icon secondary" aria-label="Fechar cadastro">×</button></div>
+<p id="edit-note">O acesso só será liberado após a confirmação da identidade.</p>
+<fieldset id="staff-fields"><legend class="sr-only">Dados e acesso do funcionário</legend>
+<label for="staff-name">Nome completo</label><input id="staff-name" maxlength="160" autocomplete="name" required>
+<div class="fields"><div><label for="staff-cpf">CPF</label><input id="staff-cpf" inputmode="numeric" maxlength="20" autocomplete="off" required><small id="cpf-hint">Informe os 11 números.</small></div><div><label for="staff-phone">Celular / WhatsApp <small>(opcional)</small></label><input id="staff-phone" type="tel" maxlength="20" autocomplete="tel"></div></div>
+<label for="staff-email">E-mail para confirmar o acesso</label><input id="staff-email" type="email" maxlength="254" autocomplete="email" required>
+<div class="fields"><div><label for="staff-role">Perfil</label><select id="staff-role"><option value="ATENDENTE">Atendente</option><option value="ADMIN">Administrador</option></select></div><div><label for="staff-status">Status</label><select id="staff-status"><option value="ATIVO">Ativo</option><option value="INATIVO">Desativado</option></select></div></div>
+<p id="role-help" class="field-note">Atendentes acessam catálogo, estoque e Caixa. Relatórios e gestão exigem um perfil administrativo.</p>
+<label for="staff-reason">Motivo deste cadastro ou alteração</label><textarea id="staff-reason" maxlength="300" rows="2" required></textarea><small>Registre o motivo de forma objetiva. Não inclua senhas ou informações pessoais adicionais.</small>
+</fieldset>
+<p id="form-status" role="status" aria-live="polite"></p><div class="form-actions"><button id="save-user">Salvar funcionário</button><button id="retry-save" type="button" hidden>Conferir e tentar novamente</button><button id="cancel-editor" type="button" class="secondary">Cancelar</button></div>
+</form></dialog>
+<footer>Livraria IPB Jardim Bonfiglioli · Cuidado com as pessoas, confiança em cada operação.</footer>
+</body></html>
