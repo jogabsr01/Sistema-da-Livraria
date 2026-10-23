@@ -86,3 +86,7 @@ A entrega de sessões está em revisão e desativada. Não adicionar flags/chave
 ## Incremento de equipe (ativação posterior)
 
 Atualizar também `Staff.gs` junto com o lote de scripts existente. Sem nova aba ou escopo. As novas chaves privadas de cifra/índice ficam somente no backend Netlify DEV. As flags `WORKSPACE_STAFF_ENABLED` e `STAFF_ENABLED` permanecem desligadas por padrão. Procedimento, limites e formato cifrado estão em [EQUIPE_DEV.md](EQUIPE_DEV.md). Não editar manualmente `Usuarios.Nome` nem trocar as chaves com dados existentes. Instalação Google real será executada na etapa posterior solicitada pelo proprietário.
+
+## Incremento de clientes (ativação posterior)
+
+Atualizar também `Customers.gs`, preservando o lote completo/IDs/chaves existentes. Flags independentes `WORKSPACE_CUSTOMERS_ENABLED` e `CUSTOMERS_ENABLED`, desligadas por padrão. Sem nova aba ou escopo. Cifra, metadados, limites e contratos estão em [CLIENTES_CAIXA_DEV.md](CLIENTES_CAIXA_DEV.md). Não usar dados reais até homologação; a configuração Google continua reservada à etapa posterior solicitada.
