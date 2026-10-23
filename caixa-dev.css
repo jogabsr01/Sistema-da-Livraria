@@ -1,0 +1,6 @@
+.cart { margin-top:24px; padding:20px; background:white; border:1px solid #d5e1d9; border-radius:14px; }
+.cart-line { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 0; border-bottom:1px solid #d5e1d9; }
+.cart-line p { flex:1 1 180px; margin:0; }
+.cart-line label { margin:0; width:100px; }
+#total { font-size:1.4rem; font-weight:700; }
+#receipt { background:#e6eee8; padding:16px; border-radius:9px; }

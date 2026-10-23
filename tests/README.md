@@ -35,3 +35,7 @@ Após npm run build, executar ZXING_JS=<biblioteca verificada> npm run test:cove
 ### Fotos privadas e ISBN combinados (PR #15 atualizado)
 
 `npm run test:photos` executa seis cenários originais; `npm run test:photo-isbn` acrescenta seis de preservação de fotos durante consultas atrasadas, remoção explícita, arquivo inválido e câmera/pagehide. Um cenário usa o PNG editorial real verificado, com upload/Sharp e persistência Google emulados e descartáveis; não afirma acesso ao Google real. O restante usa fixtures identificadas. A revisão combinada totaliza 160 testes backend e 86 Chromium, mantendo o protótipo do PR #17.
+
+### Caixa compartilhado DEV
+
+Após `npm run build`, `npm run test:checkout` executa a tela anônima com cookies/sessões/WebAuthn, API e Apps Script reais sobre armazenamento Google descartável emulado. Cobre formas de pagamento, recarga após resposta perdida, falha de projeção, preço alterado, conexão indisponível, quota local, escopo por conta, sessão independente e layout móvel. As rotas `/test/*` existem somente no harness, nunca nas Functions. Resultado local não comprova integração Google remota nem hardware/Safari. Pré-requisitos e limites operacionais: [CAIXA_COMPARTILHADO_DEV.md](../docs/v17/CAIXA_COMPARTILHADO_DEV.md).

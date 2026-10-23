@@ -75,7 +75,7 @@ test('unknown or inactive niche, stale version and stock/sale journal conflicts 
   const niches=s.main.getSheetByName('Nichos');niches.rows[1][niches.rows[0].indexOf('Ativo')]=false;
   await assert.rejects(s.client.catalog('save',a.actor,s.command({id:c.id,expectedVersion:1})),{code:'WORKSPACE_CATALOG_INVALID'});niches.rows[1][niches.rows[0].indexOf('Ativo')]=true;
   const journal=s.main.getSheetByName('_Eventos_Dominio'),data={Tipo:'SALE_COMMITTED',Conteudo_JSON:JSON.stringify({lines:[{productId:c.id}]})}; journal.appendRow(journal.rows[0].map(key=>data[key]??''));
-  await assert.rejects(s.client.catalog('save',a.actor,s.command({id:c.id,expectedVersion:1})),{code:'WORKSPACE_CATALOG_STOCK_HISTORY'}); assert.equal(s.journal.getLastRow(),2);
+  await assert.rejects(s.client.catalog('save',a.actor,s.command({id:c.id,expectedVersion:1})),{code:'WORKSPACE_JOURNAL_INVALID'}); assert.equal(s.journal.getLastRow(),2);
 });
 test('persistent session is rechecked inside the Google write lock; revocation, epoch, disabled user and weak admin deny writes',async()=>{
   for(const mode of ['revoked','epoch','disabled','weak']){

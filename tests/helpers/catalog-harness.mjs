@@ -4,11 +4,16 @@ import { ownerFixture } from './owner-access-fixture.mjs';
 import { injectCatalogFault } from './catalog-fixture.mjs';
 import { createCatalogHandler, loadCatalogSettings, loadIsbnLookupSettings } from '../../backend/catalog-handler.mjs';
 import { createIsbnLookupService } from '../../backend/isbn-lookup.mjs';
+import { randomUUID } from 'node:crypto';
+import { normalizeProduct } from '../../backend/catalog-model.mjs';
+import { createCheckoutHandler, loadCheckoutSettings } from '../../backend/checkout-handler.mjs';
 import { isbnProviderFixture } from './isbn-provider-fixtures.mjs';
 const origin='https://dev--merry-chimera-49a1f3.netlify.app', fixture=ownerFixture();
 fixture.env.WORKSPACE_COVER_PHOTOS_ENABLED='true'; fixture.gas.props.COVER_PHOTOS_ENABLED='true';
 fixture.env.WORKSPACE_CATALOG_ENABLED='true'; fixture.gas.props.CATALOG_ENABLED='true'; fixture.gas.call('provisionDevelopmentCatalog');
 fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='true';
+fixture.env.WORKSPACE_CHECKOUT_ENABLED='true'; fixture.gas.props.CHECKOUT_ENABLED='true';
+const checkoutHandler=createCheckoutHandler({loadSettings:()=>loadCheckoutSettings(fixture.env),createClient:()=>fixture.client});
 let lookupMode='normal';const providerCalls=[];
 const makeLookup=()=>createIsbnLookupService({fetchImpl:(...args)=>isbnProviderFixture(lookupMode,providerCalls)(...args)});
 let lookupService=makeLookup();
@@ -22,10 +27,28 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/lookup-mode'){lookupMode=JSON.parse(body).mode;lookupService=makeLookup();res.end('{}');return;}
     if(req.url==='/test/disable-photos'){fixture.env.WORKSPACE_COVER_PHOTOS_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/disable-lookup'){fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='false';res.end('{}');return;}
+    if(req.url==='/test/disable-checkout'){fixture.env.WORKSPACE_CHECKOUT_ENABLED='false';res.end('{}');return;}
+    if(req.url==='/test/seed-checkout'){
+      const table=fixture.main.getSheetByName('Produtos'),niche=fixture.main.getSheetByName('Nichos').rows[1][0],ids=[];
+      for(const [title,price,stock] of [['Livro de teste do Caixa',3290,2],['Livro sem estoque',1500,0]]){
+        const id=randomUUID(),record=normalizeProduct({title,priceCents:price,minimumStock:1,nicheIds:[niche],active:true},id),now=new Date().toISOString();ids.push(id);
+        const map={ISBN:'isbn',Codigo_Interno:'internalCode',Titulo:'title',Autor:'author',Editora:'publisher',Edicao:'edition',Fornecedor:'supplier',Preco_Venda:'priceCents',Estoque_Minimo:'minimumStock',Categoria:'category',Capa_URL_Externa:'coverUrl',Ano_Publicacao:'year',Paginas:'pages',Sinopse:'synopsis',Ativo:'active'};
+        const values={ID_Produto:id,Capa_Drive_ID:'',Estoque_Atual:stock,Versao_Registro:1,Criado_Em:now,Atualizado_Em:now,Criado_Por:randomUUID(),Atualizado_Por:randomUUID()};
+        for(const [key,value] of Object.entries(map))values[key]=record[value];table.appendRow(table.rows[0].map(key=>values[key]??''));
+        fixture.main.getSheetByName('Produto_Nichos').appendRow([id,niche]);
+      }
+      res.end(JSON.stringify({ids}));return;
+    }
+    if(req.url==='/test/checkout-price'){const table=fixture.main.getSheetByName('Produtos');table.rows[1][table.rows[0].indexOf('Preco_Venda')]=4500;res.end('{}');return;}
+    if(req.url==='/test/checkout-fault'){
+      const sheet=fixture.main.getSheetByName('Produtos'),get=sheet.getRange.bind(sheet);let once=true;
+      sheet.getRange=(...args)=>{const range=get(...args),set=range.setValues;range.setValues=values=>{if(!once)return set(values);once=false;throw Error('INJECTED_CHECKOUT_FAILURE');};return range;};res.end('{}');return;
+    }
+    if(req.url==='/test/checkout-state'){const sales=fixture.main.getSheetByName('Vendas'),products=fixture.main.getSheetByName('Produtos');res.end(JSON.stringify({sales:sales.getLastRow()-1,stock:products.rows[1]?.[products.rows[0].indexOf('Estoque_Atual')],journals:fixture.main.getSheetByName('_Eventos_Dominio').getLastRow()-1}));return;}
     if(req.url==='/test/disable'){fixture.env.WORKSPACE_CATALOG_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/state'){res.end(JSON.stringify({files:[...fixture.gas.resources.values()].filter(r=>r.kind==='image').length,providerRequests:providerCalls.length,products:fixture.main.getSheetByName('Produtos').getLastRow()-1,logs:fixture.main.getSheetByName('Logs_Auditoria').getLastRow()-1}));return;}
     const request=new Request(origin+req.url,{method:req.method,headers:req.headers,...(req.method==='GET'?{}:{body})});
-    const response=req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
+    const response=req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
     const headers=Object.fromEntries(response.headers);delete headers['set-cookie'];
     res.end(JSON.stringify({status:response.status,headers,cookies:response.headers.getSetCookie(),...(response.headers.get('content-type')==='image/jpeg'?{bodyBase64:Buffer.from(await response.arrayBuffer()).toString('base64')}:{body:await response.text()})}));
   }catch{res.statusCode=500;res.end(JSON.stringify({error:'TEST_HARNESS_FAILURE'}));}

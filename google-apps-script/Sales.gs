@@ -1,4 +1,4 @@
-/* Internal projection adapter. No HTTP sale endpoint or customer/payment writes.
+/* Recoverable sale projections, including gated anonymous DEV checkout.
  * Caller MUST hold the installation ScriptLock for the entire read/write cycle.
  * The journal remains append-only; deterministic keys and product versions allow
  * replay after interruption between any two projection writes.
@@ -19,6 +19,71 @@ function saleObjects_(table) {
 }
 function saleUuid_(value) { return typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value); }
 function saleInteger_(value) { return Number.isSafeInteger(value) && value >= 0; }
+function checkoutCommand_(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      !same_(Object.keys(input).sort(), ['customerId', 'expectedTotalCents', 'idempotencyKey', 'items', 'paymentMethod']) ||
+      !saleUuid_(input.idempotencyKey) || input.customerId !== null || !saleInteger_(input.expectedTotalCents) ||
+      !['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'].includes(input.paymentMethod) || !Array.isArray(input.items) || !input.items.length || input.items.length > 100) failure_('INVALID_SALE');
+  var quantities = {};
+  input.items.forEach(function (item) {
+    if (!item || typeof item !== 'object' || Array.isArray(item) || !same_(Object.keys(item).sort(), ['productId', 'quantity']) ||
+        !saleUuid_(item.productId) || !Number.isSafeInteger(item.quantity) || item.quantity <= 0) failure_('INVALID_SALE');
+    quantities[item.productId] = (quantities[item.productId] || 0) + item.quantity;
+    if (!Number.isSafeInteger(quantities[item.productId])) failure_('INVALID_SALE');
+  });
+  return { idempotencyKey: input.idempotencyKey, items: Object.keys(quantities).sort().map(function (id) { return { productId: id, quantity: quantities[id] }; }),
+    paymentMethod: input.paymentMethod, customerId: null, expectedTotalCents: input.expectedTotalCents };
+}
+function checkoutOperation_(request, c) {
+  if (c.environment !== 'dev' || !request.actor || !same_(Object.keys(request.actor), ['sessionTokenHash']) || !accessHash_(request.actor.sessionTokenHash)) failure_('UNAUTHENTICATED');
+  // Authorize again under the same ScriptLock as the stock decision.
+  var principal = identitySessionOperation_({ action: 'identity.session.read', payload: { tokenHash: request.actor.sessionTokenHash } }, c);
+  if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(principal.role) || principal.role !== 'ATENDENTE' && !['mfa', 'passkey'].includes(principal.assurance)) failure_('FORBIDDEN');
+  var command = checkoutCommand_(request.payload), hash = digest_(JSON.stringify(command));
+  recoverCatalog_(c);
+  var ss = storage_(c, false).spreadsheet;
+  recoverSales_(ss);
+  var journal = saleTable_(ss, '_Eventos_Dominio'), prior = saleObjects_(journal).filter(function (row) { return row.ID_Evento === command.idempotencyKey; });
+  if (prior.length) {
+    var existing = JSON.parse(prior[0].Conteudo_JSON);
+    if (prior.length !== 1 || existing.version !== 2 || existing.commandHash !== hash || existing.actorId !== principal.id) failure_('IDEMPOTENCY_CONFLICT');
+    return existing.receipt;
+  }
+  if (journal.rows.length >= 2000 || saleTable_(ss, 'Logs_Auditoria').rows.length >= 5000) failure_('JOURNAL_CAPACITY');
+  // Command IDs share the audit namespace with catalog changes. Refuse a
+  // chosen collision before appending an event that could never be projected.
+  if (saleObjects_(saleTable_(ss, 'Logs_Auditoria')).some(function (row) { return row.ID_Log === command.idempotencyKey; }) ||
+      saleObjects_(saleTable_(ss, 'Vendas')).some(function (row) { return row.ID_Venda === command.idempotencyKey; })) failure_('IDEMPOTENCY_CONFLICT');
+  function rejectBusiness(code) {
+    var audit = saleTable_(ss, 'Logs_Auditoria'), log = { ID_Log: request.requestId + ':sale-rejected', Data_Hora: new Date().toISOString(),
+      ID_Usuario: principal.id, Perfil: principal.role, Acao: 'SALE_REJECTED', Entidade: 'Vendas', ID_Entidade: command.idempotencyKey,
+      Antes: '', Depois: JSON.stringify({ code: code, items: command.items }), Resultado: 'NEGADO', ID_Requisicao: request.requestId };
+    ensureSaleRow_(audit, ['ID_Log'], log, true); failure_(code);
+  }
+  var products = catalogProducts_(ss), total = 0;
+  var lines = command.items.map(function (item) {
+    var matches = products.rows.filter(function (p) { return p.ID_Produto === item.productId; }), product = matches[0];
+    if (matches.length !== 1 || product.Ativo !== true) rejectBusiness('PRODUCT_UNAVAILABLE');
+    if (!saleInteger_(product.Preco_Venda) || product.Preco_Venda > 100000000) failure_('INVALID_SALE');
+    if (product.Estoque_Atual < item.quantity) rejectBusiness('INSUFFICIENT_STOCK');
+    var subtotal = product.Preco_Venda * item.quantity; total += subtotal;
+    if (!saleInteger_(subtotal) || !saleInteger_(total) || product.Versao_Registro >= 1000000000) failure_('INVALID_SALE');
+    return { productId: item.productId, quantity: item.quantity, unitPriceCents: product.Preco_Venda, subtotalCents: subtotal,
+      expectedVersion: product.Versao_Registro, stockAfter: product.Estoque_Atual - item.quantity };
+  });
+  if (total !== command.expectedTotalCents) rejectBusiness('SALE_PRICE_CHANGED');
+  var receipt = { saleId: command.idempotencyKey, totalCents: total, createdAt: new Date().toISOString(), customerId: null, paymentMethod: command.paymentMethod,
+    items: lines.map(function (line) { return { productId: line.productId, quantity: line.quantity, unitPriceCents: line.unitPriceCents, subtotalCents: line.subtotalCents }; }) };
+  var event = { version: 2, type: 'SALE_COMMITTED', idempotencyKey: command.idempotencyKey, commandHash: hash, actorId: principal.id, actorRole: principal.role, lines: lines, receipt: receipt };
+  var values = { ID_Evento: event.idempotencyKey, Tipo: event.type, Chave_Idempotencia: event.idempotencyKey, Hash_Comando: hash,
+    Conteudo_JSON: JSON.stringify(event), Estado_Projecao: 'PENDENTE', Criado_Em: receipt.createdAt, Versao_Esquema: 2 };
+  validateSaleEvent_(event, values);
+  // Durable append precedes ALL business projections. Repeating the same key
+  // recovers this event and returns this exact receipt, even after response loss.
+  journal.sheet.appendRow(journal.columns.map(function (key) { return values[key]; })); SpreadsheetApp.flush();
+  recoverSales_(ss);
+  return receipt;
+}
 function validateSaleEvent_(event, row) {
   if (!event || event.type !== 'SALE_COMMITTED' || !saleUuid_(event.idempotencyKey) || !saleUuid_(event.actorId) ||
       !event.receipt || event.receipt.saleId !== event.idempotencyKey || !saleInteger_(event.receipt.totalCents) ||
@@ -36,9 +101,17 @@ function validateSaleEvent_(event, row) {
   var command = { idempotencyKey: event.idempotencyKey, items: event.lines.map(function (line) {
     return { productId: line.productId, quantity: line.quantity };
   }).sort(function (a, b) { return a.productId.localeCompare(b.productId); }) };
+  if (event.version !== undefined && event.version !== 2) failure_('JOURNAL_INVALID');
+  if (event.version === 2) {
+    if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(event.actorRole)) failure_('JOURNAL_INVALID');
+    command.paymentMethod = event.receipt.paymentMethod; command.customerId = event.receipt.customerId; command.expectedTotalCents = total;
+    try { checkoutCommand_(command); } catch (_) { failure_('JOURNAL_INVALID'); }
+    if (!same_(event.receipt.items, event.lines.map(function (line) { return { productId: line.productId, quantity: line.quantity, unitPriceCents: line.unitPriceCents, subtotalCents: line.subtotalCents }; })) ||
+        !same_(event.lines.map(function (line) { return { productId: line.productId, quantity: line.quantity }; }), command.items)) failure_('JOURNAL_INVALID');
+  }
   if (total !== event.receipt.totalCents || event.commandHash !== digest_(JSON.stringify(command)) ||
       row.ID_Evento !== event.idempotencyKey || row.Chave_Idempotencia !== event.idempotencyKey ||
-      row.Tipo !== event.type || row.Hash_Comando !== event.commandHash || row.Versao_Esquema !== 1 ||
+      row.Tipo !== event.type || row.Hash_Comando !== event.commandHash || row.Versao_Esquema !== (event.version === 2 ? 2 : 1) ||
       row.Criado_Em !== event.receipt.createdAt || row.Estado_Projecao !== 'PENDENTE') failure_('JOURNAL_INVALID');
 }
 function ensureSaleRow_(table, keyColumns, values, write) {
@@ -69,13 +142,19 @@ function recoverSales_(ss) {
     if (byId[product.ID_Produto]) failure_('PROJECTION_CONFLICT');
     byId[product.ID_Produto] = product;
   });
-  var sales = saleTable_(ss, 'Vendas'), items = saleTable_(ss, 'Itens_Venda'), movements = saleTable_(ss, 'Movimentacoes_Estoque');
+  var sales = saleTable_(ss, 'Vendas'), items = saleTable_(ss, 'Itens_Venda'), movements = saleTable_(ss, 'Movimentacoes_Estoque'), audit = saleTable_(ss, 'Logs_Auditoria');
   var plans = [], chains = {};
   events.forEach(function (event) {
     var sale = { ID_Venda: event.idempotencyKey, Data_Hora: event.receipt.createdAt,
       ID_Atendente: event.actorId, Valor_Total: event.receipt.totalCents,
-      Status: 'CONFIRMADA', Origem: 'DEV_TEST', Idempotency_Key: event.idempotencyKey };
+      Status: 'CONFIRMADA', Origem: event.version === 2 ? 'CAIXA_DEV' : 'DEV_TEST', Idempotency_Key: event.idempotencyKey };
+    if (event.version === 2) sale.Forma_Pagamento = event.receipt.paymentMethod;
     plans.push({ table: sales, keys: ['ID_Venda'], values: sale });
+    if (event.version === 2) plans.push({ table: audit, keys: ['ID_Log'], values: {
+      ID_Log: event.idempotencyKey, Data_Hora: event.receipt.createdAt, ID_Usuario: event.actorId, Perfil: event.actorRole,
+      Acao: 'SALE_COMMITTED', Entidade: 'Vendas', ID_Entidade: event.idempotencyKey, Antes: '',
+      Depois: JSON.stringify({ totalCents: event.receipt.totalCents, paymentMethod: event.receipt.paymentMethod, customerId: null,
+        items: event.receipt.items }), Resultado: 'SUCESSO', ID_Requisicao: event.idempotencyKey } });
     event.lines.forEach(function (line) {
       var product = byId[line.productId];
       if (!product || !saleInteger_(product.Estoque_Atual) || !saleInteger_(product.Versao_Registro)) failure_('PROJECTION_CONFLICT');
@@ -96,6 +175,8 @@ function recoverSales_(ss) {
   });
   // Validate ALL projections and stock checkpoints before any mutation.
   plans.forEach(function (plan) { ensureSaleRow_(plan.table, plan.keys, plan.values, false); });
+  var missingAudit = plans.filter(function (plan) { return plan.table === audit && !audit.rows.some(function (row) { return row[audit.columns.indexOf('ID_Log')] === plan.values.ID_Log; }); }).length;
+  if (audit.rows.length + missingAudit > 5000) failure_('JOURNAL_CAPACITY');
   Object.keys(chains).forEach(function (id) {
     var product = byId[id];
     if (!chains[id].some(function (point) { return point.version === product.Versao_Registro && point.stock === product.Estoque_Atual; })) failure_('PROJECTION_CONFLICT');

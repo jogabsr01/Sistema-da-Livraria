@@ -214,6 +214,8 @@ function catalogOperation_(request, c) {
   if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(principal.role)) failure_('FORBIDDEN');
   recoverCatalog_(c);
   var p = request.payload, ss = storage_(c, false).spreadsheet;
+  // A failed checkout must finish its durable projections before exposing stock.
+  recoverSales_(ss);
   if (request.action === 'catalog.save') return catalogSave_(c, principal, p);
   if (request.action === 'catalog.niches') {
     authControlExact_(p, []); return { niches: catalogNiches_(ss).rows.map(function (row) { return { id: row.ID_Nicho, name: row.Nome, color: row.Cor_Destaque, order: row.Ordem_Exibicao, active: row.Ativo }; }) };

@@ -11,7 +11,7 @@ import { loadLoginGuardSettings } from './login-guard.mjs';
 const ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
 export function loadCatalogSettings(env = process.env) {
   if (env.WORKSPACE_CATALOG_ENABLED !== 'true') throw new ApiError(503, 'CATALOG_NOT_ACTIVATED');
-  return {...loadSessionSettings(env),lookupEnabled:env.WORKSPACE_ISBN_LOOKUP_ENABLED === 'true',photosEnabled:env.WORKSPACE_COVER_PHOTOS_ENABLED === 'true'}; // DEV-only, full bindings; independently gated.
+  return {...loadSessionSettings(env),lookupEnabled:env.WORKSPACE_ISBN_LOOKUP_ENABLED === 'true',photosEnabled:env.WORKSPACE_COVER_PHOTOS_ENABLED === 'true',checkoutEnabled:env.WORKSPACE_CHECKOUT_ENABLED === 'true'}; // DEV-only, full bindings; independently gated.
 }
 export function loadIsbnLookupSettings(env = process.env) {
   if (env.WORKSPACE_ISBN_LOOKUP_ENABLED !== 'true') throw new ApiError(503,'ISBN_LOOKUP_NOT_ACTIVATED');
@@ -78,7 +78,7 @@ export function createCatalogHandler(dependencies = {}) {
       }
       const data=await client.catalog(operation, actor, payload);
       if (operation === 'cover') return new Response(Buffer.from(data.bytes,'base64'), { status:200,headers:{ 'content-type':'image/jpeg','cache-control':'private, no-store','x-content-type-options':'nosniff','cross-origin-resource-policy':'same-origin','content-security-policy':"default-src 'none'; sandbox",'referrer-policy':'no-referrer' } });
-      return json({ data:operation === 'niches'?{...data,lookupEnabled:settings.lookupEnabled === true,photosEnabled:settings.photosEnabled === true}:data, requestId });
+      return json({ data:operation === 'niches'?{...data,lookupEnabled:settings.lookupEnabled === true,photosEnabled:settings.photosEnabled === true,checkoutEnabled:settings.checkoutEnabled === true}:data, requestId });
     } catch (error) { return safeFailure(error, requestId); }
   };
 }

@@ -2,6 +2,7 @@ import { ApiError } from './errors.mjs';
 import { createHash } from 'node:crypto';
 import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
 import { catalogUuid, normalizeProduct, productFields } from './catalog-model.mjs';
+import { paymentMethods } from './checkout-command.mjs';
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
   async function invoke(action, actor, payload = {}) {
     const request = requestMessage(config, actor);
@@ -24,6 +25,23 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > 180_000) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response');
       const data = verifyResponse(signed, request);
+      if (action === 'sales.checkout') {
+        const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
+        if (!data || data.saleId !== payload.idempotencyKey || data.totalCents !== payload.expectedTotalCents ||
+            data.customerId !== null || data.paymentMethod !== payload.paymentMethod || !paymentMethods.includes(data.paymentMethod) ||
+            typeof data.createdAt !== 'string' || !Number.isFinite(Date.parse(data.createdAt)) ||
+            !Array.isArray(data.items) || data.items.length !== payload.items.length) invalid();
+        let total = 0;
+        const items = data.items.map((line, index) => {
+          if (!line || line.productId !== payload.items[index].productId || line.quantity !== payload.items[index].quantity ||
+              !Number.isSafeInteger(line.unitPriceCents) || line.unitPriceCents < 0 ||
+              !Number.isSafeInteger(line.subtotalCents) || line.subtotalCents !== line.quantity * line.unitPriceCents) invalid();
+          total += line.subtotalCents;
+          return { productId: line.productId, quantity: line.quantity, unitPriceCents: line.unitPriceCents, subtotalCents: line.subtotalCents };
+        });
+        if (!Number.isSafeInteger(total) || total !== data.totalCents) invalid();
+        return { saleId: data.saleId, totalCents: data.totalCents, customerId: null, paymentMethod: data.paymentMethod, createdAt: data.createdAt, items };
+      }
       if (action.startsWith('catalog.')) {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
         function product(value) {
@@ -145,6 +163,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    checkout: (actor, payload) => invoke('sales.checkout', actor, payload),
     catalog: (operation, actor, payload) => {
       if (!['list', 'get', 'niches', 'save', 'cover'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
       return invoke('catalog.' + operation, actor, payload);
