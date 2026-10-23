@@ -1,6 +1,7 @@
 // Public bibliographic data only. Fixed provider URLs; no caller URLs, cookies,
 // Google installation credentials, customer data or redirects are forwarded.
 import { ApiError } from './errors.mjs';
+import editorialAssets from '../data/editorial-covers.json' with {type:'json'};
 import { normalizedIsbn, normalizedCover } from './catalog-model.mjs';
 // ISBN/edition confirmed on the publisher page on 2026-10-23. A curated
 // candidate, never attributed to an API and never presumed to load successfully.
@@ -92,6 +93,7 @@ export function createIsbnLookupService({fetchImpl=(...args)=>globalThis.fetch(.
         for(const field of FIELDS)if(!record[field]&&book.record[field]){record[field]=book.record[field];fieldSources[field]=source.name;}
         for(const raw of book.covers){const url=coverUrl(raw);if(url&&!covers.some(item=>item.url===url)&&covers.length<8)covers.push({url,source:source.name});}
       }
+      const local=editorialAssets.find(entry=>entry.isbn===isbn);if(local)covers.unshift({url:'https://dev--merry-chimera-49a1f3.netlify.app'+local.path,source:local.source+' — cópia local',referenceUrl:local.referenceUrl,cachedAsset:true});
       const editorial=EDITORIAL_COVERS[isbn];if(editorial&&!covers.some(item=>item.url===editorial.url))covers.push({...editorial});
       const fallback=`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
       if(!covers.some(item=>item.url===fallback))covers.push({url:fallback,source:'Open Library Covers (ISBN)'});

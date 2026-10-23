@@ -61,3 +61,7 @@ Testes novos cobrem fontes/edições, normalização, HTTP 429, payload inválid
 Nas suítes automatizadas, APIs bibliográficas, Google/MailApp e imagens externas são **fixtures explícitas**; metadados gerados não são atribuídos a livros reais. A entrega tardia usa o handler real e retém apenas a entrega da resposta na fixture do navegador. Captura local `/workspace/qa-v17-owner-access/isbn-compartilhado-formulario.png` mostra uma imagem gerada, não a capa editorial real. A persistência no formulário é validada em armazenamento Google descartável/emulado, sem dados reais de cliente/venda.
 
 Comandos: npm test; npm run build; npm run test:isbn; npm run test:catalog; npm run test:diagnostics; npm run test:access; npm run test:passkeys; ZXING_JS=<arquivo verificado> npm run test:browser.
+
+## Atualização desta rodada: cópia editorial local e teste aprofundado
+
+[QA_CAPAS_HARDENING.md](QA_CAPAS_HARDENING.md) registra a correção do bloqueio de carregamento da capa conhecida por meio de uma cópia editorial verificada no build. As medições/tabela anteriores documentam as tentativas remotas originais. A capa de 9788543303932 agora carrega efetivamente pela mesma origem; o ISBN 9786589806691 continua sem capa automática e usa a alternativa manual. O PR #17 também inclui câmera/galeria no protótipo e correção de confirmação indevida com localStorage cheio.

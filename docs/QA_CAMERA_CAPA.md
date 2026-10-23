@@ -50,3 +50,7 @@ Capturas da câmera virtual (o padrão verde é o vídeo de teste do Chromium, n
 - [Foto capturada e aplicada à capa](evidencias-camera/foto-capturada.png).
 
 Esta mudança deve seguir por PR para `dev`, sem merge automático ou alteração de `main`/produção.
+
+## Integração nesta rodada
+
+O componente deste PR #4 foi incorporado ao PR #17 sob a autorização de testar capas com maior rigor e publicar em dev. Regressão e associação da capa editorial estão em [QA_CAPAS_HARDENING.md](v17/QA_CAPAS_HARDENING.md). As medições e 34 cenários acima são a evidência original do componente; os testes combinados foram repetidos nesta rodada.

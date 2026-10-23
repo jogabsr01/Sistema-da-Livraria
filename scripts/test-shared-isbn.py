@@ -44,7 +44,7 @@ class SharedIsbn(qa.Catalog):
         self.page.get_by_role('button',name='Detalhes e edição').click();expect(self.page.locator('#cover')).to_have_value('https://books.google.com/fixture-cover.png');self.assertEqual(self.errors,[])
     def test_isbn_verified_editorial_candidate_loads_and_keeps_its_source_label(self):
         self.cover_mode='editorial';self.prepare('broken');self.page.locator('#isbn').fill('9788543303932');self.lookup();expect(self.page.locator('#isbn-status')).to_contain_text('Capa carregada: Referência editorial (Mundo Cristão)')
-        self.assertTrue(self.page.locator('#cover-preview img').evaluate('(img)=>img.complete&&img.naturalWidth>0'));self.assertEqual(self.errors,[])
+        self.assertTrue(self.page.locator('#cover-preview img').evaluate('(img)=>img.complete&&img.naturalWidth===660&&img.naturalHeight===1008'));self.assertIn('/covers/9788543303932-',self.page.locator('#cover').input_value());self.assertEqual(self.errors,[])
     def test_isbn_existing_book_title_and_cover_are_preserved(self):
         self.prepare();self.page.locator('#title').fill('Título conferido pelo operador');self.page.locator('#author').fill('Autor conferido');self.page.locator('#price').fill('39,90');self.page.locator('#cover').fill('https://books.google.com/fixture-cover.png');self.page.locator('#cover').dispatch_event('change');self.save()
         self.page.get_by_role('button',name='Detalhes e edição').click();self.lookup();expect(self.page.locator('#isbn-status')).to_contain_text('A capa existente foi preservada')

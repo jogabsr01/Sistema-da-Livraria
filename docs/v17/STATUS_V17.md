@@ -26,3 +26,5 @@ Controles do próximo incremento: [CONTROLES_PRIMEIRO_ACESSO.md](CONTROLES_PRIME
 Passkeys: [PASSKEYS.md](PASSKEYS.md). Primeiro acesso/login e lote de configuração privada: [PRIMEIRO_ACESSO_OWNER.md](PRIMEIRO_ACESSO_OWNER.md). Catálogo compartilhado integrado: [CATALOGO_COMPARTILHADO_DEV.md](CATALOGO_COMPARTILHADO_DEV.md). A conta master Google real ainda não foi criada/ativada. Acesso externo ao site DEV recebeu HTTP 401 na conferência anterior; não confundir merge GitHub com homologação do deploy real.
 
 Consulta ISBN e limitações reais das fontes/capas: [ISBN_COMPARTILHADO_DEV.md](ISBN_COMPARTILHADO_DEV.md). O incremento seguinte está em revisão, com flag fechada. As consultas públicas desta entrega não ativam o Google privado nem comprovam a publicação do branch deploy.
+
+Rodada autorizada de aprofundamento/publicação do PR #17: [QA_CAPAS_HARDENING.md](QA_CAPAS_HARDENING.md). Cópia editorial real verificada, câmera/galeria do protótipo (código do PR #4) e salvamento demonstrativo com quota cheia corrigido. A autorização de publicar #17 substitui a pendência de aprovação descrita acima para esse PR; não autoriza main/produção nem a ativação Google.

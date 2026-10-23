@@ -11,6 +11,7 @@
 <!-- Tailwind para utilitários. Os estilos essenciais também estão inline, para
        preservar o visual se o CDN falhar depois do primeiro carregamento. -->
 
+  <script defer src="/cover-references.js"></script>
   <script id="demo-diagnostics">
   (function(){
     const records=[];
@@ -548,7 +549,11 @@ const DemoRPC = (function () {
     p.descricao=String(p.descricao||'').trim();
     p.fonteBibliografica=String(p.fonteBibliografica||'').trim();
   });
-  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db));}catch(_){}};
+  let lastStoredJSON=JSON.stringify(db);
+  const save=()=>{
+    try{const serialized=JSON.stringify(db);localStorage.setItem(KEY,serialized);lastStoredJSON=serialized;}
+    catch(_){db=JSON.parse(lastStoredJSON);const error=Error('Não foi possível salvar: o armazenamento deste navegador está indisponível ou cheio. Mantenha o formulário aberto e tente novamente.');error.code='DEMO_STORAGE_FAILED';throw error;}
+  };
   const clone=value=>JSON.parse(JSON.stringify(value));
   const dayKey = date => {
     const parts=new Intl.DateTimeFormat('en-US',{
@@ -1074,6 +1079,11 @@ const Bibliografia={
     return false;
   },
   async buscarCapa(fontes,isbn){
+    const cached=window.LivrariaCoverReferences?.[isbn];
+    if(cached && /^\/covers\/97[89]\d{10}-[a-f0-9]{16}\.png$/.test(cached.path) && location.protocol==='https:'){
+      const local=location.origin+cached.path;
+      if(await testarImagem(local,2000))return {url:local,fonte:cached.source+' — cópia local'};
+    }
     const candidatos=[
       ...fontes.filter(Boolean).flatMap(source=>
         [source.capaUrl,...(source.capas||[])].map(url=>({url:coverHTTPS(url),fonte:source.fonte}))),
@@ -1287,6 +1297,28 @@ const UI = {
   },
   useDemoBookExample(){
     this.lookupNewBook(Bibliografia.exampleISBN);
+  },
+  async findCoverForForm(button){
+    if(state.busy)return;this.closeCoverCamera();
+    const form=button.closest('form'),preview=form?.querySelector('#stockCoverPreview,#editCoverPreview');
+    if(!form||!preview)return;
+    const isbn=isoCode(form.elements.isbn?.value||'');
+    if(!Bibliografia.isbnValido(isbn)){toast('Este livro não possui ISBN válido. Use a câmera ou a galeria.','warn');return;}
+    if(form.elements.capaLocal?.value||form.elements.capaUrl?.value.trim()){toast('A capa existente foi preservada. Para buscar outra, limpe o link primeiro.','warn');return;}
+    const token=Symbol();preview.coverToken=token;button.disabled=true;
+    try{
+      let selected=null;const local=window.LivrariaCoverReferences?.[isbn];
+      if(local&&/^\/covers\/97[89]\d{10}-[a-f0-9]{16}\.png$/.test(local.path)&&location.protocol==='https:'){
+        const url=location.origin+local.path;if(await testarImagem(url,2000))selected={url,source:local.source+' — cópia local'};
+      }
+      if(!selected){const result=await Bibliografia.consultar(isbn);if(result.dados?.capaUrl)selected={url:result.dados.capaUrl,source:result.dados.capaFonte};}
+      if(!form.isConnected||preview.coverToken!==token||form.elements.capaLocal?.value||form.elements.capaUrl?.value.trim())return;
+      if(!selected){toast('Nenhuma capa carregou para este ISBN. Use Tirar foto da capa ou Escolher da galeria.','warn');return;}
+      form.elements.capaUrl.value=selected.url;if(form.elements.capaFonte)form.elements.capaFonte.value=selected.source;
+      preview.innerHTML=bookCover({capaUrl:selected.url,titulo:form.elements.titulo?.value||'Livro'},'cover-large');
+      toast('Capa encontrada. Confira a prévia e salve para confirmar.');
+    }catch(_){if(form.isConnected)toast('Não foi possível buscar a capa. Seus campos foram preservados; use câmera ou galeria.','warn');}
+    finally{if(button.isConnected)button.disabled=false;}
   },
   coverCameraSession:0,
   coverCameraStream:null,
@@ -2182,6 +2214,7 @@ const View = {
   },
   coverUpload(){
     return `<div class="cover-upload">
+      <button type="button" class="btn btn-outline" onclick="UI.findCoverForForm(this)">🔎 Buscar capa pelo ISBN</button>
       <button type="button" class="btn btn-outline" onclick="UI.openCoverCamera(this)">📷 Tirar foto da capa</button>
       <input data-cover-camera type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onchange="UI.coverFileChanged(event)">
       <button type="button" class="btn btn-outline" onclick="this.parentElement.querySelector('[data-cover-gallery]').click()">🖼️ Escolher da galeria</button>
@@ -2447,6 +2480,7 @@ const View = {
 };
 
 /* ====================== EVENTOS E INICIALIZAÇÃO ======================== */
+window.addEventListener('pagehide',()=>{UI.closeCoverCamera();stopDemoCamera();});
 window.addEventListener('online',()=>{onlineStatus();if(state.pin)Sync.run();});
 window.addEventListener('offline',onlineStatus);
 window.addEventListener('storage',ev=>{

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+from urllib.parse import urlsplit
 from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright, expect
 
@@ -55,6 +56,10 @@ class V16(unittest.TestCase):
     def route(self, route):
         url = route.request.url
         if route.request.resource_type == 'document': route.fulfill(status=200,content_type='text/html',body=self.source)
+        elif (urlsplit(url).path == '/cover-references.js' or urlsplit(url).path.startswith('/covers/')) and urlsplit(url).hostname in [urlsplit(DEV).hostname,urlsplit(PROD).hostname]:
+            asset=(ROOT/'dist'/urlsplit(url).path.lstrip('/')).resolve()
+            if asset.is_relative_to((ROOT/'dist').resolve()) and asset.is_file():route.fulfill(status=200,content_type='application/javascript' if asset.suffix=='.js' else 'image/png',body=asset.read_bytes())
+            else:route.fulfill(status=404,body='')
         elif 'cdn.jsdelivr.net/npm/@zxing/' in url: route.fulfill(status=200,content_type='application/javascript',body=self.library)
         else: route.fulfill(status=404,content_type='application/json',body='{}')
     def login(self,pin='1357'):
@@ -232,10 +237,12 @@ class V16(unittest.TestCase):
         url='https://www.mundocristao.com.br/wp-content/uploads/2021/12/Examinando-as-escrituras.png'
         self.page.route(url,lambda r:r.fulfill(status=200,content_type='image/png',body=png()))
         result=self.lookup('9788543303932')
-        self.assertEqual(result['dados']['capaUrl'],url)
-        self.assertEqual(result['dados']['capaFonte'],'Referência editorial verificada — Mundo Cristão')
+        self.assertIn('/covers/9788543303932-',result['dados']['capaUrl'])
+        self.assertIn('Mundo Cristão',result['dados']['capaFonte'])
+        self.assertIn('cópia local',result['dados']['capaFonte'])
         self.assertEqual(result['dados']['titulo'],'Examinando as escrituras')
     def test_unavailable_editorial_cover_is_not_reported_as_valid(self):
+        self.page.route('**/covers/**',lambda route:route.fulfill(status=404,body=''))
         self.mock_books('none')
         result=self.lookup('9788543303932')
         self.assertEqual(result['dados']['capaUrl'],'')
@@ -349,7 +356,7 @@ class V16(unittest.TestCase):
             expect(self.page.locator('#stockTitle')).to_have_value('Título digitado preservado')
             self.assertIsNone(self.page.evaluate('UI.coverCameraStream'))
     def test_cover_camera_close_replacement_and_logout_stop_tracks(self):
-        for action in ['UI.closeCoverCamera()','View.closeModal()','UI.registerWithoutBarcode()','LoginUI.logout()']:
+        for action in ['UI.closeCoverCamera()','View.closeModal()','UI.registerWithoutBarcode()',"window.dispatchEvent(new Event('pagehide'))",'LoginUI.logout()']:
             with self.subTest(action=action):
                 self.page.evaluate('UI.registerWithoutBarcode()')
                 self.page.get_by_role('button',name='📷 Tirar foto da capa',exact=True).click()

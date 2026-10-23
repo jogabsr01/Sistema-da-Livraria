@@ -128,7 +128,9 @@
       let found = null, preserveCover = before.cover.trim() || editing?.hasPhoto;
       if (!preserveCover && $('cover').value === before.cover) {
         $('isbn-status').textContent = 'Verificando se as imagens de capa carregam…';
-        const candidates = await Promise.all(data.covers.map(testCover)); if (!current()) return; found = candidates.find(Boolean);
+        const local = data.covers.filter(item => item.cachedAsset === true && new URL(item.url).origin === location.origin);
+        const cached = await Promise.all(local.map(testCover)); if (!current()) return; found = cached.find(Boolean);
+        if (!found) { const candidates = await Promise.all(data.covers.filter(item => !local.includes(item)).map(testCover)); if (!current()) return; found = candidates.find(Boolean); }
         if ($('cover').value !== before.cover) { preserveCover = true; found = null; }
         else if (found) { $('cover').value = found.url; found.image.alt = 'Capa do livro'; $('cover-preview').replaceChildren(found.image); }
       }
