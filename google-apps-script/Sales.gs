@@ -199,6 +199,7 @@ function recoverSales_(ss) {
     products.sheet.getRange(product.rowNumber, 1, 1, row.length).setValues([row]);
     SpreadsheetApp.flush();
   });
+  synchronizeStockNotifications_(ss);
   return { recoveredSales: events.filter(function (event) { return event.type === 'SALE_COMMITTED'; }).length };
 }
 // Owner-only editor action; no public endpoint, no supplied actor impersonation.

@@ -209,7 +209,7 @@ function catalogSave_(c, principal, p) {
   var intent = { Command_ID: p.commandId, Actor_ID: principal.id, Actor_Role: principal.role, Product_ID: p.id, Expected_Version: p.expectedVersion, Command_Hash: hash,
     Before_JSON: JSON.stringify(before), After_JSON: JSON.stringify(after), Created_At: now, State: 'PENDING', Completed_At: '' };
   intent.Record_Hash = catalogJournalHash_(intent); accessSaveMain_(journal, intent);
-  recoverCatalog_(c); return { id: p.id, version: p.expectedVersion + 1 };
+  recoverCatalog_(c); synchronizeStockNotifications_(ss); return { id: p.id, version: p.expectedVersion + 1 };
 }
 function catalogOperation_(request, c) {
   if (c.environment !== 'dev' || !request.actor || !accessHash_(request.actor.sessionTokenHash) || Object.keys(request.actor).length !== 1) failure_('UNAUTHENTICATED');

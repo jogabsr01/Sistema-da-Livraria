@@ -7,8 +7,8 @@ export function pack(value, secret, direction) {
   const message = Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
   return { message, signature: signature(message, secret, direction) };
 }
-export function unpack(envelope, secret, direction) {
-  if (!envelope || typeof envelope.message !== 'string' || envelope.message.length > 180_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(envelope.message) || typeof envelope.signature !== 'string' || !/^[a-f0-9]{64}$/i.test(envelope.signature)) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+export function unpack(envelope, secret, direction, maxMessageLength = 180_000) {
+  if (!envelope || typeof envelope.message !== 'string' || envelope.message.length > maxMessageLength || !/^[A-Za-z0-9+/]+={0,2}$/.test(envelope.message) || typeof envelope.signature !== 'string' || !/^[a-f0-9]{64}$/i.test(envelope.signature)) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
   const expected = Buffer.from(signature(envelope.message, secret, direction), 'hex');
   if (!timingSafeEqual(expected, Buffer.from(envelope.signature, 'hex'))) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
   try { return JSON.parse(Buffer.from(envelope.message, 'base64').toString('utf8')); }
@@ -27,6 +27,7 @@ export function verifyResponse(value, request, now = Date.now()) {
     Object.assign(allowed, { CATALOG_UNAVAILABLE: 503, CATALOG_INVALID: 400, CATALOG_CONFLICT: 409, CATALOG_DUPLICATE: 409, CATALOG_NOT_FOUND: 404, CATALOG_STOCK_HISTORY: 409, COVER_PHOTOS_UNAVAILABLE:503,COVER_PHOTO_INVALID:400 });
     Object.assign(allowed, { CHECKOUT_UNAVAILABLE: 503, INVALID_SALE: 400, IDEMPOTENCY_CONFLICT: 409, INSUFFICIENT_STOCK: 409, PRODUCT_UNAVAILABLE: 409, SALE_PRICE_CHANGED: 409, JOURNAL_CAPACITY: 503, JOURNAL_INVALID: 503, PROJECTION_CONFLICT: 503 });
     Object.assign(allowed, { INVALID_STOCK_RECEIPT: 400, STOCK_LIMIT: 409 });
+    Object.assign(allowed, { NOTIFICATIONS_UNAVAILABLE: 503, INVALID_NOTIFICATION: 400, NOTIFICATION_NOT_FOUND: 404, NOTIFICATION_CONFLICT: 409, NOTIFICATION_CAPACITY: 503 });
     const code = value.error?.code;
     throw new ApiError(allowed[code] || 502, code === 'UNAUTHENTICATED' ? 'UNAUTHENTICATED' : Object.hasOwn(allowed, code) ? `WORKSPACE_${code}` : 'UPSTREAM_UNAVAILABLE');
   }
