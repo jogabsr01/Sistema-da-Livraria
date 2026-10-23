@@ -55,3 +55,7 @@ Após build, `npm run test:notifications` executa sete cenários de alertas/leit
 ### Clientes e Caixa identificado
 
 `npm run test:customers` cobre seis cenários browser com Google emulado; `tests/backend/customers.test.mjs` cobre recuperação, concorrência, cifra, consentimento e pagamentos. CEP/endereço são manuais; não há envio para provedor externo. Ver `docs/v17/QA_CLIENTES_CAIXA.md`.
+
+### Operações e CEP
+
+`npm run test:operations` cobre seis cenários browser financeiros, somente com emulação. `test:customers` agora cobre oito, incluindo consulta de CEP por clique e fallback manual. Backend: `operations.test.mjs` / `postal-code.test.mjs`, falhas, concorrência e isolamento de dados. Ver `docs/v17/QA_OPERACOES_CEP.md`.

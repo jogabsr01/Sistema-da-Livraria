@@ -182,6 +182,11 @@ function processRequest_(request, c) {
       if(c.environment!=='dev'||['CUSTOMERS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return customerProps.getProperty(key)!=='true';})) failure_('CUSTOMERS_UNAVAILABLE');
       return customerOperation_(request,c);
     }
+    if(typeof request.action==='string'&&request.action.indexOf('operations.')===0){
+      var operationProps=PropertiesService.getScriptProperties();
+      if(c.environment!=='dev'||['OPERATIONS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return operationProps.getProperty(key)!=='true';}))failure_('OPERATIONS_UNAVAILABLE');
+      return operationsOperation_(request,c);
+    }
     if (['sales.checkout','sales.receipt'].includes(request.action)) {
       var checkoutProps = PropertiesService.getScriptProperties();
       if (c.environment !== 'dev' || ['CHECKOUT_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return checkoutProps.getProperty(key) !== 'true'; })) failure_('CHECKOUT_UNAVAILABLE');
@@ -246,6 +251,7 @@ function doPost(event) {
     allowed = allowed.concat(['CHECKOUT_UNAVAILABLE', 'INVALID_SALE', 'IDEMPOTENCY_CONFLICT', 'INSUFFICIENT_STOCK', 'PRODUCT_UNAVAILABLE', 'SALE_PRICE_CHANGED', 'JOURNAL_CAPACITY', 'JOURNAL_INVALID', 'PROJECTION_CONFLICT']);
     allowed = allowed.concat(['STAFF_UNAVAILABLE','INVALID_STAFF','STAFF_CONFLICT','STAFF_DUPLICATE','STAFF_CAPACITY']);
     allowed = allowed.concat(['CUSTOMERS_UNAVAILABLE','INVALID_CUSTOMER','CUSTOMER_CONFLICT','CUSTOMER_DUPLICATE','CUSTOMER_CAPACITY','CUSTOMER_UNAVAILABLE']);
+    allowed = allowed.concat(['OPERATIONS_UNAVAILABLE','INVALID_OPERATION','SALE_NOT_FOUND','OPERATION_CONFLICT','STOCK_NO_CHANGE']);
     allowed = allowed.concat(['INVALID_STOCK_RECEIPT', 'STOCK_LIMIT']);
     allowed = allowed.concat(['NOTIFICATIONS_UNAVAILABLE', 'INVALID_NOTIFICATION', 'NOTIFICATION_NOT_FOUND', 'NOTIFICATION_CONFLICT', 'NOTIFICATION_CAPACITY']);
     return signedResponse_(c, request, false, null, allowed.includes(error.message) ? error.message : 'UNAVAILABLE');

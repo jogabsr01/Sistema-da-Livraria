@@ -78,3 +78,13 @@
     X-Frame-Options = "DENY"
     Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
     Permissions-Policy = "camera=(), microphone=()"
+
+[[headers]]
+  for = "/operacoes-dev.html"
+  [headers.values]
+    Cache-Control = "no-store"
+    Referrer-Policy = "no-referrer"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    Permissions-Policy = "camera=(), microphone=()"

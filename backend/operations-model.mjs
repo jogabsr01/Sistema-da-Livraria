@@ -1,0 +1,18 @@
+import { ApiError } from './errors.mjs';
+import { catalogUuid } from './catalog-model.mjs';
+const invalid=()=>{throw new ApiError(400,'INVALID_OPERATION');};
+export function normalizeOperation(operation,p){
+ const keys=operation==='adjust'?['commandId','expectedVersion','id','newStock','reason']:['commandId','reason','saleId'];
+ if(!p||typeof p!=='object'||Array.isArray(p)||Object.keys(p).sort().join()!==keys.sort().join()||!catalogUuid(p.commandId)||!catalogUuid(operation==='adjust'?p.id:p.saleId)||typeof p.reason!=='string')invalid();
+ const reason=p.reason.normalize('NFC').trim();if(!reason||reason.length>300||/[\x00-\x1f\x7f]/.test(reason)||/^[=+@-]/.test(reason))invalid();
+ if(operation==='adjust'){if(!Number.isSafeInteger(p.expectedVersion)||p.expectedVersion<1||p.expectedVersion>=1000000000||!Number.isSafeInteger(p.newStock)||p.newStock<0||p.newStock>1000000)invalid();return {commandId:p.commandId,id:p.id,expectedVersion:p.expectedVersion,newStock:p.newStock,reason};}
+ if(operation!=='reverse')invalid();return {commandId:p.commandId,saleId:p.saleId,reason};
+}
+export function validateOperationData(operation,data,payload){
+ const fail=()=>{throw new ApiError(502,'UPSTREAM_UNTRUSTED');},date=s=>typeof s==='string'&&Number.isFinite(Date.parse(s));
+ if(operation==='adjust'){if(!data||data.commandId!==payload.commandId||data.id!==payload.id||data.version!==payload.expectedVersion+1||data.stockAfter!==payload.newStock||!Number.isSafeInteger(data.stockBefore)||data.stockBefore<0||data.stockBefore>1000000||!date(data.createdAt))fail();return Object.fromEntries(['commandId','id','version','stockBefore','stockAfter','createdAt'].map(k=>[k,data[k]]));}
+ if(operation==='reverse'){if(!data||data.commandId!==payload.commandId||data.saleId!==payload.saleId||data.state!=='CANCELADA'||!Number.isSafeInteger(data.totalCents)||data.totalCents<0||!['PIX','DINHEIRO','DEBITO','CREDITO'].includes(data.paymentMethod)||!date(data.createdAt))fail();return Object.fromEntries(['commandId','saleId','state','totalCents','paymentMethod','createdAt'].map(k=>[k,data[k]]));}
+ function sale(s,detail=false){if(!s||!catalogUuid(s.saleId)||!catalogUuid(s.actorId)||s.customerId!==null&&!catalogUuid(s.customerId)||!date(s.createdAt)||!Number.isSafeInteger(s.totalCents)||s.totalCents<0||!['PIX','DINHEIRO','DEBITO','CREDITO'].includes(s.paymentMethod)||!['CONFIRMADA','CANCELADA'].includes(s.state)||!Array.isArray(s.items)||detail&&!s.items.length||!detail&&s.items.length!==0||s.items.length>100)fail();let total=0;const ids=new Set(),items=s.items.map(i=>{if(!i||!catalogUuid(i.productId)||ids.has(i.productId)||!Number.isSafeInteger(i.quantity)||i.quantity<1||!Number.isSafeInteger(i.unitPriceCents)||i.unitPriceCents<0||!Number.isSafeInteger(i.subtotalCents)||i.subtotalCents!==i.quantity*i.unitPriceCents||typeof i.title!=='string'||i.title.length>300)fail();ids.add(i.productId);total+=i.subtotalCents;return Object.fromEntries(['productId','title','quantity','unitPriceCents','subtotalCents'].map(k=>[k,i[k]]));});if(detail&&total!==s.totalCents)fail();return {...Object.fromEntries(['saleId','actorId','customerId','createdAt','totalCents','paymentMethod','state'].map(k=>[k,s[k]])),items};}
+ if(operation==='get'){const value=sale(data?.sale,true);if(value.saleId!==payload.id)fail();return {sale:value};}
+ if(operation==='list'){if(!data||!Array.isArray(data.sales)||data.sales.length>20||!Number.isSafeInteger(data.total)||data.total<0||data.total>2000||data.nextOffset!==null&&(data.nextOffset!==payload.offset+data.sales.length||data.nextOffset>=data.total))fail();return {sales:data.sales.map(s=>sale(s)),total:data.total,nextOffset:data.nextOffset};}fail();
+}

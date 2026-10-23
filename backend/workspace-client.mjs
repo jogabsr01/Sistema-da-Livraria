@@ -1,3 +1,4 @@
+import { validateOperationData } from './operations-model.mjs';
 import { ApiError } from './errors.mjs';
 import { createHash } from 'node:crypto';
 import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
@@ -33,6 +34,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);
       if (action.startsWith('customers.') || action.startsWith('staff.') || action.startsWith('identity.staffAccess.')) return data; // Validated by staff/access service before disclosure.
+      if(action.startsWith('operations.'))return validateOperationData(action.slice('operations.'.length),data,payload);
       if (action.startsWith('notifications.')) return validateNotificationResponse(action.slice('notifications.'.length), data, payload, request.requestId);
       if (['sales.checkout','sales.receipt'].includes(action)) {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
@@ -45,11 +47,12 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
           if (!line || line.productId !== payload.items[index].productId || line.quantity !== payload.items[index].quantity ||
               !Number.isSafeInteger(line.unitPriceCents) || line.unitPriceCents < 0 ||
               !Number.isSafeInteger(line.subtotalCents) || line.subtotalCents !== line.quantity * line.unitPriceCents) invalid();
+          if(line.title!==undefined&&(typeof line.title!=='string'||!line.title||line.title.length>300||/[\x00-\x1f\x7f]/.test(line.title)))invalid();
           total += line.subtotalCents;
-          return { productId: line.productId, quantity: line.quantity, unitPriceCents: line.unitPriceCents, subtotalCents: line.subtotalCents };
+          return { productId: line.productId, quantity: line.quantity, unitPriceCents: line.unitPriceCents, subtotalCents: line.subtotalCents,...(line.title!==undefined?{title:line.title}:{}) };
         });
-        if (!Number.isSafeInteger(total) || total !== data.totalCents) invalid();
-        return { saleId: data.saleId, totalCents: data.totalCents, customerId: data.customerId, paymentMethod: data.paymentMethod, createdAt: data.createdAt, items };
+        if (!Number.isSafeInteger(total) || total !== data.totalCents || data.state!==undefined&&!['CONFIRMADA','CANCELADA'].includes(data.state)) invalid();
+        return { saleId: data.saleId, totalCents: data.totalCents, customerId: data.customerId, paymentMethod: data.paymentMethod, createdAt: data.createdAt,state:data.state||'CONFIRMADA', items };
       }
       if (action.startsWith('catalog.')) {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
@@ -178,6 +181,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    operations:(operation,actor,payload)=>{if(!['list','get','adjust','reverse'].includes(operation))throw new ApiError(400,'INVALID_OPERATION');return invoke('operations.'+operation,actor,payload);},
     customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
     staff:(operation,actor,payload)=> { if(!['list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
     staffAccess:(operation,payload)=> { if(!['lookup','start'].includes(operation))throw new ApiError(400,'INVALID_AUTH_REQUEST');return invoke('identity.staffAccess.'+operation,null,payload); },

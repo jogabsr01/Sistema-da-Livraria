@@ -6,17 +6,17 @@ const roles = new Set(['ATENDENTE', 'ADMIN', 'SUPER_ADMIN']);
 const assurances = new Set(['pin', 'mfa', 'passkey']);
 const strong = new Set(['mfa', 'passkey']);
 const attendant = new Set([
-  'customers.read', 'customers.write', 'products.read', 'products.write', 'stock.receive', 'sales.create',
+  'sales.self.read', 'customers.read', 'customers.write', 'products.read', 'products.write', 'stock.receive', 'sales.create',
   'profile.self.read', 'profile.self.write', 'schedule.self.read',
   'notifications.self.read', 'sessions.self.revoke',
 ]);
 const admin = new Set([
   ...attendant, 'reports.read', 'audit.read', 'niches.write', 'schedule.write',
-  'stock.adjust', 'users.attendant.manage', 'products.delete', 'notifications.manage',
+  'stock.adjust', 'sales.reverse', 'users.attendant.manage', 'products.delete', 'notifications.manage',
 ]);
 const superAdmin = new Set([...admin, 'users.admin.manage', 'config.manage']);
 const recent = new Set([
-  'reports.read', 'audit.read', 'stock.adjust', 'users.attendant.manage',
+  'reports.read', 'audit.read', 'stock.adjust', 'sales.reverse', 'users.attendant.manage',
   'users.admin.manage', 'config.manage', 'profile.self.write',
 ]);
 const selfOperations = new Set([

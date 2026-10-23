@@ -5,6 +5,7 @@ import { injectCatalogFault } from './catalog-fixture.mjs';
 import { createCatalogHandler, loadCatalogSettings, loadIsbnLookupSettings } from '../../backend/catalog-handler.mjs';
 import { createIsbnLookupService } from '../../backend/isbn-lookup.mjs';
 import { createCustomerHandler,loadCustomerSettings } from '../../backend/customer-handler.mjs';
+import { createOperationsHandler,loadOperationsSettings } from '../../backend/operations-handler.mjs';
 import { createStaffHandler,loadStaffSettings } from '../../backend/staff-handler.mjs';
 import { randomUUID,randomBytes } from 'node:crypto';
 import { normalizeProduct } from '../../backend/catalog-model.mjs';
@@ -16,9 +17,10 @@ fixture.env.WORKSPACE_COVER_PHOTOS_ENABLED='true'; fixture.gas.props.COVER_PHOTO
 fixture.env.WORKSPACE_CATALOG_ENABLED='true'; fixture.gas.props.CATALOG_ENABLED='true'; fixture.gas.call('provisionDevelopmentCatalog');
 fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='true';
 fixture.env.WORKSPACE_CHECKOUT_ENABLED='true'; fixture.gas.props.CHECKOUT_ENABLED='true';
+const operationsHandler=createOperationsHandler({loadSettings:()=>loadOperationsSettings(fixture.env),createClient:()=>fixture.client});
 const checkoutHandler=createCheckoutHandler({loadSettings:()=>loadCheckoutSettings(fixture.env),createClient:()=>fixture.client});
 const notificationHandler=createNotificationHandler({loadSettings:()=>loadNotificationSettings(fixture.env),createClient:()=>fixture.client});
-const customerHandler=createCustomerHandler({loadSettings:()=>loadCustomerSettings(fixture.env),createClient:()=>fixture.client});
+const customerHandler=createCustomerHandler({loadSettings:()=>loadCustomerSettings(fixture.env),createClient:()=>fixture.client,postalLookup:async postalCode=>({postalCode,street:'Rua fictícia',district:'Bairro fictício',city:'Cidade fictícia',state:'SP'})});
 const staffHandler=createStaffHandler({loadSettings:()=>loadStaffSettings(fixture.env),createClient:()=>fixture.client});
 let lookupMode='normal';const providerCalls=[];
 const makeLookup=()=>createIsbnLookupService({fetchImpl:(...args)=>isbnProviderFixture(lookupMode,providerCalls)(...args)});
@@ -28,6 +30,7 @@ const server=createServer(async(req,res)=>{
   res.setHeader('content-type','application/json');
   try{
     let body='';for await(const chunk of req){body+=chunk;if(body.length>140000)throw Error('TEST_BODY_LIMIT');}
+    if(req.url==='/test/enable-operations'){fixture.env.WORKSPACE_OPERATIONS_ENABLED='true';fixture.gas.props.OPERATIONS_ENABLED='true';res.end('{}');return;}
     if(req.url==='/test/enable-customers'){fixture.env.WORKSPACE_CUSTOMERS_ENABLED='true';fixture.gas.props.CUSTOMERS_ENABLED='true';fixture.env.WORKSPACE_PERSONAL_DATA_KEY=randomBytes(32).toString('hex');fixture.env.WORKSPACE_PERSONAL_INDEX_KEY=randomBytes(32).toString('hex');res.end('{}');return;}
     if(req.url==='/test/enable-staff'){fixture.env.WORKSPACE_STAFF_ENABLED='true';fixture.gas.props.STAFF_ENABLED='true';fixture.env.WORKSPACE_PERSONAL_DATA_KEY=randomBytes(32).toString('hex');fixture.env.WORKSPACE_PERSONAL_INDEX_KEY=randomBytes(32).toString('hex');res.end('{}');return;}
     if(req.url==='/test/code'){res.end(JSON.stringify({code:fixture.gas.outbox.at(-1)?.body.match(/\n([A-Za-z0-9_-]{43})\n/)[1]}));return;}
@@ -63,7 +66,7 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/disable'){fixture.env.WORKSPACE_CATALOG_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/state'){res.end(JSON.stringify({files:[...fixture.gas.resources.values()].filter(r=>r.kind==='image').length,providerRequests:providerCalls.length,products:fixture.main.getSheetByName('Produtos').getLastRow()-1,logs:fixture.main.getSheetByName('Logs_Auditoria').getLastRow()-1}));return;}
     const request=new Request(origin+req.url,{method:req.method,headers:req.headers,...(req.method==='GET'?{}:{body})});
-    const response=req.url.startsWith('/api/v1/customers/')?await customerHandler(request):req.url.startsWith('/api/v1/staff/')?await staffHandler(request):req.url.startsWith('/api/v1/notifications/')?await notificationHandler(request):req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
+    const response=req.url.startsWith('/api/v1/operations/')?await operationsHandler(request):req.url.startsWith('/api/v1/customers/')?await customerHandler(request):req.url.startsWith('/api/v1/staff/')?await staffHandler(request):req.url.startsWith('/api/v1/notifications/')?await notificationHandler(request):req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
     const headers=Object.fromEntries(response.headers);delete headers['set-cookie'];
     res.end(JSON.stringify({status:response.status,headers,cookies:response.headers.getSetCookie(),...(response.headers.get('content-type')==='image/jpeg'?{bodyBase64:Buffer.from(await response.arrayBuffer()).toString('base64')}:{body:await response.text()})}));
   }catch{res.statusCode=500;res.end(JSON.stringify({error:'TEST_HARNESS_FAILURE'}));}

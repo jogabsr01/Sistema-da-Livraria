@@ -1,3 +1,4 @@
+import { createPostalCodeLookup,normalizePostalCode } from './postal-code.mjs';
 import { randomUUID } from 'node:crypto';
 import { ApiError,json,safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
@@ -11,12 +12,18 @@ import { normalizeCustomerCommand,customerInvalid,customerDto } from './customer
 const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
 export function loadCustomerSettings(env=process.env){if(env.WORKSPACE_CUSTOMERS_ENABLED!=='true')throw new ApiError(503,'CUSTOMERS_NOT_ACTIVATED');return {...loadSessionSettings(env),...loadPersonalDataSettings(env)};}
 export function createCustomerHandler(dependencies={}){return async request=>{const requestId=randomUUID();try{
- const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['find','get','save'].includes(op)||url.search)throw new ApiError(404,'NOT_FOUND');
+ const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['find','get','save','postal-code'].includes(op)||url.search)throw new ApiError(404,'NOT_FOUND');
  if(request.method!=='POST'){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow','POST');return r;}
  const settings=(dependencies.loadSettings||loadCustomerSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),vault=createPersonalDataVault(settings),sessions=createSessionService(settings,{client});
  requireSameOriginMutation(request,ORIGIN);const principal=await sessions.authenticate(request);requirePermission(principal,op==='save'?'customers.write':'customers.read');requireCsrfToken(request,(await sessions.current(request)).csrfToken);
  const actor={sessionTokenHash:principal.sessionTokenHash},reader=request.body?.getReader(),decoder=new TextDecoder('utf-8',{fatal:true});let text='',size=0;if(reader){try{while(true){const{value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>8000){await reader.cancel();throw new ApiError(413,'INVALID_CUSTOMER');}text+=decoder.decode(value,{stream:true});}text+=decoder.decode();}catch(e){if(e instanceof ApiError)throw e;customerInvalid();}}
  let p;try{p=JSON.parse(text);}catch{customerInvalid();}
+ if(op==='postal-code'){
+  if(!p||typeof p!=='object'||Array.isArray(p)||Object.keys(p).join()!=='postalCode')customerInvalid();const postalCode=normalizePostalCode(p.postalCode);
+  const limit=await client.reserveAuthAttempt({accountKey:vault.fingerprint(['postal-code.user.v1',principal.id]),originKey:vault.fingerprint(['postal-code.installation.v1',settings.config.installationId])});
+  if(!limit.allowed){const r=json({error:{code:'POSTAL_CODE_RATE_LIMITED',retryAfterSeconds:limit.retryAfterSeconds},requestId},429);r.headers.set('retry-after',String(limit.retryAfterSeconds));return r;}
+  return json({data:await (dependencies.postalLookup||createPostalCodeLookup())(postalCode),requestId});
+ }
  if(op==='find'||op==='get'){
   const key=op==='find'?'cpf':'id';if(!p||typeof p!=='object'||Array.isArray(p)||Object.keys(p).join()!==key)customerInvalid();
   let payload;if(op==='find'){try{payload={cpfIndex:vault.index('customer.cpf',normalizeCpf(p.cpf))};}catch{customerInvalid();}}else{if(!catalogUuid(p.id))customerInvalid();payload=p;}

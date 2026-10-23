@@ -22,6 +22,9 @@
     const saved=await api('/api/v1/customers/save',customerPending),d=await api('/api/v1/customers/get',{id:saved.id});if(!d.customer)throw Error('CUSTOMER_MISSING');candidateCustomer=d.customer;customerPending=null;$('customer-editor').close();$('customer-form').reset();$('customer-match').hidden=true;selectCustomer(d.customer);$('customer-status').textContent='Cadastro salvo e selecionado para esta compra.';
    }catch(e){$('customer-form-status').textContent=customerFailure(e);if(e.status>=400&&e.status<500)customerPending=null;else $('customer-save').textContent='Conferir e tentar novamente';}finally{customerBusy=false;$('customer-fields').disabled=!!customerPending;$('customer-close').disabled=!!customerPending;$('customer-save').disabled=false;renderCart();}
   }
+  $('customer-cep').addEventListener('click',async()=>{if(customerBusy||customerPending)return;customerBusy=true;$('customer-fields').disabled=true;$('customer-save').disabled=true;$('customer-close').disabled=true;
+   try{const data=await api('/api/v1/customers/postal-code',{postalCode:$('customer-postalCode').value});for(const k of ['postalCode','street','district','city','state'])$('customer-'+k).value=data[k];$('customer-form-status').textContent='Endereço sugerido pelo CEP. Confira os dados e informe o número.';}catch(e){$('customer-form-status').textContent='Não foi possível consultar o CEP. Você pode preencher o endereço manualmente.';}finally{customerBusy=false;$('customer-fields').disabled=false;$('customer-save').disabled=false;$('customer-close').disabled=false;}
+  });
   $('customer-form').addEventListener('submit',e=>{e.preventDefault();saveCustomer();});$('customer-close').addEventListener('click',()=>{if(customerBusy||customerPending)return;$('customer-editor').close();$('customer-form').reset();});$('customer-editor').addEventListener('cancel',e=>{if(customerBusy||customerPending)e.preventDefault();else $('customer-form').reset();});
   for(const mode of ['customer-anonymous','customer-identified'])$(mode).addEventListener('change',()=>{if(locked())return;selectCustomer(null);candidateCustomer=null;$('customer-match').hidden=true;$('customer-new').hidden=true;$('customer-status').textContent='';$('customer-search-form').reset();$('customer-lookup').hidden=!identified();renderCart();});
   $('customer-search-form').addEventListener('submit',async e=>{e.preventDefault();if(locked())return;customerBusy=true;candidateCustomer=null;selectCustomer(null);$('customer-match').hidden=true;$('customer-new').hidden=true;$('customer-status').textContent='Buscando cadastro…';renderCart();
@@ -116,10 +119,10 @@
   }
   function showReceipt(data) {
     window.dispatchEvent(new Event('livraria:stock-changed'));
-    receipt = data; $('receipt').hidden = false;
+    receipt = data; $('receipt').hidden = false;$('receipt').querySelector('h3').textContent=data.state==='CANCELADA'?'Venda cancelada':'Venda confirmada';
     $('receipt-text').textContent = 'Venda ' + data.saleId + ' · ' + money(data.totalCents) + ' · ' + methods[data.paymentMethod] + ' · ' +
       new Date(data.createdAt).toLocaleString('pt-BR', { timeZone:'America/Sao_Paulo' }) + (data.customerId?' · Cliente identificado.':' · Sem cadastro de cliente.');
-    $('sale-status').textContent = 'Venda confirmada pelo servidor. Estoque atualizado.';
+    $('sale-status').textContent = data.state==='CANCELADA'?'Esta venda foi cancelada administrativamente. Consulte o histórico antes de iniciar outra operação.':'Venda confirmada pelo servidor. Estoque atualizado.';
     $('receipt').scrollIntoView({ block:'nearest' });
   }
   $('payment-form').addEventListener('submit', async event => {
