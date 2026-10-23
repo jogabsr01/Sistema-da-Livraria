@@ -1,8 +1,9 @@
 import { ApiError } from './errors.mjs';
 import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
-  return { async schema(actor) {
+  async function invoke(action, actor) {
     const request = requestMessage(config, actor);
+    request.action = action;
     const signal = AbortSignal.timeout(timeoutMs);
     let response;
     try {
@@ -19,11 +20,16 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       const text = await response.text();
       if (text.length > 180_000) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const data = verifyResponse(unpack(JSON.parse(text), config.secret, 'response'), request);
+      if (action === 'system.ping') {
+        if (!data || data.ready !== true || data.environment !== config.environment || data.schemaVersion !== 1) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { ready: true, environment: data.environment, schemaVersion: data.schemaVersion };
+      }
       if (!data || !Number.isSafeInteger(data.schemaVersion) || !Array.isArray(data.tables) || data.tables.some(t => typeof t !== 'string')) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       return { schemaVersion: data.schemaVersion, tables: data.tables };
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(502, signal.aborted ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE');
     }
-  } };
+  }
+  return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null) };
 }

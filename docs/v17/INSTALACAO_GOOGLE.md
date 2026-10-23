@@ -76,3 +76,7 @@ Não executar provisionamento de PROD nesta fase. A função existente recusa es
 ## Rede
 
 O runtime Netlify precisará alcançar `script.google.com` e `script.googleusercontent.com`; Apps Script usa seus serviços autorizados de Drive/Sheets. Credenciais Google não passam pelo navegador. A execução local desta tarefa não tinha instalação autorizada e não alterou uma allowlist externa para simular integração real.
+
+## Diagnóstico assinado sem ativar as funcionalidades
+
+Após atualizar a implantação Apps Script com a operação de diagnóstico e integrar o código correspondente em dev mediante aprovação, seguir [TESTE_CONEXAO_DEV.md](TESTE_CONEXAO_DEV.md). O build da branch dev pode verificar a conexão com `WORKSPACE_VERIFY_CONNECTION=true`, mantendo `WORKSPACE_BACKEND_ENABLED=false`. O teste não substitui identidade/autorização real nem conclui as fases B–E.

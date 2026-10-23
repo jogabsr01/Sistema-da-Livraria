@@ -1,4 +1,4 @@
-/* Phase A. Only schema inspection is remotely callable; no business writes. */
+/* Only signed service readiness and authorized schema inspection are remotely callable. No business writes. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
 function secretBytes_(secret) { return secret.match(/../g).map(function (h) { var n = parseInt(h, 16); return n > 127 ? n - 256 : n; }); }
@@ -167,6 +167,11 @@ function processRequest_(request, c) {
   return withLock_(function () {
     var ss = storage_(c, false).spreadsheet; assertSchema_(ss);
     registerNonce_(request, ss);
+    // Service readiness is not a user login: no roles, PII or table names.
+    // Full installation bindings, schema, signature and durable nonce still apply.
+    if (request.action === 'system.ping' && c.environment === 'dev') {
+      return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
+    }
     var actor = request.actor;
     if (request.action !== 'system.schema' || !actor || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(actor.id || '') || !['ADMIN', 'SUPER_ADMIN'].includes(actor.role) || !['mfa', 'passkey'].includes(actor.assurance) || !Number.isSafeInteger(actor.authenticatedAt) || actor.authenticatedAt > Date.now() + 30000 || Date.now() - actor.authenticatedAt > 300000) failure_('FORBIDDEN');
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };

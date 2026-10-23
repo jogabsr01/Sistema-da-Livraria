@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "node scripts/build-public.mjs",
+    "build": "node scripts/check-google-dev.mjs && node scripts/build-public.mjs",
     "schema:generate": "node scripts/generate-gas-schema.mjs",
     "test": "node --test tests/backend/*.test.mjs",
     "test:browser": "python3 scripts/test-public-build.py"
