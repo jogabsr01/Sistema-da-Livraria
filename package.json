@@ -15,6 +15,7 @@
     "test:access": "python3 scripts/test-owner-access.py",
     "test:catalog": "python3 scripts/test-catalog.py",
     "test:checkout": "python3 scripts/test-checkout.py",
+    "test:staff": "python3 scripts/test-staff.py",
     "test:stock": "python3 scripts/test-stock.py",
     "test:notifications": "python3 scripts/test-notifications.py",
     "test:photos": "python3 scripts/test-cover-photos.py",

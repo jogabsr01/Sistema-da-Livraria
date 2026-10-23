@@ -91,7 +91,7 @@ function accessCurrent_(ss, hash, now) {
   return { table: table, row: found[0] };
 }
 function accessFlowOwner_(c, row) {
-  var owner = accessOwner_(c);
+  var owner = row.Subject_ID === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
   if (!owner || owner.row.ID_Usuario !== row.Subject_ID || owner.version !== row.Authorization_Version) accessReject_();
   if (row.Purpose === 'LOGIN' && owner.row.Primeiro_Acesso_Concluido !== true ||
       row.Purpose === 'ACTIVATE' && !['COMMITTING', 'COMPLETE'].includes(row.State) && owner.row.Primeiro_Acesso_Concluido !== false) accessReject_();
@@ -143,7 +143,7 @@ function accessCommit_(ss, c, current, p, now) {
   var audit = identityRows_(storage_(c, false).spreadsheet, 'Logs_Auditoria');
   if (row.State === 'PASSKEY') {
     if (authControlTime_(ceremony[0].Expires_At) <= now || sessions.rows.length >= 5000 || audit.rows.length >= 5000 ||
-        row.Purpose === 'ACTIVATE' && (pin.length || !row.Pin_JSON) ||
+        row.Purpose === 'ACTIVATE' && (pin.length && pin[0].Authorization_Version === row.Authorization_Version || !row.Pin_JSON) ||
         row.Purpose === 'LOGIN' && (pin.length !== 1 || pin[0].Authorization_Version !== row.Authorization_Version)) accessReject_();
     if (row.Purpose === 'ACTIVATE') accessPinRecord_(row.Pin_JSON);
     row.State = 'COMMITTING'; row.Session_Token_Hash = p.sessionTokenHash; row.Commit_Started_At = new Date(now).toISOString();
@@ -153,8 +153,8 @@ function accessCommit_(ss, c, current, p, now) {
   if (!constantEqual_(row.Session_Token_Hash, p.sessionTokenHash)) accessReject_();
   if (row.State !== 'COMPLETE') {
     if (row.Purpose === 'ACTIVATE') {
-      if (pin.length && (pin[0].Record_JSON !== row.Pin_JSON || pin[0].Authorization_Version !== row.Authorization_Version)) accessReject_();
-      if (!pin.length) authControlSave_(pins, { Subject_ID: row.Subject_ID, Record_JSON: row.Pin_JSON, Authorization_Version: row.Authorization_Version, Created_At: row.Commit_Started_At });
+      if (pin.length && pin[0].Authorization_Version === row.Authorization_Version && pin[0].Record_JSON !== row.Pin_JSON) accessReject_();
+      if (!pin.length || pin[0].Authorization_Version !== row.Authorization_Version) authControlSave_(pins, { number:pin.length ? pin[0].number : undefined, Subject_ID: row.Subject_ID, Record_JSON: row.Pin_JSON, Authorization_Version: row.Authorization_Version, Created_At: row.Commit_Started_At });
       owner.row.Primeiro_Acesso_Concluido = true;
     }
     owner.row.Ultimo_Acesso = row.Commit_Started_At; accessSaveMain_(owner.users, owner.row);
@@ -164,7 +164,7 @@ function accessCommit_(ss, c, current, p, now) {
       Ultima_Atividade: row.Commit_Started_At, Token_Hash: p.sessionTokenHash, Nivel_Autenticacao: 'passkey', Versao_Autorizacao: row.Authorization_Version };
     if (matches.length > 1 || matches.length && !sessions.columns.every(function (column) { return matches[0][column] === value[column]; })) accessReject_();
     if (!matches.length) accessSaveMain_(sessions, value);
-    var auditValue = { ID_Log: row.ID, Data_Hora: row.Commit_Started_At, ID_Usuario: row.Subject_ID, Perfil: 'SUPER_ADMIN',
+    var auditValue = { ID_Log: row.ID, Data_Hora: row.Commit_Started_At, ID_Usuario: row.Subject_ID, Perfil: owner.row.Perfil,
       Acao: row.Purpose === 'ACTIVATE' ? 'IDENTITY_ACTIVATE' : 'IDENTITY_LOGIN', Entidade: 'Usuarios', ID_Entidade: row.Subject_ID,
       Antes: '', Depois: '', Resultado: 'SUCESSO', ID_Requisicao: row.ID };
     var logged = audit.rows.filter(function (item) { return item.ID_Log === row.ID; });
@@ -180,7 +180,7 @@ function accessRecoverIntents_(ss, c, now) {
   // Recovery replays only a durable, previously verified intent, never a PIN or
   // email supplied by this request. It never returns a cookie or raw token.
   accessFlows_(ss).rows.filter(function (row) { return row.State === 'COMMITTING'; }).forEach(function (row) {
-    var owner = accessOwner_(c);
+    var owner = row.Subject_ID === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
     if (!owner || row.Subject_ID !== owner.row.ID_Usuario || row.Authorization_Version !== owner.version) return;
     try { accessCommit_(ss, c, { table: accessFlows_(ss), row: row }, { sessionTokenHash: row.Session_Token_Hash }, now); }
     catch (error) {
@@ -193,6 +193,7 @@ function accessRecoverIntents_(ss, c, now) {
 }
 function ownerAccessOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
+  recoverStaff_(c);
   var p = request.payload, action = request.action, now = Date.now(), ss = authControlStore_(c);
   var schemas = {
     'identity.access.start': ['email', 'flowId', 'tokenHash', 'codeHash', 'code'],
@@ -213,7 +214,7 @@ function ownerAccessOperation_(request, c) {
     return { account: { subjectId: owner.row.ID_Usuario, authorizationVersion: owner.version, record: accessPinRecord_(pin[0].Record_JSON) } };
   }
   if (action === 'identity.access.login') {
-    var owner = accessOwner_(c);
+    var owner = p.subjectId === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,p.subjectId);
     if (!owner || !owner.row.Primeiro_Acesso_Concluido || owner.row.ID_Usuario !== p.subjectId || owner.version !== p.authorizationVersion) accessReject_();
     accessNewFlow_(accessFlows_(ss), p, owner, 'LOGIN', now); return { accepted: true };
   }

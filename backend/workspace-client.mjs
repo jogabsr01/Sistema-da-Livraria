@@ -32,6 +32,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);
+      if (action.startsWith('staff.') || action.startsWith('identity.staffAccess.')) return data; // Validated by staff/access service before disclosure.
       if (action.startsWith('notifications.')) return validateNotificationResponse(action.slice('notifications.'.length), data, payload, request.requestId);
       if (action === 'sales.checkout') {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
@@ -117,7 +118,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
             purpose: data.purpose, state: data.state, ceremonyId: data.ceremonyId, proofReady: data.proofReady };
         }
         if (action === 'identity.access.commit') {
-          if (!uuid(data?.id) || !uuid(data.sessionId) || data.role !== 'SUPER_ADMIN' || data.assurance !== 'passkey' ||
+          if (!uuid(data?.id) || !uuid(data.sessionId) || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data.role) || data.assurance !== 'passkey' ||
               !Number.isSafeInteger(data.authenticatedAt) || !Number.isSafeInteger(data.expiresAt) || !Number.isSafeInteger(data.authorizationVersion)) untrusted();
           return { id: data.id, sessionId: data.sessionId, role: data.role, assurance: data.assurance,
             authenticatedAt: data.authenticatedAt, expiresAt: data.expiresAt, authorizationVersion: data.authorizationVersion };
@@ -177,6 +178,8 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    staff:(operation,actor,payload)=> { if(!['list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
+    staffAccess:(operation,payload)=> { if(!['lookup','start'].includes(operation))throw new ApiError(400,'INVALID_AUTH_REQUEST');return invoke('identity.staffAccess.'+operation,null,payload); },
     notifications: (operation, actor, payload) => {
       if (!['summary','list','read','state','report'].includes(operation)) throw new ApiError(400,'INVALID_NOTIFICATION');
       return invoke('notifications.' + operation, actor, payload);

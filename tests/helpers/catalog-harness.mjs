@@ -4,7 +4,8 @@ import { ownerFixture } from './owner-access-fixture.mjs';
 import { injectCatalogFault } from './catalog-fixture.mjs';
 import { createCatalogHandler, loadCatalogSettings, loadIsbnLookupSettings } from '../../backend/catalog-handler.mjs';
 import { createIsbnLookupService } from '../../backend/isbn-lookup.mjs';
-import { randomUUID } from 'node:crypto';
+import { createStaffHandler,loadStaffSettings } from '../../backend/staff-handler.mjs';
+import { randomUUID,randomBytes } from 'node:crypto';
 import { normalizeProduct } from '../../backend/catalog-model.mjs';
 import { createCheckoutHandler, loadCheckoutSettings } from '../../backend/checkout-handler.mjs';
 import { createNotificationHandler, loadNotificationSettings } from '../../backend/notification-handler.mjs';
@@ -16,6 +17,7 @@ fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='true';
 fixture.env.WORKSPACE_CHECKOUT_ENABLED='true'; fixture.gas.props.CHECKOUT_ENABLED='true';
 const checkoutHandler=createCheckoutHandler({loadSettings:()=>loadCheckoutSettings(fixture.env),createClient:()=>fixture.client});
 const notificationHandler=createNotificationHandler({loadSettings:()=>loadNotificationSettings(fixture.env),createClient:()=>fixture.client});
+const staffHandler=createStaffHandler({loadSettings:()=>loadStaffSettings(fixture.env),createClient:()=>fixture.client});
 let lookupMode='normal';const providerCalls=[];
 const makeLookup=()=>createIsbnLookupService({fetchImpl:(...args)=>isbnProviderFixture(lookupMode,providerCalls)(...args)});
 let lookupService=makeLookup();
@@ -24,6 +26,7 @@ const server=createServer(async(req,res)=>{
   res.setHeader('content-type','application/json');
   try{
     let body='';for await(const chunk of req){body+=chunk;if(body.length>140000)throw Error('TEST_BODY_LIMIT');}
+    if(req.url==='/test/enable-staff'){fixture.env.WORKSPACE_STAFF_ENABLED='true';fixture.gas.props.STAFF_ENABLED='true';fixture.env.WORKSPACE_PERSONAL_DATA_KEY=randomBytes(32).toString('hex');fixture.env.WORKSPACE_PERSONAL_INDEX_KEY=randomBytes(32).toString('hex');res.end('{}');return;}
     if(req.url==='/test/code'){res.end(JSON.stringify({code:fixture.gas.outbox.at(-1)?.body.match(/\n([A-Za-z0-9_-]{43})\n/)[1]}));return;}
     if(req.url==='/test/fault'){const input=JSON.parse(body);injectCatalogFault(fixture,input.stage,input.after);res.end('{}');return;}
     if(req.url==='/test/lookup-mode'){lookupMode=JSON.parse(body).mode;lookupService=makeLookup();res.end('{}');return;}
@@ -57,7 +60,7 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/disable'){fixture.env.WORKSPACE_CATALOG_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/state'){res.end(JSON.stringify({files:[...fixture.gas.resources.values()].filter(r=>r.kind==='image').length,providerRequests:providerCalls.length,products:fixture.main.getSheetByName('Produtos').getLastRow()-1,logs:fixture.main.getSheetByName('Logs_Auditoria').getLastRow()-1}));return;}
     const request=new Request(origin+req.url,{method:req.method,headers:req.headers,...(req.method==='GET'?{}:{body})});
-    const response=req.url.startsWith('/api/v1/notifications/')?await notificationHandler(request):req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
+    const response=req.url.startsWith('/api/v1/staff/')?await staffHandler(request):req.url.startsWith('/api/v1/notifications/')?await notificationHandler(request):req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
     const headers=Object.fromEntries(response.headers);delete headers['set-cookie'];
     res.end(JSON.stringify({status:response.status,headers,cookies:response.headers.getSetCookie(),...(response.headers.get('content-type')==='image/jpeg'?{bodyBase64:Buffer.from(await response.arrayBuffer()).toString('base64')}:{body:await response.text()})}));
   }catch{res.statusCode=500;res.end(JSON.stringify({error:'TEST_HARNESS_FAILURE'}));}

@@ -82,3 +82,7 @@ O runtime Netlify precisará alcançar `script.google.com` e `script.googleuserc
 Após atualizar a implantação Apps Script com a operação de diagnóstico e integrar o código correspondente em dev mediante aprovação, seguir [TESTE_CONEXAO_DEV.md](TESTE_CONEXAO_DEV.md). O build da branch dev pode verificar a conexão com `WORKSPACE_VERIFY_CONNECTION=true`, mantendo `WORKSPACE_BACKEND_ENABLED=false`. O teste não substitui identidade/autorização real nem conclui as fases B–E.
 
 A entrega de sessões está em revisão e desativada. Não adicionar flags/chaves de identidade nem criar usuários manualmente: consultar [SESSOES_E_PERMISSOES.md](SESSOES_E_PERMISSOES.md). A conexão de serviço já confirmada não substitui a homologação de login.
+
+## Incremento de equipe (ativação posterior)
+
+Atualizar também `Staff.gs` junto com o lote de scripts existente. Sem nova aba ou escopo. As novas chaves privadas de cifra/índice ficam somente no backend Netlify DEV. As flags `WORKSPACE_STAFF_ENABLED` e `STAFF_ENABLED` permanecem desligadas por padrão. Procedimento, limites e formato cifrado estão em [EQUIPE_DEV.md](EQUIPE_DEV.md). Não editar manualmente `Usuarios.Nome` nem trocar as chaves com dados existentes. Instalação Google real será executada na etapa posterior solicitada pelo proprietário.

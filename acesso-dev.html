@@ -13,15 +13,15 @@
 <body>
   <main>
     <p class="badge">AMBIENTE DE TESTES — DEV</p>
-    <h1>Acesso da conta proprietária</h1>
+    <h1>Acesso à sua conta</h1>
     <p>Livraria IPB Jardim Bonfiglioli</p>
     <nav><a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a></nav>
     <p id="status" role="status" aria-live="polite">Conferindo disponibilidade…</p>
     <section id="initial" hidden>
       <form id="login-form">
         <h2>Entrar</h2>
-        <label for="login-email">E-mail cadastrado</label>
-        <input id="login-email" type="email" autocomplete="username" maxlength="254" required>
+        <label for="login-email">CPF ou e-mail cadastrado</label>
+        <input id="login-email" type="text" autocomplete="username" maxlength="254" required>
         <label for="login-pin">PIN de 4 números</label>
         <input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{4}" maxlength="4" required>
         <button>Continuar com a passkey</button>
@@ -29,9 +29,9 @@
       <details>
         <summary>É meu primeiro acesso</summary>
         <form id="start-form">
-          <p>Use o e-mail da conta Google que preparou a instalação DEV. Um código será enviado a esse endereço.</p>
-          <label for="activation-email">E-mail cadastrado</label>
-          <input id="activation-email" type="email" autocomplete="email" maxlength="254" required>
+          <p>Use o CPF ou e-mail previamente cadastrado pela administração. Um código será enviado ao e-mail desse cadastro.</p>
+          <label for="activation-email">CPF ou e-mail cadastrado</label>
+          <input id="activation-email" type="text" autocomplete="username" maxlength="254" required>
           <button>Receber código por e-mail</button>
         </form>
       </details>
@@ -65,7 +65,8 @@
       <h2>Identidade confirmada</h2>
       <p id="identity-result"></p>
       <p><a href="/catalogo-dev.html">Abrir catálogo compartilhado DEV</a></p>
-      <p>O acesso verificado está separado do protótipo. Catálogo, estoque e vendas ainda usam os dados demonstrativos até a próxima integração.</p>
+      <p>Os módulos compartilhados dependem da ativação desta instalação. O protótipo demonstrativo continua disponível separadamente.</p>
+      <p id="team-link" hidden><a href="/equipe-dev.html">Gerenciar equipe</a></p>
       <button id="logout-button" type="button">Sair da conta verificada</button>
     </section>
     <button id="restart" type="button" class="secondary" hidden>Voltar ao início</button>

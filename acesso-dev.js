@@ -48,9 +48,9 @@
     const response = await fetch('/api/v1/session', { credentials: 'same-origin', cache: 'no-store' });
     if (!response.ok) return false;
     const { data } = await response.json();
-    if (data.user.role !== 'SUPER_ADMIN' || data.user.assurance !== 'passkey') return false;
+    if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data.user.role) || data.user.assurance !== 'passkey') return false;
     sessionCsrf = data.csrfToken; show('COMPLETE'); message('Acesso verificado com sucesso.');
-    $('identity-result').textContent = 'Conta master autenticada com PIN e passkey.'; return true;
+    $('identity-result').textContent = data.user.role==='SUPER_ADMIN'?'Conta master autenticada com PIN e passkey.':data.user.role==='ADMIN'?'Conta administrativa autenticada com PIN e passkey.':'Conta de atendente autenticada com PIN e passkey.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
   async function finish() {
     await api('complete', { response: pendingResponse }); pendingResponse = null; clearSecrets();
@@ -68,7 +68,7 @@
   });
   submit('pin-form', async () => {
     if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.'); return; }
-    try { const data = await api('pin', { pin: $('new-pin').value }); show(data.stage); message('Agora cadastre a passkey para proteger a conta master.'); }
+    try { const data = await api('pin', { pin: $('new-pin').value }); show(data.stage); message('Agora cadastre a passkey para proteger sua conta.'); }
     finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
   });
   $('passkey-button').addEventListener('click', () => run(async () => {
