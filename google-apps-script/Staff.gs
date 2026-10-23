@@ -63,7 +63,6 @@ function staffProject_(ss,v) {
   v.state='COMPLETE';staffPut_(ss,'staff.command.'+v.commandId,JSON.stringify(v),v.at,v.actor);
 }
 function recoverStaff_(c) {
-  if(!staffEnabled_())return;
   var ss=storage_(c,false).spreadsheet,pending=staffJournal_(ss).filter(function(v){return v.state==='PENDING';});
   if(pending.length>1)staffFail_('STAFF_UNAVAILABLE');pending.forEach(function(v){staffProject_(ss,v);});
 }

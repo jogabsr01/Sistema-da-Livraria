@@ -15,7 +15,7 @@ export function createPersonalDataVault(settings) {
   const aad=(entity,id)=>{ if (!['users','customers'].includes(entity)||!catalogUuid(id)) unavailable(); return Buffer.from(JSON.stringify(['personal.v1',config.environment,config.installationId,entity,id])); };
   return {
     fingerprint(value) {return createHmac('sha256',indexKey).update(JSON.stringify(['command.v1',config.environment,config.installationId,value])).digest('hex');},
-    index(kind,value) { if (!['email','cpf'].includes(kind)||typeof value!=='string'||!value||value.length>254) unavailable();return createHmac('sha256',indexKey).update(JSON.stringify(['index.v1',config.environment,config.installationId,kind,value])).digest('hex'); },
+    index(kind,value) { if (!['email','cpf','customer.cpf'].includes(kind)||typeof value!=='string'||!value||value.length>254) unavailable();return createHmac('sha256',indexKey).update(JSON.stringify(['index.v1',config.environment,config.installationId,kind,value])).digest('hex'); },
     seal(entity,id,value) {
       const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',dataKey,iv);cipher.setAAD(aad(entity,id));
       const bytes=Buffer.concat([cipher.update(JSON.stringify(value),'utf8'),cipher.final()]);

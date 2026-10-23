@@ -51,3 +51,7 @@ Após build, `npm run test:notifications` executa sete cenários de alertas/leit
 ### Equipe DEV
 
 `npm run test:staff` cobre seis cenários browser, inclusive primeiro acesso/login por CPF com assinaturas do autenticador virtual. `tests/backend/staff.test.mjs` cobre cifra/autorização/idempotência e falhas em projeções. Tudo usa chaves e contatos fictícios, Google/MailApp emulados; nunca habilita instalações reais. Ver `docs/v17/QA_EQUIPE.md`.
+
+### Clientes e Caixa identificado
+
+`npm run test:customers` cobre seis cenários browser com Google emulado; `tests/backend/customers.test.mjs` cobre recuperação, concorrência, cifra, consentimento e pagamentos. CEP/endereço são manuais; não há envio para provedor externo. Ver `docs/v17/QA_CLIENTES_CAIXA.md`.

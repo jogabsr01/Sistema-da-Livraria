@@ -10,7 +10,7 @@
 </head>
 <body><main>
   <header><p class="badge">AMBIENTE DE TESTES — DEV</p><h1>Frente de Caixa</h1>
-    <p>Vendas sem cadastro de cliente. Use apenas livros e operações de teste nesta homologação.</p>
+    <p>Vendas com ou sem identificação do cliente. Use apenas livros e operações de teste nesta homologação.</p>
     <nav><a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a> · <a href="/catalogo-dev.html">Catálogo compartilhado</a> · <a href="/acesso-dev.html">Minha conta verificada</a> · <a href="/">Protótipo</a></nav>
   </header>
   <p id="status" role="status" aria-live="polite">Conferindo acesso…</p>
@@ -20,6 +20,15 @@
     <div class="toolbar"><button id="previous" type="button" class="secondary" hidden>Anterior</button><button id="next" type="button" class="secondary" hidden>Próxima página</button></div>
     <section class="cart" aria-labelledby="cart-title"><h2 id="cart-title">Compra sem cadastro</h2>
       <p>Nenhum nome, CPF ou contato é necessário. O operador será registrado pela conta verificada.</p>
+      <fieldset id="customer-options" hidden><legend>Como deseja concluir esta compra?</legend>
+        <div class="customer-modes"><label><input type="radio" name="customer-mode" id="customer-anonymous" value="anonymous" checked> Finalizar compra sem cadastro</label><label><input type="radio" name="customer-mode" id="customer-identified" value="identified"> Identificar ou cadastrar cliente</label></div>
+        <section id="customer-lookup" hidden aria-labelledby="customer-title"><h3 id="customer-title">Identificar cliente</h3><p>Busque pelo CPF. Dados de contato e endereço são opcionais; não haverá envio de mensagens.</p>
+          <form id="customer-search-form"><label for="customer-search-cpf">CPF do cliente</label><input id="customer-search-cpf" inputmode="numeric" autocomplete="off" maxlength="20" required><button id="customer-search">Buscar cliente</button></form>
+          <p id="customer-status" role="status" aria-live="polite"></p><div id="customer-match" hidden><p id="customer-match-text"></p><div class="toolbar"><button id="customer-use" type="button">Usar este cliente</button><button id="customer-edit" type="button" class="secondary">Editar cadastro</button></div></div>
+          <button id="customer-new" type="button" class="secondary" hidden>Cadastrar este cliente</button>
+        </section>
+        <p id="customer-selection" hidden></p>
+      </fieldset>
       <div id="cart-items"></div><p id="total"></p>
       <form id="payment-form"><label>Forma de pagamento<select id="payment" required><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="DEBITO">Débito</option><option value="CREDITO">Crédito</option></select></label>
         <p>Confira o recebimento antes de confirmar. Esta tela registra a forma de pagamento; não realiza cobranças.</p>
@@ -28,4 +37,18 @@
       <div id="receipt" hidden><h3>Venda confirmada</h3><p id="receipt-text"></p><button id="new-sale" type="button">Iniciar nova compra</button></div>
     </section>
   </section>
-</main></body></html>
+</main>
+<dialog id="customer-editor" aria-labelledby="customer-editor-title"><form id="customer-form"><h2 id="customer-editor-title">Cadastrar cliente</h2><p>Identificação para esta compra. Contatos e endereço são opcionais.</p>
+<fieldset id="customer-fields"><legend class="sr-only">Dados do cliente</legend>
+<label for="customer-name">Nome completo</label><input id="customer-name" maxlength="160" autocomplete="off" required>
+<label for="customer-cpf">CPF</label><input id="customer-cpf" inputmode="numeric" maxlength="20" autocomplete="off" required><small id="customer-cpf-hint"></small>
+<div class="customer-fields"><div><label for="customer-email">E-mail (opcional)</label><input id="customer-email" type="email" maxlength="254" autocomplete="off"></div><div><label for="customer-phone">Celular / WhatsApp (opcional)</label><input id="customer-phone" type="tel" maxlength="20" autocomplete="off"></div></div>
+<details><summary>Endereço opcional</summary><p>Preencha o CEP e o endereço se forem necessários ao atendimento.</p>
+<div class="customer-fields"><div><label for="customer-postalCode">CEP</label><input id="customer-postalCode" inputmode="numeric" maxlength="9" autocomplete="off"></div><div><label for="customer-state">UF</label><input id="customer-state" maxlength="2" autocomplete="off"></div></div>
+<label for="customer-street">Logradouro</label><input id="customer-street" maxlength="200" autocomplete="off"><div class="customer-fields"><div><label for="customer-number">Número</label><input id="customer-number" maxlength="30" autocomplete="off"></div><div><label for="customer-complement">Complemento</label><input id="customer-complement" maxlength="100" autocomplete="off"></div></div>
+<label for="customer-district">Bairro</label><input id="customer-district" maxlength="100" autocomplete="off"><label for="customer-city">Cidade</label><input id="customer-city" maxlength="100" autocomplete="off">
+</details>
+<label for="customer-contactPreference">Preferência de contato informada pelo cliente</label><select id="customer-contactPreference"><option value="NONE">Não contatar</option><option value="WHATSAPP">WhatsApp</option><option value="EMAIL">E-mail</option></select>
+<label class="consent"><input id="customer-marketingConsent" type="checkbox"> O cliente autorizou mensagens promocionais pelo canal escolhido.</label><small>A autorização é opcional e deve ser expressa. Informar um telefone não autoriza mensagens. A compra não depende desta opção.</small>
+</fieldset><p id="customer-form-status" role="status" aria-live="polite"></p><div class="toolbar"><button id="customer-save">Salvar e usar neste atendimento</button><button id="customer-close" type="button" class="secondary">Cancelar</button></div></form></dialog>
+</body></html>
