@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Acesso DEV — Livraria IPB</title>
+  <link rel="stylesheet" href="/acesso-dev.css">
+  <script src="/acesso-dev.js" defer></script>
+</head>
+<body>
+  <main>
+    <p class="badge">AMBIENTE DE TESTES — DEV</p>
+    <h1>Acesso da conta proprietária</h1>
+    <p>Livraria IPB Jardim Bonfiglioli</p>
+    <p id="status" role="status" aria-live="polite">Conferindo disponibilidade…</p>
+    <section id="initial" hidden>
+      <form id="login-form">
+        <h2>Entrar</h2>
+        <label for="login-email">E-mail cadastrado</label>
+        <input id="login-email" type="email" autocomplete="username" maxlength="254" required>
+        <label for="login-pin">PIN de 4 números</label>
+        <input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{4}" maxlength="4" required>
+        <button>Continuar com a passkey</button>
+      </form>
+      <details>
+        <summary>É meu primeiro acesso</summary>
+        <form id="start-form">
+          <p>Use o e-mail da conta Google que preparou a instalação DEV. Um código será enviado a esse endereço.</p>
+          <label for="activation-email">E-mail cadastrado</label>
+          <input id="activation-email" type="email" autocomplete="email" maxlength="254" required>
+          <button>Receber código por e-mail</button>
+        </form>
+      </details>
+    </section>
+    <form id="email-form" hidden>
+      <h2>Confirme seu e-mail</h2>
+      <p>Copie o código recebido e cole abaixo. Ele vale por 10 minutos e só funciona neste navegador.</p>
+      <label for="email-code">Código do e-mail</label>
+      <input id="email-code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="43" required>
+      <button>Confirmar código</button>
+    </form>
+    <form id="pin-form" hidden>
+      <h2>Crie seu PIN</h2>
+      <p>Escolha um PIN novo. Não reutilize um PIN enviado por mensagem.</p>
+      <label for="new-pin">PIN de 4 números</label>
+      <input id="new-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required>
+      <label for="confirm-pin">Repita o PIN</label>
+      <input id="confirm-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required>
+      <button>Salvar PIN e continuar</button>
+    </form>
+    <section id="passkey" hidden>
+      <h2>Proteja sua conta</h2>
+      <p>Uma passkey confirma sua identidade usando a biometria ou o bloqueio do aparelho. Siga a janela aberta pelo navegador.</p>
+      <button id="passkey-button" type="button">Continuar com a passkey</button>
+    </section>
+    <section id="retry" hidden>
+      <p>A confirmação pode ter sido salva. Tente concluir novamente para conferir o resultado.</p>
+      <button id="retry-button" type="button">Conferir e concluir acesso</button>
+    </section>
+    <section id="complete" hidden>
+      <h2>Identidade confirmada</h2>
+      <p id="identity-result"></p>
+      <p>O acesso verificado está separado do protótipo. Catálogo, estoque e vendas ainda usam os dados demonstrativos até a próxima integração.</p>
+      <button id="logout-button" type="button">Sair da conta verificada</button>
+    </section>
+    <button id="restart" type="button" class="secondary" hidden>Voltar ao início</button>
+    <p><a href="/">Abrir o protótipo da livraria</a></p>
+  </main>
+</body>
+</html>

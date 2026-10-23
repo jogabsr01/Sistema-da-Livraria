@@ -9,7 +9,7 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination);
   // Explicit allowlist: backend, Apps Script, tests and configuration are never published.
-  for (const file of ['index.html', 'teste-dev.txt']) {
+  for (const file of ['index.html', 'teste-dev.txt', 'acesso-dev.html', 'acesso-dev.js', 'acesso-dev.css']) {
     const input = resolve(root, file);
     const info = await lstat(input).catch(e => { if (e.code !== 'ENOENT') throw e; });
     if (!info && file !== 'index.html') continue;

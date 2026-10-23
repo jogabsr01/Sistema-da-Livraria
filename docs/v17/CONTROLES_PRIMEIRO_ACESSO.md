@@ -1,6 +1,6 @@
 # Controles persistentes de tentativas e códigos temporários
 
-Incremento da fase C sobre dev após o PR #10. Implementa controles internos do servidor; não abre rota pública de login, não envia e-mail, não verifica PIN, não emite sessão nem ativa usuário. O protótipo visual permanece idêntico.
+Registro do PR #11, já integrado: controles internos do servidor. Este módulo isolado não é um login. O fluxo público do proprietário que conecta esses limites a e-mail/PIN/passkeys/sessões está em revisão no incremento seguinte: [PRIMEIRO_ACESSO_OWNER.md](PRIMEIRO_ACESSO_OWNER.md). O protótipo visual permanece idêntico.
 
 ## Armazenamento privado
 
@@ -53,4 +53,4 @@ Conectar cadastro/convite, entrega privada de e-mail, verificação de PIN e pro
 
 ## Incremento posterior
 
-A verificação WebAuthn e o schema privado v2 estão implementados em revisão: [PASSKEYS.md](PASSKEYS.md). Não habilitar flags por esse motivo; entrega de e-mail, PIN e emissão recuperável de sessão ainda precisam de integração.
+A verificação WebAuthn/schema v2 foi integrada no PR #12: [PASSKEYS.md](PASSKEYS.md). O novo incremento de primeiro acesso usa schema privado v3 e inclui MailApp, PIN e emissão recuperável de sessão em revisão. Não habilitar flags antes da revisão e homologação controlada descritas em PRIMEIRO_ACESSO_OWNER.md.
