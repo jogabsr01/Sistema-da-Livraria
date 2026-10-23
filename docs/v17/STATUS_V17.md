@@ -30,3 +30,11 @@ Consulta ISBN e limitações reais das fontes/capas: [ISBN_COMPARTILHADO_DEV.md]
 Rodada autorizada de aprofundamento/publicação do PR #17: [QA_CAPAS_HARDENING.md](QA_CAPAS_HARDENING.md). Cópia editorial real verificada, câmera/galeria do protótipo (código do PR #4) e salvamento demonstrativo com quota cheia corrigido. A autorização de publicar #17 substitui a pendência de aprovação descrita acima para esse PR; não autoriza main/produção nem a ativação Google.
 
 PR #17 integrado exclusivamente em dev em c52babd132a6637c443e7bb0887cad827fd3742b após autorização e preview aprovado. PR #15 atualizado com esse dev para testar câmera/galeria privada em conjunto com ISBN; permanece em revisão, sem ativar Google real.
+
+## Retomada de 23/10/2026 — estado conferido no GitHub
+
+O parágrafo anterior é histórico: o PR #15 **foi integrado em dev** no commit `7108cf07429b7cecb1f99c7ce4b298c1f71fd768`. Não havia PR aberto na conferência da retomada. A homologação Google real não é comprovada por esse merge.
+
+Próximo incremento preparado a partir desse dev: [Caixa compartilhado DEV](CAIXA_COMPARTILHADO_DEV.md), com endpoint autenticado de venda anônima, quatro formas de pagamento, gravação durável e recuperação idempotente, auditoria de confirmação/rejeição e tela compartilhada com recuperação da referência após recarga. Depende de revisão em PR para dev; sem merge automático e sem ativação das flags reais. Os limites de entrada/ajuste de estoque, edição de produtos vendidos e reconciliação entre aparelhos estão documentados no guia.
+
+A v17 continua incompleta: clientes/vendas identificadas, escritores de entrada/ajuste/estorno, gestão de funcionários e recuperação de identidade, perfil/avatar, nichos administráveis, consulta de auditoria, notificações, escalas, relatórios, compactação/retenção, backups/restauração e homologação multiusuário real ainda precisam ser concluídos incrementalmente. A tela de Caixa desta entrega não substitui o protótipo nem conclui as fases B/E.
