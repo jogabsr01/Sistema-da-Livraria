@@ -60,7 +60,7 @@ export function createGasEmulator(initialProperties = {}) {
     Utilities: { newBlob: blob, base64Encode: value => Buffer.from(value).toString('base64'), base64Decode: value => [...Buffer.from(value, 'base64')], computeHmacSha256Signature: (value, key) => [...createHmac('sha256', Buffer.from(key)).update(Buffer.from(value)).digest()], computeDigest: (_, value) => [...createHash('sha256').update(value).digest()], DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF-8' } },
     ContentService: { MimeType: { JSON: 'application/json' }, createTextOutput: text => ({ text, setMimeType() { return this; } }) },
   });
-  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'SessionStore.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
+  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'SessionStore.gs', 'AuthControl.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
   return { context, props, resources, sheets,
     call(name, ...args) { return context[name](...args); },
     post(envelope) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(envelope) } }).text); },
