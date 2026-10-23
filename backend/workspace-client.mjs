@@ -20,10 +20,25 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (!response.ok) throw new ApiError(502, 'UPSTREAM_UNAVAILABLE');
       const text = await response.text();
       if (text.length > 180_000) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
-      const data = verifyResponse(unpack(JSON.parse(text), config.secret, 'response'), request);
+      const signed = unpack(JSON.parse(text), config.secret, 'response');
+      const data = verifyResponse(signed, request);
       if (action === 'system.ping') {
         if (!data || data.ready !== true || data.environment !== config.environment || data.schemaVersion !== 1) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
         return { ready: true, environment: data.environment, schemaVersion: data.schemaVersion };
+      }
+      if (action === 'identity.guard.attempt') {
+        if (!data || typeof data.allowed !== 'boolean' || !Number.isSafeInteger(data.retryAfterSeconds) ||
+            data.retryAfterSeconds < 0 || data.retryAfterSeconds > 3600 || (data.allowed ? data.retryAfterSeconds !== 0 : data.retryAfterSeconds < 1)) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { allowed: data.allowed, retryAfterSeconds: data.retryAfterSeconds };
+      }
+      if (action === 'identity.challenge.create') {
+        if (!data || data.challengeId !== payload.challengeId || !Number.isSafeInteger(data.expiresAt) ||
+            data.expiresAt <= signed.sentAt || data.expiresAt > signed.sentAt + 600_000) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { challengeId: data.challengeId, expiresAt: data.expiresAt };
+      }
+      if (action === 'identity.challenge.consume') {
+        if (!data || typeof data.verified !== 'boolean') throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+        return { verified: data.verified };
       }
       if (action === 'identity.session.read') {
         if (!data || typeof data !== 'object') throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
@@ -42,6 +57,9 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
+    createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),
+    consumeAuthChallenge: payload => invoke('identity.challenge.consume', null, payload),
     readSession: tokenHash => invoke('identity.session.read', null, { tokenHash }),
     revokeSession: tokenHash => invoke('identity.session.revoke', null, { tokenHash }),
     revokeOtherSessions: tokenHash => invoke('identity.session.revokeOthers', null, { tokenHash }),
