@@ -6,7 +6,7 @@ Os testes acompanham a implementação; o diagnóstico Google não representa a 
 | --- | --- | --- |
 | A — Fundação | Modelo de 17 abas, provisionamento DEV, assinatura entre servidores e build isolado integrados no PR #9. Proprietário confirmou schema v1/17 tabelas e GOOGLE_DEV_CONNECTION_OK no Netlify DEV. | Homologação futura de backups/restauração e identidade/IAM; PROD não foi provisionada. |
 | B — Persistência compartilhada | Núcleo de vendas idempotentes e recuperação de projeções implementados/testados localmente. | Escritores Google de produtos/nichos/clientes/vendas, imagens privadas, controle de versões e sincronização entre dispositivos, ligados à interface. |
-| C — Identidade e permissões | Criptografia de PIN/tokens integrada. PR #10 integrado: leitura/revogação de sessões persistentes, cookies, CSRF e política de perfis. Novo incremento em revisão: limites persistentes e provas temporárias de uso único em armazenamento privado. | Orquestração do primeiro acesso, entrega/verificação de e-mail, proteção de tráfego/quota, MFA/passkeys, emissor de sessão, bootstrap do master, recuperação, usuários/perfil/avatar e homologação real. |
+| C — Identidade e permissões | Criptografia de PIN/tokens integrada. PR #10 integrado: leitura/revogação de sessões persistentes, cookies, CSRF e política de perfis. PR #11 integrado: limites persistentes e provas temporárias de uso único. Novo incremento em revisão: verificação criptográfica de passkeys e persistência privada v2. | Orquestração do primeiro acesso, entrega/verificação de e-mail, proteção de tráfego/quota, ligação de passkeys ao fluxo completo, emissor de sessão, bootstrap do master, recuperação, usuários/perfil/avatar e homologação real. |
 | D — Gestão administrativa | Abas de dados desenhadas; a interface demonstrativa existente segue preservada. | Auditoria real e consulta autorizada, notificações compartilhadas, escalas com conflitos, nichos administráveis e relatórios integrados. |
 | E — Experiência operacional | Regressão do protótipo e cenários de celular existentes preservados. | Checkout anônimo ligado ao backend, fila offline sem PII, sincronização, testes multiusuário/dispositivo e aceite final. |
 
@@ -19,6 +19,8 @@ Os testes acompanham a implementação; o diagnóstico Google não representa a 
 
 Fases B e C têm dependências entre si: modelos e adaptadores podem ser desenvolvidos antes da identidade; rotas de negócio só serão liberadas com autorização completa. Não abrir cadastros reais para demonstrar progresso.
 
-Cada entrega terá código, testes, limites explícitos e PR para dev. Nova aprovação é necessária antes de cada merge; as autorizações anteriores cobriram os PRs #9 e #10; não autorizam novos merges. Main e produção não fazem parte da integração atual. Não se deve alterar as flags operacionais até o aceite dos fluxos reais.
+Cada entrega terá código, testes, limites explícitos e PR para dev. Nova aprovação é necessária antes de cada merge; as autorizações anteriores cobriram os PRs #9, #10 e #11; não autorizam novos merges. Main e produção não fazem parte da integração atual. Não se deve alterar as flags operacionais até o aceite dos fluxos reais.
 
 Controles do próximo incremento: [CONTROLES_PRIMEIRO_ACESSO.md](CONTROLES_PRIMEIRO_ACESSO.md). Não executar mais configurações no Google/Netlify até concluir a revisão e o fluxo de identidade.
+
+Passkeys e evidências criptográficas: [PASSKEYS.md](PASSKEYS.md). O verificador pronto não significa que o login real ou a conta master foram ativados.

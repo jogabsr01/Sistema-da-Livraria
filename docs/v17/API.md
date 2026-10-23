@@ -44,3 +44,7 @@ Detalhes e limites da parte de identidade: [SESSOES_E_PERMISSOES.md](SESSOES_E_P
 ## Controles internos de primeiro acesso
 
 `identity.guard.attempt` e `identity.challenge.create/consume` usam a bridge assinada, com habilitação DEV independente. Não existem rotas públicas correspondentes nesta entrega. Os limites, pré-condições, armazenamento privado e pendências de ativação estão em [CONTROLES_PRIMEIRO_ACESSO.md](CONTROLES_PRIMEIRO_ACESSO.md).
+
+## Passkeys internas
+
+`identity.passkey.list/begin/take/register/counter` têm trava DEV independente e não são expostas como rotas HTTP do navegador. Verificação WebAuthn, persistência, testes e pendências em [PASSKEYS.md](PASSKEYS.md).
