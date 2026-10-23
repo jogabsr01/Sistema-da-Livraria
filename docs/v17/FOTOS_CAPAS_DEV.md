@@ -1,6 +1,6 @@
 # Fotos de capas no catálogo compartilhado DEV
 
-Incremento em revisão sobre o PR #14, integrado somente em dev (`5b6b57668f79ef377c89183a7262fef8005e3eba`). As flags reais continuam desligadas; nenhuma configuração, usuário, imagem ou dado Google real foi alterado. O protótipo index.html, as 17 abas de negócio e seus schemas continuam iguais à base dev.
+Incremento em revisão sobre dev, atualizado após o PR #17 (`c52babd132a6637c443e7bb0887cad827fd3742b`). As flags reais continuam desligadas; nenhuma configuração, usuário, imagem ou dado Google real foi alterado. O protótipo index.html, as 17 abas de negócio e seus schemas continuam iguais à base dev.
 
 ## Comportamento
 
@@ -8,7 +8,7 @@ O formulário de catalogo-dev.html oferece **Tirar foto**, usando webcam no comp
 
 A foto é comprimida no navegador, com prévia temporária em memória. Não há upload antes de Salvar livro nem armazenamento de imagem/credenciais em localStorage. Cancelar descarta a prévia. O cadastro salva metadados e referência da imagem no mesmo comando recuperável. Catálogo, detalhes e recarga usam a imagem pelo proxy autenticado; outra sessão autorizada recebe o mesmo arquivo. A edição apenas de metadados preserva a capa. Remoção ou troca por URL externa é explícita.
 
-A implementação é para o **catálogo compartilhado**. A consulta automática por ISBN e o Caixa compartilhado ainda serão conectados; este PR não afirma ter resolvido a disponibilidade de capas nas APIs editoriais nem integrado a nova imagem no carrinho/relatórios do protótipo.
+A implementação é para o **catálogo compartilhado**. A consulta automática por ISBN está combinada com as fotos nesta revisão; o Caixa compartilhado ainda será conectado; este PR não afirma ter resolvido a disponibilidade de capas nas APIs editoriais nem integrado a nova imagem no carrinho/relatórios do protótipo.
 
 ## Arquivos e limites
 
@@ -42,3 +42,16 @@ Novos testes exercitam reencodificação/remoção EXIF, entradas inválidas, fl
 Não foram validados câmera física, iOS/Safari, Google IAM, quota/latência de Drive, e-mail real, APIs editoriais ou dados compartilhados. Capturas locais: `/workspace/qa-v17-owner-access/foto-formulario.png`, `foto-catalogo.png`, `foto-camera-celular.png`. Uma imagem sintética carregada não é evidência de capa editorial encontrada por ISBN.
 
 Comandos: `npm test`, `npm run build`, `npm run test:photos`, `npm run test:catalog`, `npm run test:access`, `npm run test:passkeys` e `ZXING_JS=<arquivo verificado> npm run test:browser`. Netlify externaliza Sharp no bundle para incluir seus binários nativos.
+
+
+## Integração com ISBN e capa editorial — revisão atual
+
+A atualização sobre o dev do PR #17 mantém a consulta por ISBN e a referência editorial local sem alterar o protótipo já integrado. Abrir câmera/galeria, selecionar/remover foto e aceitar bytes manuais cancela consultas pendentes. Uma consulta iniciada depois de escolher a foto preenche apenas metadados vazios, preservando os bytes ainda não salvos. Fotos privadas já confirmadas também são preservadas. Remover explicitamente a foto permite buscar uma nova capa e salvar a troca no mesmo comando, mantendo os arquivos antigos privados.
+
+**160 testes backend aprovados em Node 22/24; 86 cenários Chromium aprovados** na base combinada: 34 protótipo, oito hardening, oito ISBN, seis catálogo, seis fotos, seis integração foto/ISBN, cinco diagnóstico, seis primeiro acesso e sete passkeys. `npm audit --omit=dev` sem vulnerabilidades conhecidas na execução. As contagens da seção anterior são históricas, da revisão original.
+
+Os seis cenários adicionais reproduzem consulta atrasada durante seleção manual, consulta após foto ainda não salva, foto privada existente, remoção explícita/troca automática, arquivo de galeria inválido e câmera encerrada ao sair. Um caso envia o PNG editorial real de Examinando as escrituras para o handler/Sharp/Drive emulado, verifica pixels e rota autenticada após recarga e edição, e confirma que o mesmo arquivo é preservado. Isso comprova o contrato local; não comprova IAM ou gravação em Google real. APIs bibliográficas são fixtures declaradas neste conjunto.
+
+Comando adicional: `npm run test:photo-isbn`. Capturas locais com a imagem editorial real: `/workspace/qa-v17-owner-access/foto-editorial-privada-formulario.png` e `/workspace/qa-v17-owner-access/foto-editorial-privada-catalogo.png`. Imagens são dados de QA e não entram no build público.
+
+A atualização não liga flags reais, não cria usuários e não muda planilhas/pastas compartilhadas. O PR #15 permanece para revisão, sem merge automático; o PR #17 já foi integrado sob a autorização desta rodada. Main permanece em `365a80f0be90258c08f1e1cb42650f0c397902bb`. O acesso externo ao DEV e à capa publicada continua HTTP 401 nesta sessão.

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+from urllib.parse import urlsplit
 from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright, expect
 
@@ -55,6 +56,10 @@ class V16(unittest.TestCase):
     def route(self, route):
         url = route.request.url
         if route.request.resource_type == 'document': route.fulfill(status=200,content_type='text/html',body=self.source)
+        elif (urlsplit(url).path == '/cover-references.js' or urlsplit(url).path.startswith('/covers/')) and urlsplit(url).hostname in [urlsplit(DEV).hostname,urlsplit(PROD).hostname]:
+            asset=(ROOT/'dist'/urlsplit(url).path.lstrip('/')).resolve()
+            if asset.is_relative_to((ROOT/'dist').resolve()) and asset.is_file():route.fulfill(status=200,content_type='application/javascript' if asset.suffix=='.js' else 'image/png',body=asset.read_bytes())
+            else:route.fulfill(status=404,body='')
         elif 'cdn.jsdelivr.net/npm/@zxing/' in url: route.fulfill(status=200,content_type='application/javascript',body=self.library)
         else: route.fulfill(status=404,content_type='application/json',body='{}')
     def login(self,pin='1357'):
@@ -220,7 +225,7 @@ class V16(unittest.TestCase):
         self.page.wait_for_function('!state.busy')
         expect(self.page.locator('#modalRoot [name="titulo"]')).to_be_visible()
         expect(self.page.locator('#toastbox')).to_contain_text('A capa não carregou')
-        self.page.locator('#modalRoot input[type="file"]').set_input_files({'name':'capa.png','mimeType':'image/png','buffer':png()})
+        self.page.locator('#modalRoot [data-cover-gallery]').set_input_files({'name':'capa.png','mimeType':'image/png','buffer':png()})
         self.page.wait_for_function('document.querySelector("[name=capaLocal]").value.startsWith("data:image/jpeg")')
         self.page.get_by_role('button',name='Salvar alterações',exact=True).click()
         self.page.wait_for_function('!state.busy && document.querySelector("#modalRoot").innerHTML===""')
@@ -232,10 +237,12 @@ class V16(unittest.TestCase):
         url='https://www.mundocristao.com.br/wp-content/uploads/2021/12/Examinando-as-escrituras.png'
         self.page.route(url,lambda r:r.fulfill(status=200,content_type='image/png',body=png()))
         result=self.lookup('9788543303932')
-        self.assertEqual(result['dados']['capaUrl'],url)
-        self.assertEqual(result['dados']['capaFonte'],'Referência editorial verificada — Mundo Cristão')
+        self.assertIn('/covers/9788543303932-',result['dados']['capaUrl'])
+        self.assertIn('Mundo Cristão',result['dados']['capaFonte'])
+        self.assertIn('cópia local',result['dados']['capaFonte'])
         self.assertEqual(result['dados']['titulo'],'Examinando as escrituras')
     def test_unavailable_editorial_cover_is_not_reported_as_valid(self):
+        self.page.route('**/covers/**',lambda route:route.fulfill(status=404,body=''))
         self.mock_books('none')
         result=self.lookup('9788543303932')
         self.assertEqual(result['dados']['capaUrl'],'')
@@ -292,13 +299,112 @@ class V16(unittest.TestCase):
         expect(self.page.locator('#cartList img')).to_have_attribute('src','https://books.google.com/valid.png')
     def test_manual_cover_photo_and_internal_code(self):
         self.page.evaluate('UI.registerWithoutBarcode()');self.fill_registration()
-        self.page.locator('#modalRoot input[type="file"]').set_input_files({'name':'capa.png','mimeType':'image/png','buffer':png()})
+        self.page.locator('#modalRoot [data-cover-gallery]').set_input_files({'name':'capa.png','mimeType':'image/png','buffer':png()})
         self.page.wait_for_function('document.querySelector("[name=capaLocal]").value.startsWith("data:image/jpeg")')
         self.page.get_by_role('button',name='Salvar cadastro',exact=True).click()
         self.page.wait_for_function('!state.busy && state.data.produtos.some(p=>p.semCodigo)')
         product=self.page.evaluate('state.data.produtos.find(p=>p.semCodigo)')
         self.assertTrue(product['isbn'].startswith('INT'));self.assertEqual(product['codigoBarras'],'')
         self.assertTrue(product['capaUrl'].startswith('data:image/jpeg'));self.assertEqual(product['capaFonte'],'Foto manual')
+    def test_cover_camera_and_gallery_in_registration_and_editing(self):
+        self.page.set_viewport_size({'width':390,'height':844})
+        for editing in [False,True]:
+            for source,button_name in [('camera','📷 Tirar foto da capa'),('gallery','🖼️ Escolher da galeria')]:
+                with self.subTest(editing=editing,source=source):
+                    if editing:
+                        self.page.evaluate('isbn=>View.modalEditMetadata(productOf(isbn))',SEED)
+                    else:
+                        self.page.evaluate('UI.registerWithoutBarcode()');self.fill_registration()
+                    camera=self.page.locator('#modalRoot [data-cover-camera]')
+                    gallery=self.page.locator('#modalRoot [data-cover-gallery]')
+                    expect(camera).to_have_attribute('capture','environment')
+                    self.assertIsNone(gallery.get_attribute('capture'))
+                    if source=='camera':
+                        self.page.get_by_role('button',name=button_name,exact=True).click()
+                        self.page.wait_for_function('document.querySelector("[data-cover-camera-panel] video").videoWidth>0 && document.querySelector("[data-cover-camera-panel] video").readyState>=2')
+                        self.page.evaluate('window.lastCoverStream=UI.coverCameraStream')
+                        self.page.get_by_role('button',name='Usar esta foto',exact=True).click()
+                        self.page.wait_for_function('window.lastCoverStream.getTracks().every(t=>t.readyState==="ended")')
+                    else:
+                        with self.page.expect_file_chooser() as chooser:
+                            self.page.get_by_role('button',name=button_name,exact=True).click()
+                        self.assertIsNone(chooser.value.element.get_attribute('capture'))
+                        chooser.value.set_files({'name':'capa.png','mimeType':'image/png','buffer':png()})
+                    self.page.wait_for_function('document.querySelector("[name=capaLocal]").value.startsWith("data:image/jpeg")')
+                    self.page.wait_for_function('document.querySelector("#modalRoot .cover-large img")?.complete && document.querySelector("#modalRoot .cover-large img").naturalWidth>0')
+                    code=self.page.locator('#modalRoot [name="isbn"]').input_value()
+                    self.page.get_by_role('button',name='Salvar alterações' if editing else 'Salvar cadastro',exact=True).click()
+                    self.page.wait_for_function('!state.busy && document.querySelector("#modalRoot").innerHTML===""')
+                    self.page.reload(wait_until='load');self.login()
+                    product=self.page.evaluate('code=>productOf(code)',code)
+                    self.assertTrue(product['capaUrl'].startswith('data:image/jpeg'))
+                    self.assertEqual(product['capaFonte'],'Foto manual')
+    def test_cover_camera_native_fallback_when_preview_is_unavailable(self):
+        self.page.evaluate('UI.registerWithoutBarcode();navigator.mediaDevices.getUserMedia=undefined')
+        with self.page.expect_file_chooser() as chooser:
+            self.page.get_by_role('button',name='📷 Tirar foto da capa',exact=True).click()
+        self.assertEqual(chooser.value.element.get_attribute('capture'),'environment')
+        chooser.value.set_files({'name':'foto.jpg','mimeType':'image/png','buffer':png()})
+        self.page.wait_for_function('document.querySelector("[name=capaLocal]").value.startsWith("data:image/jpeg")')
+    def test_cover_camera_errors_preserve_form(self):
+        for name,message in [('NotAllowedError','Permissão da câmera negada'),('NotFoundError','Nenhuma câmera encontrada')]:
+            self.page.evaluate('UI.registerWithoutBarcode()')
+            self.page.locator('#stockTitle').fill('Título digitado preservado')
+            self.page.evaluate('name=>navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException("test",name)}',name)
+            self.page.get_by_role('button',name='📷 Tirar foto da capa',exact=True).click()
+            expect(self.page.locator('#toastbox')).to_contain_text(message)
+            expect(self.page.locator('#stockTitle')).to_have_value('Título digitado preservado')
+            self.assertIsNone(self.page.evaluate('UI.coverCameraStream'))
+    def test_cover_camera_close_replacement_and_logout_stop_tracks(self):
+        for action in ['UI.closeCoverCamera()','View.closeModal()','UI.registerWithoutBarcode()',"window.dispatchEvent(new Event('pagehide'))",'LoginUI.logout()']:
+            with self.subTest(action=action):
+                self.page.evaluate('UI.registerWithoutBarcode()')
+                self.page.get_by_role('button',name='📷 Tirar foto da capa',exact=True).click()
+                self.page.wait_for_function('UI.coverCameraStream!==null')
+                self.page.evaluate('window.lastCoverStream=UI.coverCameraStream')
+                self.page.evaluate(action)
+                self.assertEqual(self.page.evaluate('lastCoverStream.getTracks().map(t=>t.readyState)'),['ended'])
+    def test_cover_camera_permission_after_close_is_released(self):
+        self.page.evaluate('''()=>{const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+         navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>window.releaseCoverCamera=async()=>{
+          window.lateCoverStream=await original({video:true});resolve(window.lateCoverStream);
+         });UI.registerWithoutBarcode();}''')
+        self.page.get_by_role('button',name='📷 Tirar foto da capa',exact=True).click()
+        self.page.wait_for_function('!!window.releaseCoverCamera')
+        self.page.get_by_role('button',name='Fechar câmera',exact=True).click()
+        self.page.evaluate('window.releaseCoverCamera()')
+        self.page.wait_for_function('window.lateCoverStream.getTracks().every(t=>t.readyState==="ended")')
+        self.assertIsNone(self.page.evaluate('UI.coverCameraStream'))
+    def test_cover_capture_failure_recovers_with_gallery(self):
+        self.page.evaluate('UI.registerWithoutBarcode()')
+        self.page.locator('#stockTitle').fill('Título preservado')
+        self.page.get_by_role('button',name='📷 Tirar foto da capa',exact=True).click()
+        self.page.wait_for_function('document.querySelector("[data-cover-camera-panel] video").readyState>=2')
+        self.page.evaluate('()=>{window.lastCoverStream=UI.coverCameraStream;HTMLCanvasElement.prototype.toBlob=()=>{throw Error("camera test failure")};}')
+        self.page.get_by_role('button',name='Usar esta foto',exact=True).click()
+        expect(self.page.locator('#toastbox')).to_contain_text('Não foi possível preparar a foto')
+        expect(self.page.locator('#stockTitle')).to_have_value('Título preservado')
+        self.page.locator('#modalRoot [data-cover-gallery]').set_input_files({'name':'capa.png','mimeType':'image/png','buffer':png()})
+        self.page.wait_for_function('document.querySelector("[name=capaLocal]").value.startsWith("data:image/jpeg")')
+        self.assertEqual(self.page.evaluate('lastCoverStream.getTracks().map(t=>t.readyState)'),['ended'])
+    def test_cancel_cover_selection_preserves_existing_photo(self):
+        self.page.evaluate('isbn=>View.modalEditMetadata(productOf(isbn))',SEED)
+        self.page.locator('#modalRoot [data-cover-gallery]').set_input_files({'name':'capa.png','mimeType':'image/png','buffer':png()})
+        self.page.wait_for_function('document.querySelector("[name=capaLocal]").value.startsWith("data:image/jpeg")')
+        before=self.page.locator('#modalRoot [name="capaLocal"]').input_value()
+        for source in ['camera','gallery']:
+            self.page.locator('#modalRoot [data-cover-'+source+']').set_input_files([])
+            self.assertEqual(self.page.locator('#modalRoot [name="capaLocal"]').input_value(),before)
+    def test_cover_buttons_fit_narrow_mobile_screen(self):
+        for width in [320,390]:
+            self.page.set_viewport_size({'width':width,'height':844})
+            self.page.evaluate('UI.registerWithoutBarcode()')
+            for name in ['📷 Tirar foto da capa','🖼️ Escolher da galeria']:
+                button=self.page.get_by_role('button',name=name,exact=True)
+                button.scroll_into_view_if_needed();expect(button).to_be_visible()
+                box=button.bounding_box()
+                self.assertGreaterEqual(box['x'],0);self.assertLessEqual(box['x']+box['width'],width)
+            self.page.evaluate('View.closeModal()')
     def test_mobile_regression_sale_cpf_filters_reports(self):
         self.page.set_viewport_size({'width':390,'height':844})
         self.tab('catalogo',True);self.page.locator('#catalogSearch').fill('Caminhos')

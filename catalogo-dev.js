@@ -1,7 +1,8 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id), message = text => { $('status').textContent = text; };
-  let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false, photosEnabled = false, pendingPhoto, photoPreview = '', cameraStream = null, cameraGeneration = 0;
+  let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false, lookupGeneration = 0, lookupController = null, photosEnabled = false, pendingPhoto, photoPreview = '', cameraStream = null, cameraGeneration = 0;
+  const pendingImages = new Set();
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   function explain(error) {
     if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
@@ -51,10 +52,10 @@
     });
   }
   async function openBook(id) {
-    cleanupPhoto();
+    cancelLookup(); cleanupPhoto();
     editing = id ? (await api('get', null, '?id=' + encodeURIComponent(id))).product : null; command = null;
     draftId = editing?.id || crypto.randomUUID();
-    $('book-form').reset(); $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar livro'; $('form-status').textContent = ''; $('reload-book').hidden = true;
+    $('book-form').reset(); $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar livro'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = 'A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.';
     const mappings = { isbn:'isbn',title:'title',author:'author',publisher:'publisher',edition:'edition',supplier:'supplier',category:'category',cover:'coverUrl',synopsis:'synopsis' };
     Object.entries(mappings).forEach(([input,key]) => { $(input).value = editing?.[key] || ''; });
     $('price').value = editing ? (editing.priceCents / 100).toFixed(2).replace('.',',') : '';
@@ -64,6 +65,7 @@
     if (!$('editor').open) $('editor').showModal();
   }
   $('book-form').addEventListener('submit', event => { event.preventDefault(); run(async () => {
+    cancelLookup();
     const price = $('price').value.trim(); if (!/^\d{1,7}(?:[,.]\d{1,2})?$/.test(price)) { $('form-status').textContent = 'Informe o preço como 12,90, sem separador de milhares.'; return; }
     const [units, fractional = ''] = price.split(/[,.]/), priceCents = Number(units) * 100 + Number(fractional.padEnd(2,'0'));
     const fields = { isbn:$('isbn').value, internalCode:$('isbn').value.trim() ? '' : editing?.internalCode || '', title:$('title').value, author:$('author').value,
@@ -80,8 +82,10 @@
   $('new').addEventListener('click', () => run(() => openBook(null))); $('close').addEventListener('click', () => $('editor').close());
   $('reload-book').addEventListener('click', () => run(() => openBook(editing.id), true));
   $('editor').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
-  $('editor').addEventListener('close', cleanupPhoto);
-  window.addEventListener('pagehide', cleanupPhoto);
+  $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();});
+  window.addEventListener('pagehide',()=>{cancelLookup();cleanupPhoto();});
+  $('isbn').addEventListener('input',() => { cancelLookup(); $('isbn-status').textContent = 'ISBN alterado. Consulte novamente ou preencha manualmente.'; });
+  $('isbn').addEventListener('keydown',event => { if (event.key === 'Enter' && !$('isbn-tools').hidden) { event.preventDefault(); $('isbn-lookup').click(); } });
   $('cover').addEventListener('change', () => { let url; try { url = new URL($('cover').value); } catch { url = null; }
     const valid = url?.protocol === 'https:' && !url.username && !url.password && !url.port && !url.hash && url.hostname.includes('.') && !url.hostname.endsWith('.') &&
       !/^(?:[\d.]+|\[.*\])$/.test(url.hostname) && !/(?:^|\.)(?:localhost|local|internal|invalid|test)$/.test(url.hostname);
@@ -108,12 +112,12 @@
     if (!blob || blob.size > 60000) throw Error('LARGE_IMAGE');
     // Only an in-memory preview; the server validates and re-encodes once more.
     const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = ''; bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-    pendingPhoto = btoa(binary); releasePreview(); photoPreview = URL.createObjectURL(blob); $('cover').value = '';
+    cancelLookup(); pendingPhoto = btoa(binary); releasePreview(); photoPreview = URL.createObjectURL(blob); $('cover').value = '';
     cover(photoPreview,$('cover-preview'),true); $('photo-status').textContent = 'Foto pronta. Clique em Salvar livro para enviá-la.';
   }
-  $('gallery-open').addEventListener('click', () => { stopCamera(); $('photo-file').click(); });
+  $('gallery-open').addEventListener('click', () => { cancelLookup(); stopCamera(); $('photo-file').click(); });
   $('photo-file').addEventListener('change', () => {
-    const file = $('photo-file').files[0]; if (!file) return;
+    const file = $('photo-file').files[0]; if (!file) return; cancelLookup();
     run(async () => {
       let image;
       try {
@@ -124,7 +128,7 @@
     },true);
   });
   $('camera-open').addEventListener('click', async () => {
-    stopCamera(); const generation = cameraGeneration;
+    cancelLookup(); stopCamera(); const generation = cameraGeneration;
     $('photo-status').textContent = 'Autorize o uso da câmera quando o navegador pedir.';
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw Error('NO_CAMERA');
@@ -142,14 +146,67 @@
     try { await acceptPhoto($('camera-video')); stopCamera(); }
     catch { $('photo-status').textContent = 'A câmera ainda não está pronta. Aguarde a prévia ou escolha uma imagem da galeria.'; }
   },true));
-  $('photo-remove').addEventListener('click', () => { stopCamera(); releasePreview(); pendingPhoto = null; $('cover').value = ''; cover('',$('cover-preview'),true); $('photo-status').textContent = 'Capa removida deste cadastro. Salve para confirmar.'; });
+  $('photo-remove').addEventListener('click', () => { cancelLookup(); stopCamera(); releasePreview(); pendingPhoto = null; $('cover').value = ''; cover('',$('cover-preview'),true); $('photo-status').textContent = 'Capa removida deste cadastro. Salve para confirmar.'; });
+  function cancelLookup() {
+    lookupGeneration++; lookupController?.abort(); lookupController = null;
+    [...pendingImages].forEach(cancel => cancel()); $('isbn-cancel').hidden = true;
+    $('isbn-lookup').disabled = busy;
+  }
+  function testCover(candidate) {
+    return new Promise(resolve => {
+      let done = false; const img = new Image(); img.referrerPolicy = 'no-referrer';
+      const finish = ok => { if (done) return; done = true; clearTimeout(timer); pendingImages.delete(cancel); img.onload = null; img.onerror = null; if (!ok) img.removeAttribute('src'); resolve(ok ? {...candidate,image:img} : null); };
+      const cancel = () => finish(false), timer = setTimeout(cancel,4000); pendingImages.add(cancel);
+      img.onload = () => finish(img.complete && img.naturalWidth >= 30 && img.naturalHeight >= 40);
+      img.onerror = cancel; img.src = candidate.url;
+    });
+  }
+  $('isbn-cancel').addEventListener('click', () => { cancelLookup(); $('isbn-status').textContent = 'Consulta cancelada. Você pode preencher e salvar manualmente.'; });
+  $('isbn-lookup').addEventListener('click', async () => {
+    if (busy) return; cancelLookup(); const generation = lookupGeneration, raw = $('isbn').value;
+    if (!raw.trim()) { $('isbn-status').textContent = 'Informe um ISBN para consultar, ou continue o cadastro sem código.'; return; }
+    const controller = new AbortController(); lookupController = controller; $('isbn-lookup').disabled = true; $('isbn-cancel').hidden = false;
+    const mappings = {title:'title',author:'author',publisher:'publisher',edition:'edition',year:'year',pages:'pages',synopsis:'synopsis'};
+    const before = Object.fromEntries([...Object.keys(mappings),'cover'].map(id => [id,$(id).value]));
+    const current = () => generation === lookupGeneration && $('editor').open && $('isbn').value === raw;
+    $('isbn-status').textContent = 'Consultando as fontes bibliográficas… Você pode continuar preenchendo o cadastro.';
+    try {
+      const response = await fetch('/api/v1/catalog/isbn',{method:'POST',credentials:'same-origin',cache:'no-store',signal:controller.signal,
+        headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify({isbn:raw})});
+      const result = await response.json(); if (!current()) return;
+      if (!response.ok) {
+        const code = result.error?.code;
+        $('isbn-status').textContent = code === 'INVALID_ISBN' ? 'ISBN inválido. Confira os dígitos na contracapa.' : code === 'ISBN_RATE_LIMITED' ? `Limite de consultas atingido. Aguarde ${result.error.retryAfterSeconds || 60} segundos ou preencha manualmente.` : code === 'ISBN_LOOKUP_NOT_ACTIVATED' ? 'A consulta por ISBN ainda não foi habilitada nesta instalação. Continue manualmente.' : 'A consulta está indisponível. Seus campos foram preservados; continue manualmente.'; return;
+      }
+      const data = result.data;
+      if (data.metadata) Object.entries(mappings).forEach(([id,key]) => {
+        if (!before[id].trim() && $(id).value === before[id] && data.metadata[key]) $(id).value = String(data.metadata[key]);
+      });
+      const trace = data.sources.map(source => source.name + ': ' + ({found:'dados encontrados',not_found:'sem registro',timeout:'tempo esgotado',unavailable:'sem conexão',invalid_response:'resposta inválida',http_error:'HTTP '+source.httpStatus}[source.status] || 'indisponível')).join(' · ');
+      let found = null, preserveCover = before.cover.trim() || (pendingPhoto === undefined ? editing?.hasPhoto : pendingPhoto !== null);
+      if (!preserveCover && $('cover').value === before.cover) {
+        $('isbn-status').textContent = 'Verificando se as imagens de capa carregam…';
+        const local = data.covers.filter(item => item.cachedAsset === true && new URL(item.url).origin === location.origin);
+        const cached = await Promise.all(local.map(testCover)); if (!current()) return; found = cached.find(Boolean);
+        if (!found) { const candidates = await Promise.all(data.covers.filter(item => !local.includes(item)).map(testCover)); if (!current()) return; found = candidates.find(Boolean); }
+        if ($('cover').value !== before.cover || (pendingPhoto === undefined ? editing?.hasPhoto : pendingPhoto !== null)) { preserveCover = true; found = null; }
+        else if (found) { $('cover').value = found.url; found.image.alt = 'Capa do livro'; $('cover-preview').replaceChildren(found.image); }
+      }
+      const summary = data.metadata ? 'Sugestões recebidas. Confira os dados e a edição antes de salvar.' : 'Nenhuma ficha exata foi encontrada. Preencha os dados manualmente.';
+      $('isbn-status').textContent = summary + (preserveCover ? ' A capa existente foi preservada.' : found ? ' Capa carregada: '+found.source+'.' : ' Nenhuma capa disponível carregou; use câmera, galeria ou um link, ou continue sem capa.') + (data.cached ? ' Fontes em cache recente: ' : ' Consultas: ') + trace;
+    } catch (error) {
+      if (current() && error.name !== 'AbortError') $('isbn-status').textContent = 'Falha de conexão na consulta. Seus campos foram preservados; continue manualmente.';
+    } finally {
+      if (generation === lookupGeneration) { lookupController = null; $('isbn-cancel').hidden = true; $('isbn-lookup').disabled = busy; }
+    }
+  });
   $('search-form').addEventListener('submit', event => { event.preventDefault(); offset = 0; run(list); });
   $('refresh').addEventListener('click', () => run(list)); $('next').addEventListener('click', () => { offset = nextOffset; run(list); }); $('previous').addEventListener('click', () => { offset = Math.max(0,offset-10); run(list); });
   if (location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app' || location.protocol !== 'https:') { message('Este catálogo está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {
     const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); if (!response.ok) { message('Entre na conta verificada para usar o catálogo.'); return; }
     const { data } = await response.json(); csrf = data.csrfToken;
-    const capabilities = await api('niches'); photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;
+    const capabilities = await api('niches'); $('isbn-tools').hidden = capabilities.lookupEnabled !== true; photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;
     niches = capabilities.niches.sort((a,b) => a.order-b.order || a.name.localeCompare(b.name));
     niches.filter(n => n.active).forEach(niche => { const option = document.createElement('option'); option.value = niche.id; option.textContent = niche.name; $('niche-filter').append(option); });
     await list(); $('catalog').hidden = false;
