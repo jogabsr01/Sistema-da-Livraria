@@ -172,6 +172,11 @@ function processRequest_(request, c) {
     if (request.action === 'system.ping' && c.environment === 'dev') {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
+    if (typeof request.action === 'string' && (request.action.indexOf('staff.') === 0 || request.action.indexOf('identity.staffAccess.') === 0)) {
+      var staffProps = PropertiesService.getScriptProperties();
+      if (c.environment !== 'dev' || !staffEnabled_() || ['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(key){return staffProps.getProperty(key)!=='true';})) failure_('STAFF_UNAVAILABLE');
+      return request.action.indexOf('staff.') === 0 ? staffOperation_(request,c) : staffAccessOperation_(request,c);
+    }
     if (request.action === 'sales.checkout') {
       var checkoutProps = PropertiesService.getScriptProperties();
       if (c.environment !== 'dev' || ['CHECKOUT_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return checkoutProps.getProperty(key) !== 'true'; })) failure_('CHECKOUT_UNAVAILABLE');
@@ -234,6 +239,7 @@ function doPost(event) {
   catch (error) {
     var allowed = ['REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED', 'ACCESS_REJECTED', 'CATALOG_UNAVAILABLE', 'CATALOG_INVALID', 'CATALOG_CONFLICT', 'CATALOG_DUPLICATE', 'CATALOG_NOT_FOUND', 'CATALOG_STOCK_HISTORY', 'COVER_PHOTOS_UNAVAILABLE', 'COVER_PHOTO_INVALID'];
     allowed = allowed.concat(['CHECKOUT_UNAVAILABLE', 'INVALID_SALE', 'IDEMPOTENCY_CONFLICT', 'INSUFFICIENT_STOCK', 'PRODUCT_UNAVAILABLE', 'SALE_PRICE_CHANGED', 'JOURNAL_CAPACITY', 'JOURNAL_INVALID', 'PROJECTION_CONFLICT']);
+    allowed = allowed.concat(['STAFF_UNAVAILABLE','INVALID_STAFF','STAFF_CONFLICT','STAFF_DUPLICATE','STAFF_CAPACITY']);
     allowed = allowed.concat(['INVALID_STOCK_RECEIPT', 'STOCK_LIMIT']);
     allowed = allowed.concat(['NOTIFICATIONS_UNAVAILABLE', 'INVALID_NOTIFICATION', 'NOTIFICATION_NOT_FOUND', 'NOTIFICATION_CONFLICT', 'NOTIFICATION_CAPACITY']);
     return signedResponse_(c, request, false, null, allowed.includes(error.message) ? error.message : 'UNAVAILABLE');

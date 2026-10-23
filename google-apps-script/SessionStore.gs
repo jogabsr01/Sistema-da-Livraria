@@ -23,6 +23,7 @@ function identityTime_(value) {
   return milliseconds;
 }
 function identitySession_(spreadsheet, tokenHash, now) {
+  if (staffEnabled_()) recoverStaff_(baseSettings_());
   var sessions = identityRows_(spreadsheet, 'Sessoes'), ids = new Set(), hashes = new Set();
   sessions.rows.forEach(function (row) {
     if (!identityUuid_(row.ID_Sessao) || !identityUuid_(row.ID_Usuario) || typeof row.Token_Hash !== 'string' ||

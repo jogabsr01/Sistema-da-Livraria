@@ -1,4 +1,7 @@
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { loadPersonalDataSettings, createPersonalDataVault } from './personal-data.mjs';
+import { normalizeCpf, normalizeStaffContact } from './staff-model.mjs';
+import { catalogUuid } from './catalog-model.mjs';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
 import { loadLoginGuardSettings, createLoginGuard } from './login-guard.mjs';
@@ -25,7 +28,8 @@ export function loadOwnerAccessSettings(env = process.env) {
   if (typeof pepper !== 'string' || !/^[a-f0-9]{64}$/i.test(pepper) ||
       [sessions.config.secret, env.WORKSPACE_SESSION_TOKEN_KEY, env.WORKSPACE_AUTH_GUARD_KEY].some(key => key?.toLowerCase() === pepper.toLowerCase()) ||
       sessions.tokenKey.equals(guards.guardKey)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
-  return { ...sessions, ...guards, pepper: Buffer.from(pepper, 'hex') };
+  const staffEnabled=env.WORKSPACE_STAFF_ENABLED==='true';
+  return { ...sessions, ...guards, pepper: Buffer.from(pepper, 'hex'),staffEnabled,...(staffEnabled?loadPersonalDataSettings(env):{}) };
 }
 export function accessCookie(value) {
   if (!canonical(value)) rejected();
@@ -41,6 +45,15 @@ function readCookie(request) {
 export function createOwnerAccessService(settings, { client }) {
   const { config, guardKey, tokenKey, pepper } = settings;
   if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
+  const vault=settings.staffEnabled?createPersonalDataVault(settings):null;
+  const identifier=value=>{if(typeof value!=='string')throw new ApiError(400,'INVALID_AUTH_REQUEST');if(value.includes('@'))return email(value);if(!vault)throw new ApiError(400,'INVALID_AUTH_REQUEST');return normalizeCpf(value);};
+  async function staffLookup(value){
+    if(!vault)return null;const data=await client.staffAccess('lookup',{emailIndex:value.includes('@')?vault.index('email',value):'',cpfIndex:value.includes('@')?'':vault.index('cpf',value)});
+    if(!data||!Object.hasOwn(data,'account'))throw new ApiError(502,'UPSTREAM_UNTRUSTED');if(data.account===null)return null;
+    const a=data.account;if(!catalogUuid(a.subjectId)||!Number.isSafeInteger(a.authorizationVersion)||a.authorizationVersion<1||typeof a.activated!=='boolean')throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+    const contact=normalizeStaffContact(vault.open('users',a.subjectId,a.contact));
+    if((value.includes('@')?contact.email:contact.cpf)!==value)throw new ApiError(502,'UPSTREAM_UNTRUSTED');return {...a,delivery:contact.email};
+  }
   const scope = [config.environment, config.installationId];
   const digest = (purpose, value, format = 'hex', key = guardKey) => createHmac('sha256', key).update(JSON.stringify([purpose, scope, value])).digest(format);
   const guard = createLoginGuard(settings, { client }), pins = createPinHasher({ ...config, pepper });
@@ -58,15 +71,18 @@ export function createOwnerAccessService(settings, { client }) {
     },
     async execute(operation, input, token, ip) {
       // Trusted platform address only, never body/forwarded HTTP headers.
-      await guard.reserveAttempt({ identifier: ['start', 'login'].includes(operation) ? email(input.email) : 'flow:' + hash(token), originAddress: ip });
+      await guard.reserveAttempt({ identifier: ['start', 'login'].includes(operation) ? identifier(input.email) : 'flow:' + hash(token), originAddress: ip });
       if (operation === 'start') {
         const code = randomBytes(32).toString('base64url');
-        await client.access('start', { email: email(input.email), flowId: randomUUID(), tokenHash: hash(token), codeHash: digest('access.email.v1', [hash(token), code]), code });
+        const value=identifier(input.email),staff=await staffLookup(value),proof={flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code};
+        if(staff) await client.staffAccess('start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery});
+        else await client.access('start', { email:value.includes('@')?value:'unknown@example.invalid',...proof });
         return { stage: 'EMAIL', message: 'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.' };
       }
       if (operation === 'login') {
         if (typeof input.pin !== 'string' || !/^[0-9]{4}$/.test(input.pin)) rejected();
-        const { account } = await client.access('lookup', { email: email(input.email) });
+        const value=identifier(input.email),staff=await staffLookup(value);
+        const {account}=staff?{account:staff.activated&&staff.record?staff:null}:await client.access('lookup',{email:value.includes('@')?value:'unknown@example.invalid'});
         const valid = await pins.verify(input.pin, account?.subjectId || '00000000-0000-4000-8000-000000000000', account?.record || dummy);
         if (!account || !valid) rejected();
         await client.access('login', { flowId: randomUUID(), tokenHash: hash(token), subjectId: account.subjectId, authorizationVersion: account.authorizationVersion });
@@ -96,7 +112,7 @@ export function createOwnerAccessService(settings, { client }) {
         // A lost acknowledgement retries the SAME session, never a second grant.
         const rawToken = digest('access.session.v1', token, 'base64url', tokenKey), tokenHash = tokens.hash(rawToken);
         const principal = validateSessionPrincipal(await client.access('commit', { tokenHash: hash(token), sessionTokenHash: tokenHash }));
-        if (principal.id !== flow.subjectId || principal.sessionId !== flow.flowId || principal.role !== 'SUPER_ADMIN' || principal.assurance !== 'passkey') rejected();
+        if (principal.id !== flow.subjectId || principal.sessionId !== flow.flowId || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role) || principal.assurance !== 'passkey') rejected();
         return { stage: 'COMPLETE', user: { role: principal.role, assurance: principal.assurance }, cookie: sessionCookie(rawToken) };
       }
       throw new ApiError(404, 'NOT_FOUND');
