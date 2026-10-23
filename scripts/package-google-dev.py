@@ -16,7 +16,7 @@ files = [
     'google-apps-script/AuthControl.gs', 'google-apps-script/PasskeyStore.gs',
     'google-apps-script/OwnerAccess.gs', 'google-apps-script/Catalog.gs', 'google-apps-script/appsscript.json',
     'docs/v17/INSTALACAO_GOOGLE.md', 'docs/v17/BACKUP_RECUPERACAO.md',
-    'docs/v17/PRIMEIRO_ACESSO_OWNER.md', 'docs/v17/CATALOGO_COMPARTILHADO_DEV.md',
+    'docs/v17/PRIMEIRO_ACESSO_OWNER.md', 'docs/v17/CATALOGO_COMPARTILHADO_DEV.md', 'docs/v17/ISBN_COMPARTILHADO_DEV.md',
 ]
 for name in files:
     if (root / name).is_symlink():

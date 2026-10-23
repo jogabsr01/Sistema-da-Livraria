@@ -28,6 +28,9 @@
       <div class="toolbar"><h2 id="editor-title">Cadastrar livro</h2><button id="close" type="button" class="secondary">Fechar</button></div>
       <p id="form-status" role="status" aria-live="polite"></p>
       <label>ISBN / código de barras<input id="isbn" maxlength="30" inputmode="numeric" autocomplete="off"></label>
+      <div id="isbn-tools" hidden><div class="toolbar"><button id="isbn-lookup" type="button" class="secondary">Consultar ISBN</button><button id="isbn-cancel" type="button" class="secondary" hidden>Cancelar consulta</button></div>
+        <p id="isbn-status" role="status" aria-live="polite">A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.</p>
+      </div>
       <p>Sem ISBN? Deixe em branco: o livro receberá um código interno.</p>
       <label>Título *<input id="title" maxlength="300" required></label>
       <div class="columns"><label>Autor<input id="author" maxlength="300"></label><label>Editora<input id="publisher" maxlength="160"></label></div>
