@@ -11,7 +11,7 @@
 <body><main>
   <header><p class="badge">AMBIENTE DE TESTES — DEV</p><h1>Frente de Caixa</h1>
     <p>Vendas com ou sem identificação do cliente. Use apenas livros e operações de teste nesta homologação.</p>
-    <nav><a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a> · <a href="/catalogo-dev.html">Catálogo compartilhado</a> · <a href="/acesso-dev.html">Minha conta verificada</a> · <a href="/">Protótipo</a></nav>
+    <nav><a href="/operacoes-dev.html">Histórico e operações</a> · <a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a> · <a href="/catalogo-dev.html">Catálogo compartilhado</a> · <a href="/acesso-dev.html">Minha conta verificada</a> · <a href="/">Protótipo</a></nav>
   </header>
   <p id="status" role="status" aria-live="polite">Conferindo acesso…</p>
   <section id="checkout" hidden>
@@ -44,7 +44,7 @@
 <label for="customer-cpf">CPF</label><input id="customer-cpf" inputmode="numeric" maxlength="20" autocomplete="off" required><small id="customer-cpf-hint"></small>
 <div class="customer-fields"><div><label for="customer-email">E-mail (opcional)</label><input id="customer-email" type="email" maxlength="254" autocomplete="off"></div><div><label for="customer-phone">Celular / WhatsApp (opcional)</label><input id="customer-phone" type="tel" maxlength="20" autocomplete="off"></div></div>
 <details><summary>Endereço opcional</summary><p>Preencha o CEP e o endereço se forem necessários ao atendimento.</p>
-<div class="customer-fields"><div><label for="customer-postalCode">CEP</label><input id="customer-postalCode" inputmode="numeric" maxlength="9" autocomplete="off"></div><div><label for="customer-state">UF</label><input id="customer-state" maxlength="2" autocomplete="off"></div></div>
+<div class="customer-fields"><div><label for="customer-postalCode">CEP</label><input id="customer-postalCode" inputmode="numeric" maxlength="9" autocomplete="off"><button id="customer-cep" type="button" class="secondary">Preencher pelo CEP</button><small>Consulta opcional à BrasilAPI. Somente o CEP será enviado ao clicar.</small></div><div><label for="customer-state">UF</label><input id="customer-state" maxlength="2" autocomplete="off"></div></div>
 <label for="customer-street">Logradouro</label><input id="customer-street" maxlength="200" autocomplete="off"><div class="customer-fields"><div><label for="customer-number">Número</label><input id="customer-number" maxlength="30" autocomplete="off"></div><div><label for="customer-complement">Complemento</label><input id="customer-complement" maxlength="100" autocomplete="off"></div></div>
 <label for="customer-district">Bairro</label><input id="customer-district" maxlength="100" autocomplete="off"><label for="customer-city">Cidade</label><input id="customer-city" maxlength="100" autocomplete="off">
 </details>
