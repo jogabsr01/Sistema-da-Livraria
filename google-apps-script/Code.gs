@@ -1,4 +1,5 @@
-/* Only signed service/identity controls and authorized schema inspection are remotely callable. No business writes. */
+/* Signed DEV identity controls, schema inspection and gated catalog operations.
+ * No HTTP customer, stock or sale writer is exposed. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
 function secretBytes_(secret) { return secret.match(/../g).map(function (h) { var n = parseInt(h, 16); return n > 127 ? n - 256 : n; }); }
