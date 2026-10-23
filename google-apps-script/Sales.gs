@@ -130,10 +130,10 @@ function recoverSales_(ss) {
   if (journal.rows.length > 2000) failure_('JOURNAL_CAPACITY');
   var events = [], eventKeys = new Set();
   saleObjects_(journal).forEach(function (row) {
-    if (row.Tipo !== 'SALE_COMMITTED') failure_('JOURNAL_INVALID');
+    if (!['SALE_COMMITTED', 'STOCK_RECEIVED'].includes(row.Tipo)) failure_('JOURNAL_INVALID');
     var event;
     try { event = JSON.parse(row.Conteudo_JSON); } catch (_) { failure_('JOURNAL_INVALID'); }
-    validateSaleEvent_(event, row);
+    if (row.Tipo === 'STOCK_RECEIVED') validateStockEvent_(event, row); else validateSaleEvent_(event, row);
     if (eventKeys.has(event.idempotencyKey)) failure_('JOURNAL_INVALID');
     eventKeys.add(event.idempotencyKey); events.push(event);
   });
@@ -143,8 +143,21 @@ function recoverSales_(ss) {
     byId[product.ID_Produto] = product;
   });
   var sales = saleTable_(ss, 'Vendas'), items = saleTable_(ss, 'Itens_Venda'), movements = saleTable_(ss, 'Movimentacoes_Estoque'), audit = saleTable_(ss, 'Logs_Auditoria');
-  var plans = [], chains = {};
+  var plans = [], transitions = {};
   events.forEach(function (event) {
+    if (event.type === 'STOCK_RECEIVED') {
+      var r = event.receipt;
+      if (!transitions[r.id]) transitions[r.id] = [];
+      transitions[r.id].push({ version: r.version - 1, before: r.stockBefore, after: r.stockAfter });
+      plans.push({ table: movements, keys: ['ID_Movimentacao'], values: {
+        ID_Movimentacao: r.commandId, Data_Hora: r.createdAt, ID_Produto: r.id, Tipo: 'ENTRADA', Quantidade: r.quantity,
+        Saldo_Anterior: r.stockBefore, Saldo_Posterior: r.stockAfter, Motivo: event.reason, ID_Venda: '', ID_Usuario: event.actorId } });
+      plans.push({ table: audit, keys: ['ID_Log'], values: {
+        ID_Log: r.commandId, Data_Hora: r.createdAt, ID_Usuario: event.actorId, Perfil: event.actorRole,
+        Acao: 'STOCK_RECEIVED', Entidade: 'Produtos', ID_Entidade: r.id, Antes: JSON.stringify({ stock: r.stockBefore, version: r.version - 1 }),
+        Depois: JSON.stringify({ stock: r.stockAfter, version: r.version, quantity: r.quantity, reason: event.reason }), Resultado: 'SUCESSO', ID_Requisicao: r.commandId } });
+      return;
+    }
     var sale = { ID_Venda: event.idempotencyKey, Data_Hora: event.receipt.createdAt,
       ID_Atendente: event.actorId, Valor_Total: event.receipt.totalCents,
       Status: 'CONFIRMADA', Origem: event.version === 2 ? 'CAIXA_DEV' : 'DEV_TEST', Idempotency_Key: event.idempotencyKey };
@@ -158,11 +171,8 @@ function recoverSales_(ss) {
     event.lines.forEach(function (line) {
       var product = byId[line.productId];
       if (!product || !saleInteger_(product.Estoque_Atual) || !saleInteger_(product.Versao_Registro)) failure_('PROJECTION_CONFLICT');
-      var chain = chains[line.productId];
-      if (!chain) chain = chains[line.productId] = [{ version: line.expectedVersion, stock: line.stockAfter + line.quantity }];
-      var last = chain[chain.length - 1];
-      if (last.version !== line.expectedVersion || last.stock !== line.stockAfter + line.quantity) failure_('PROJECTION_CONFLICT');
-      chain.push({ version: line.expectedVersion + 1, stock: line.stockAfter });
+      if (!transitions[line.productId]) transitions[line.productId] = [];
+      transitions[line.productId].push({ version: line.expectedVersion, before: line.stockAfter + line.quantity, after: line.stockAfter });
       plans.push({ table: items, keys: ['ID_Venda', 'ID_Produto'], values: {
         ID_Venda: event.idempotencyKey, ID_Produto: line.productId, Quantidade: line.quantity,
         Preco_Unitario: line.unitPriceCents, Subtotal: line.subtotalCents } });
@@ -177,10 +187,7 @@ function recoverSales_(ss) {
   plans.forEach(function (plan) { ensureSaleRow_(plan.table, plan.keys, plan.values, false); });
   var missingAudit = plans.filter(function (plan) { return plan.table === audit && !audit.rows.some(function (row) { return row[audit.columns.indexOf('ID_Log')] === plan.values.ID_Log; }); }).length;
   if (audit.rows.length + missingAudit > 5000) failure_('JOURNAL_CAPACITY');
-  Object.keys(chains).forEach(function (id) {
-    var product = byId[id];
-    if (!chains[id].some(function (point) { return point.version === product.Versao_Registro && point.stock === product.Estoque_Atual; })) failure_('PROJECTION_CONFLICT');
-  });
+  var chains = inventoryChains_(ss, products, byId, transitions);
   plans.forEach(function (plan) { ensureSaleRow_(plan.table, plan.keys, plan.values, true); });
   Object.keys(chains).forEach(function (id) {
     var product = byId[id], final = chains[id][chains[id].length - 1];
@@ -192,7 +199,7 @@ function recoverSales_(ss) {
     products.sheet.getRange(product.rowNumber, 1, 1, row.length).setValues([row]);
     SpreadsheetApp.flush();
   });
-  return { recoveredSales: events.length };
+  return { recoveredSales: events.filter(function (event) { return event.type === 'SALE_COMMITTED'; }).length };
 }
 // Owner-only editor action; no public endpoint, no supplied actor impersonation.
 function recoverDevelopmentSales() {

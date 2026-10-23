@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 // Tests may run in a Netlify build with real private variables configured.
 // Mask activation ONLY inside this test worker; never inherit live routes.
-for (const key of ['WORKSPACE_BACKEND_ENABLED','WORKSPACE_IDENTITY_SESSIONS_ENABLED','WORKSPACE_IDENTITY_GUARDS_ENABLED','WORKSPACE_IDENTITY_PASSKEYS_ENABLED','WORKSPACE_IDENTITY_ACCESS_ENABLED','WORKSPACE_CATALOG_ENABLED','WORKSPACE_ISBN_LOOKUP_ENABLED','WORKSPACE_COVER_PHOTOS_ENABLED']) process.env[key] = 'false';
+for (const key of ['WORKSPACE_BACKEND_ENABLED','WORKSPACE_IDENTITY_SESSIONS_ENABLED','WORKSPACE_IDENTITY_GUARDS_ENABLED','WORKSPACE_IDENTITY_PASSKEYS_ENABLED','WORKSPACE_IDENTITY_ACCESS_ENABLED','WORKSPACE_CATALOG_ENABLED','WORKSPACE_ISBN_LOOKUP_ENABLED','WORKSPACE_COVER_PHOTOS_ENABLED','WORKSPACE_CHECKOUT_ENABLED']) process.env[key] = 'false';
 const localFetch = globalThis.fetch;
 globalThis.fetch = async (input, options = {}) => {
   const url = new URL(input instanceof Request ? input.url : String(input));

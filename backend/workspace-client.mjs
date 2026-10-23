@@ -53,7 +53,13 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
           return { id: value.id, ...record, stock: value.stock, version: value.version, updatedAt: value.updatedAt,hasPhoto:value.hasPhoto === true,
             photoUrl:value.hasPhoto === true ? `/api/v1/catalog/cover?id=${value.id}&v=${value.version}`:'' };
         }
-        if (action === 'catalog.save') {
+        if (action === 'catalog.receive') {
+          if (!data || data.commandId !== payload.commandId || data.id !== payload.id || data.quantity !== payload.quantity || data.version !== payload.expectedVersion + 1 ||
+              !Number.isSafeInteger(data.stockBefore) || data.stockBefore < 0 || !Number.isSafeInteger(data.stockAfter) || data.stockAfter > 1_000_000 || data.stockAfter !== data.stockBefore + data.quantity ||
+              typeof data.createdAt !== 'string' || !Number.isFinite(Date.parse(data.createdAt))) invalid();
+          return { commandId: data.commandId, id: data.id, quantity: data.quantity, version: data.version, stockBefore: data.stockBefore, stockAfter: data.stockAfter, createdAt: data.createdAt };
+        }
+        if (['catalog.save', 'catalog.remove'].includes(action)) {
           if (data?.id !== payload.id || data.version !== payload.expectedVersion + 1) invalid(); return { id: data.id, version: data.version };
         }
         if (action === 'catalog.cover') {
@@ -165,7 +171,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
     checkout: (actor, payload) => invoke('sales.checkout', actor, payload),
     catalog: (operation, actor, payload) => {
-      if (!['list', 'get', 'niches', 'save', 'cover'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
+      if (!['list', 'get', 'niches', 'save', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {

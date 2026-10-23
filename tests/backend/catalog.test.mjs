@@ -50,7 +50,7 @@ test('two independent sessions editing one revision yield one success and one co
 test('duplicate active ISBN is rejected before journal writes, inactive books are excluded unless requested',async()=>{
   const s=catalogFixture(),a=s.session(),c=s.command(); await s.client.catalog('save',a.actor,c); const before=s.journal.getLastRow();
   await assert.rejects(s.client.catalog('save',a.actor,s.command()),{code:'WORKSPACE_CATALOG_DUPLICATE'}); assert.equal(s.journal.getLastRow(),before);
-  await s.client.catalog('save',a.actor,s.command({id:c.id,expectedVersion:1,record:{active:false}}));
+  await s.client.catalog('save',s.session('ADMIN').actor,s.command({id:c.id,expectedVersion:1,record:{active:false}}));
   assert.equal((await s.client.catalog('list',a.actor,list)).total,0); assert.equal((await s.client.catalog('list',a.actor,{...list,includeInactive:true})).total,1);
 });
 test('failures before/after intent, product, relation, audit and receipt recover exactly one product/link/audit',async()=>{

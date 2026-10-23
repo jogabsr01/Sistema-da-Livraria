@@ -144,11 +144,13 @@ test('corrupted v2 payment/receipt/role/hash blocks replay and further stock dec
   }
 });
 
-test('catalog preserves the sold-product version checkpoint and refuses metadata edits until unified event replay', async () => {
+test('sold-out book remains editable and its inventory checkpoint survives metadata changes', async () => {
   const s = await setup(1); assert.equal((await s.http()).status, 200);
   const product = (await s.client.catalog('get', s.user.actor, { id: s.product.id })).product;
   assert.equal(product.version, 2); assert.equal(product.stock, 0);
-  await assert.rejects(s.client.catalog('save', s.user.actor, { ...s.product, commandId: randomUUID(), expectedVersion: 2 }), { code: 'WORKSPACE_CATALOG_STOCK_HISTORY' });
+  await s.client.catalog('save', s.user.actor, { ...s.product, commandId: randomUUID(), expectedVersion: 2, record: { ...s.product.record, title: 'Título atualizado sem estoque' } });
+  const updated = (await s.client.catalog('get', s.user.actor, { id: s.product.id })).product;
+  assert.equal(updated.title, 'Título atualizado sem estoque'); assert.equal(updated.stock, 0); assert.equal(updated.version, 3);
   assert.equal(s.stock(), 0); assert.equal((await s.http()).status, 409);
 });
 
