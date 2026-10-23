@@ -14,7 +14,7 @@ O manifest usa Sheets e DriveApp. DriveApp exige escopo amplo de Drive: revisar 
 
 ## 2. Copiar o código e registrar a configuração privada
 
-Copiar em lote todos os arquivos atuais de `google-apps-script`: `Code.gs`, `Schema.gs`, `Sales.gs`, `Stock.gs`, `SessionStore.gs`, `AuthControl.gs`, `PasskeyStore.gs`, `OwnerAccess.gs`, `Catalog.gs`, `CoverPhotos.gs` e o manifest `appsscript.json`. Não misturar versões ou instalar somente os arquivos da fundação. O schema gerado deve acompanhar o JSON do mesmo commit; gerar com `npm run schema:generate` quando houver migração revisada. Homologação das regras de estoque: [ESTOQUE_REPOSICAO_DEV.md](ESTOQUE_REPOSICAO_DEV.md).
+Copiar em lote todos os arquivos atuais de `google-apps-script`: `Code.gs`, `Schema.gs`, `Sales.gs`, `Stock.gs`, `Notifications.gs`, `SessionStore.gs`, `AuthControl.gs`, `PasskeyStore.gs`, `OwnerAccess.gs`, `Catalog.gs`, `CoverPhotos.gs` e o manifest `appsscript.json`. Não misturar versões ou instalar somente os arquivos da fundação. O schema gerado deve acompanhar o JSON do mesmo commit; gerar com `npm run schema:generate` quando houver migração revisada. Homologação: [ESTOQUE_REPOSICAO_DEV.md](ESTOQUE_REPOSICAO_DEV.md) e [NOTIFICACOES_REPOSICAO_DEV.md](NOTIFICACOES_REPOSICAO_DEV.md).
 
 Em Apps Script → Configurações do projeto → Propriedades do script, preencher:
 
