@@ -449,6 +449,35 @@ class V16(unittest.TestCase):
                 chooser.value.set_files({'name':'codigo.png','mimeType':'image/png','buffer':png(True)})
                 self.page.wait_for_function('demoCam.accepted')
                 self.page.evaluate('Cart.clear()')
+    def test_stock_no_negative_override_and_duplicate_lines_are_aggregated(self):
+        result=self.page.evaluate('''async()=>{
+            const p=state.data.produtos.find(p=>p.estoque>0),before=p.estoque;
+            const payload={idVenda:'V-TEST-'+crypto.randomUUID(),itens:[{isbn:p.isbn,quantidade:before},{isbn:p.isbn,quantidade:1}],
+              totalPrevistoCentavos:(before+1)*p.precoCentavos,cliente:{nome:'Cliente fictício',cpf:''},pagamento:state.data.pagamentos[0],permitirEstoqueNegativo:true};
+            let code='';try{await Api.call('checkout',payload);}catch(e){code=e.code;}
+            await Api.refresh();return {code,before,after:productOf(p.isbn).estoque};
+        }''')
+        self.assertEqual(result['code'],'INSUFFICIENT_STOCK');self.assertEqual(result['before'],result['after'])
+
+    def test_stock_sold_out_demo_book_remains_editable_and_can_be_replenished(self):
+        result=self.page.evaluate('''async()=>{
+            const p=state.data.produtos.find(p=>p.estoque>0),isbn=p.isbn;
+            await Api.call('checkout',{idVenda:'V-TEST-'+crypto.randomUUID(),itens:[{isbn,quantidade:p.estoque}],totalPrevistoCentavos:p.estoque*p.precoCentavos,
+              cliente:{nome:'Cliente fictício',cpf:''},pagamento:state.data.pagamentos[0]});await Api.refresh();
+            Cart.add(isbn);const cartAtZero=state.cart.length;
+            await Api.call('updateProductDetails',{...productOf(isbn),titulo:'Livro esgotado editado'});
+            await Api.call('addStock',{isbn,quantidade:3,operationId:crypto.randomUUID()});await Api.refresh();
+            Cart.add(isbn);return {isbn,cartAtZero,stock:productOf(isbn).estoque,title:productOf(isbn).titulo,cart:state.cart};
+        }''')
+        self.assertEqual(result['cartAtZero'],0);self.assertEqual(result['stock'],3);self.assertEqual(result['title'],'Livro esgotado editado');self.assertEqual(len(result['cart']),1)
+
+    def test_stock_excess_cart_quantity_cannot_open_demo_checkout(self):
+        self.page.evaluate('''()=>{
+            const p=state.data.produtos.find(p=>p.estoque>0);Cart.add(p.isbn);state.cart[0].quantidade=p.estoque+1;
+            View.render();UI.openCheckout();
+        }''')
+        expect(self.page.get_by_role('button',name='Finalizar venda →',exact=True)).to_be_disabled();expect(self.page.locator('#checkoutForm')).to_have_count(0)
+
     def test_badge_exclusive_to_dev(self):
         for url,shown in [(DEV,True),(PROD,False),('https://deploy-preview-2--merry-chimera-49a1f3.netlify.app/',False)]:
             with self.subTest(url=url):

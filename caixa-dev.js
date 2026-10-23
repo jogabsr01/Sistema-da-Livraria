@@ -42,11 +42,14 @@
       remove.addEventListener('click', () => { if (!locked()) { cart.delete(id); renderCart(); } });
       row.append(title, label, remove); $('cart-items').append(row);
       if (product) total += product.priceCents * quantity;
+      if (product && (!product.active || product.stock < quantity)) {
+        const warning = document.createElement('p'); warning.textContent = product.stock === 0 ? 'Sem estoque. Reponha as unidades ou remova este livro para continuar.' : 'Quantidade indisponível. Estoque atual: ' + product.stock + '.'; row.append(warning);
+      }
     }
     $('total').textContent = 'Total: ' + money(pending?.expectedTotalCents ?? receipt?.totalCents ?? total);
     $('payment').disabled = locked();
     $('confirm').textContent = pending ? 'Verificar resultado / tentar novamente' : 'Confirmar venda sem cadastro';
-    $('confirm').disabled = busy || !!receipt || !cart.size || !pending && (!Number.isSafeInteger(total) || [...cart.keys()].some(id => !records.has(id)));
+    $('confirm').disabled = busy || !!receipt || !cart.size || !pending && (!Number.isSafeInteger(total) || [...cart].some(([id, quantity]) => { const p = records.get(id); return !p || !p.active || p.stock < quantity; }));
     $('new-sale').disabled = busy || !!pending;
     document.querySelectorAll('[data-add]').forEach(button => { const p = records.get(button.dataset.add); button.disabled = locked() || !p?.active || p.stock < 1; });
     return total;
@@ -65,7 +68,7 @@
           const img = document.createElement('img'); img.src = product.photoUrl || product.coverUrl; img.alt = 'Capa de ' + product.title; img.referrerPolicy = 'no-referrer'; img.addEventListener('error', () => img.remove(), { once:true }); article.append(img);
         }
         const detail = document.createElement('div'), title = document.createElement('h2'), info = document.createElement('p'), add = document.createElement('button');
-        title.textContent = product.title; info.textContent = money(product.priceCents) + ' · Estoque: ' + product.stock;
+        title.textContent = product.title; info.textContent = money(product.priceCents) + ' · Estoque: ' + product.stock + (product.stock === 0 ? ' · Sem estoque' : '');
         add.type = 'button'; add.textContent = 'Adicionar'; add.dataset.add = product.id;
         add.addEventListener('click', () => {
           if (locked()) return;

@@ -3,13 +3,15 @@
   const $ = id => document.getElementById(id), message = text => { $('status').textContent = text; };
   let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false, lookupGeneration = 0, lookupController = null, photosEnabled = false, pendingPhoto, photoPreview = '', cameraStream = null, cameraGeneration = 0;
   const pendingImages = new Set();
+  let canDelete = false, stockTarget = null, pendingStock = null, stockStorageKey = '', archiveCommand = null;
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   function explain(error) {
     if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
     if (error.code === 'UNAUTHENTICATED') return 'Entre na conta verificada para usar o catálogo.';
     if (error.code?.includes('CONFLICT')) return 'Outro acesso alterou este livro. Carregue a versão mais recente antes de salvar de novo.';
     if (error.code?.includes('DUPLICATE')) return 'Já existe um livro ativo com esse ISBN ou código interno.';
-    if (error.code?.includes('STOCK_HISTORY')) return 'Este livro já possui histórico de vendas. Sua edição aguarda a integração da etapa de estoque.';
+    if (error.code === 'FORBIDDEN' || error.code === 'WORKSPACE_FORBIDDEN') return 'Somente administradores podem excluir ou alterar a ativação de livros.';
+    if (error.code?.includes('STOCK_LIMIT')) return 'Esta entrada excede o limite de um milhão de unidades. Confira a quantidade.';
     if (error.code === 'INVALID_PRODUCT' || error.code?.includes('CATALOG_INVALID')) return 'Confira ISBN, preço, nichos e link HTTPS da capa. Use valores válidos e ao menos um nicho.';
     if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_CATALOG_UNAVAILABLE' || error.code?.includes('CONFIGURATION')) return 'O catálogo compartilhado ainda não está disponível nesta instalação DEV.';
     return 'Não foi possível confirmar o resultado. Confira a conexão e tente novamente; o mesmo pedido não será duplicado.';
@@ -38,9 +40,22 @@
       const image = document.createElement('span'); cover(book.photoUrl || book.coverUrl, image); const content = document.createElement('div');
       const title = document.createElement('h2'); title.textContent = book.title;
       const author = document.createElement('p'); author.textContent = book.author || 'Autor não informado';
-      const price = document.createElement('p'); price.textContent = money(book.priceCents) + ' · Estoque: ' + book.stock + (book.active ? '' : ' · Inativo');
+      const price = document.createElement('p'); price.textContent = money(book.priceCents) + ' · Estoque: ' + book.stock + (book.stock === 0 ? ' · Sem estoque' : '') + (book.active ? '' : ' · Inativo');
       const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Detalhes e edição'; edit.addEventListener('click', () => run(() => openBook(book.id)));
-      content.append(title, author, price, edit); article.append(image, content); $('books').append(article);
+      content.append(title, author, price, edit);
+      if (book.active) {
+        const stock = document.createElement('button'); stock.type = 'button'; stock.className = 'secondary'; stock.textContent = 'Adicionar unidades';
+        stock.addEventListener('click', () => run(() => openStock(book.id))); content.append(stock);
+        if (canDelete) {
+          const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'secondary'; remove.textContent = 'Excluir livro';
+          remove.addEventListener('click', () => run(async () => {
+            if (!confirm('Excluir “' + book.title + '” do catálogo ativo? O cadastro e seu histórico serão preservados.')) return;
+            if (!archiveCommand || archiveCommand.id !== book.id || archiveCommand.expectedVersion !== book.version) archiveCommand = { commandId:crypto.randomUUID(),id:book.id,expectedVersion:book.version };
+            await api('remove', archiveCommand); archiveCommand = null; await list(); message('Livro excluído do catálogo ativo. Cadastro e histórico preservados.');
+          })); content.append(remove);
+        }
+      }
+      article.append(image, content); $('books').append(article);
     });
     $('count').textContent = data.total ? `${data.total} livro(s) encontrado(s). Página ${Math.floor(offset / 10) + 1}.` : 'Nenhum livro encontrado.';
     $('previous').hidden = offset === 0; $('next').hidden = nextOffset === null; message('Catálogo atualizado com os dados do servidor.');
@@ -60,7 +75,8 @@
     Object.entries(mappings).forEach(([input,key]) => { $(input).value = editing?.[key] || ''; });
     $('price').value = editing ? (editing.priceCents / 100).toFixed(2).replace('.',',') : '';
     $('minimum-stock').value = editing?.minimumStock ?? 0; $('year').value = editing?.year || ''; $('pages').value = editing?.pages || ''; $('active').checked = editing?.active ?? true;
-    $('stock-info').textContent = editing ? `Estoque atual: ${editing.stock}. O cadastro não altera o saldo.` : 'Estoque inicial: 0. Entradas e vendas serão integradas na etapa de estoque.';
+    $('active').disabled = !canDelete;
+    $('stock-info').textContent = editing ? `Estoque atual: ${editing.stock}. ${editing.stock === 0 ? 'Sem estoque: o livro continua editável. ' : ''}Para repor, use Adicionar unidades no catálogo.` : 'Estoque inicial: 0. Após salvar, use Adicionar unidades para registrar uma entrada.';
     choices(editing?.nicheIds || (niches.filter(n => n.active).length === 1 ? [niches.find(n => n.active).id] : [])); cover(editing?.photoUrl || $('cover').value, $('cover-preview'), true);
     if (!$('editor').open) $('editor').showModal();
   }
@@ -80,6 +96,45 @@
     catch { message('Livro salvo com confirmação do servidor. Não foi possível atualizar a lista; use Atualizar catálogo.'); }
   }, true); });
   $('new').addEventListener('click', () => run(() => openBook(null))); $('close').addEventListener('click', () => $('editor').close());
+  async function openStock(id) {
+    if (pendingStock && pendingStock.id !== id) { message('Verifique a entrada pendente antes de iniciar outra.'); return; }
+    stockTarget = (await api('get', null, '?id=' + encodeURIComponent(id))).product;
+    $('stock-product').textContent = stockTarget.title + ' · Estoque atual: ' + stockTarget.stock;
+    $('stock-quantity').value = pendingStock?.quantity || 1; $('stock-reason').value = pendingStock?.reason || 'REPOSICAO';
+    $('stock-quantity').disabled = !!pendingStock; $('stock-reason').disabled = !!pendingStock;
+    $('stock-save').textContent = pendingStock ? 'Verificar entrada / tentar novamente' : 'Confirmar entrada';
+    $('stock-status').textContent = pendingStock ? 'Há uma entrada aguardando confirmação. A mesma referência será usada para evitar duplicidade.' : 'As unidades serão adicionadas ao saldo atual deste mesmo livro.';
+    if (!$('stock-editor').open) $('stock-editor').showModal();
+  }
+  $('stock-close').addEventListener('click', () => $('stock-editor').close());
+  $('stock-editor').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+  $('resume-stock').addEventListener('click', () => { if (pendingStock) run(() => openStock(pendingStock.id)); });
+  $('stock-form').addEventListener('submit', event => { event.preventDefault(); run(async () => {
+    if (!stockTarget) return;
+    if (!pendingStock) {
+      const quantity = Number($('stock-quantity').value);
+      if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000000) { $('stock-status').textContent = 'Informe uma quantidade inteira de 1 a 1.000.000.'; return; }
+      const value = { commandId:crypto.randomUUID(),id:stockTarget.id,expectedVersion:stockTarget.version,quantity,reason:$('stock-reason').value };
+      try { sessionStorage.setItem(stockStorageKey, JSON.stringify(value)); } catch { $('stock-status').textContent = 'Não foi possível guardar a referência neste navegador. Nenhuma entrada foi enviada.'; return; }
+      pendingStock = value; $('resume-stock').hidden = false;
+    }
+    $('stock-quantity').disabled = true; $('stock-reason').disabled = true;
+    $('stock-save').textContent = 'Verificar entrada / tentar novamente'; $('stock-status').textContent = 'Registrando a entrada e conferindo o saldo…';
+    try {
+      const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); const current = await response.json();
+      if (!response.ok || 'catalog.stock.pending.' + current.data?.user?.id !== stockStorageKey) throw Error('ACCOUNT_CHANGED'); csrf = current.data.csrfToken;
+      const result = await api('receive', pendingStock);
+      try { sessionStorage.removeItem(stockStorageKey); } catch { $('stock-status').textContent = 'Entrada confirmada. Não foi possível limpar a referência local. Use Verificar entrada para recuperar este mesmo resultado antes de iniciar outra.'; return; }
+      pendingStock = null; $('resume-stock').hidden = true; $('stock-editor').close();
+      let updated = true; try { await list(); } catch { updated = false; }
+      message('Entrada confirmada: ' + result.quantity + ' unidade(s). Saldo após esta entrada: ' + result.stockAfter + '.' + (updated ? '' : ' Use Atualizar catálogo para conferir os dados mais recentes.'));
+    } catch (error) {
+      if (['WORKSPACE_CATALOG_CONFLICT','WORKSPACE_STOCK_LIMIT','WORKSPACE_PRODUCT_UNAVAILABLE','INVALID_STOCK_RECEIPT','WORKSPACE_INVALID_STOCK_RECEIPT'].includes(error.code)) {
+        try { sessionStorage.removeItem(stockStorageKey); pendingStock = null; $('resume-stock').hidden = true; } catch { $('stock-status').textContent = 'Não foi possível limpar a referência. Verifique esta entrada antes de iniciar outra.'; return; }
+        await openStock(stockTarget.id); $('stock-status').textContent = 'Entrada não registrada. Confira o saldo atualizado, o status do livro e a quantidade antes de confirmar novamente.';
+      } else $('stock-status').textContent = 'Não foi possível confirmar o resultado. Use Verificar entrada / tentar novamente. A referência será recuperada nesta aba após recarga com a mesma conta.';
+    }
+  }); });
   $('reload-book').addEventListener('click', () => run(() => openBook(editing.id), true));
   $('editor').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
   $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();});
@@ -205,7 +260,14 @@
   if (location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app' || location.protocol !== 'https:') { message('Este catálogo está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {
     const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); if (!response.ok) { message('Entre na conta verificada para usar o catálogo.'); return; }
-    const { data } = await response.json(); csrf = data.csrfToken;
+    const { data } = await response.json(); csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); stockStorageKey = 'catalog.stock.pending.' + data.user.id;
+    const stored = sessionStorage.getItem(stockStorageKey);
+    if (stored) {
+      const value = JSON.parse(stored), uuid = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
+      if (stored.length > 2000 || !value || Object.keys(value).sort().join() !== 'commandId,expectedVersion,id,quantity,reason' || !uuid(value.commandId) || !uuid(value.id) ||
+          !Number.isSafeInteger(value.expectedVersion) || value.expectedVersion < 1 || value.expectedVersion >= 1000000000 || !Number.isSafeInteger(value.quantity) || value.quantity < 1 || value.quantity > 1000000 || !['REPOSICAO','ESTOQUE_INICIAL','RECEBIMENTO'].includes(value.reason)) throw Error('INVALID_RECOVERY');
+      pendingStock = value; $('resume-stock').hidden = false;
+    }
     const capabilities = await api('niches'); $('isbn-tools').hidden = capabilities.lookupEnabled !== true; photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;
     niches = capabilities.niches.sort((a,b) => a.order-b.order || a.name.localeCompare(b.name));
     niches.filter(n => n.active).forEach(niche => { const option = document.createElement('option'); option.value = niche.id; option.textContent = niche.name; $('niche-filter').append(option); });
