@@ -28,7 +28,7 @@ test('private auth controls provision with pre-migration backup, are idempotent 
   assert.notEqual(id, business.spreadsheetId); assert.equal(gas.backupCount, 2);
   const backups = [...gas.resources.values()].filter(resource => resource.kind === 'backup');
   assert.equal(backups[1].snapshot.length, 0, 'backup precedes private schema creation');
-  assert.equal(gas.sheets.get(id).tables.size, 3);
+  assert.equal(gas.sheets.get(id).tables.size, 5);
   assert.equal(gas.sheets.get(business.spreadsheetId).tables.size, 17);
   assert.equal(gas.call('provisionDevelopmentAuthControls').changed, false);
   assert.equal(gas.props.IDENTITY_CONTROL_SPREADSHEET_ID, id); assert.equal(gas.backupCount, 2);
