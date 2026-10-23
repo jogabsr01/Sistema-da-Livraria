@@ -23,9 +23,9 @@ export function requestMessage(config, actor, now = Date.now()) {
 export function verifyResponse(value, request, now = Date.now()) {
   if (!value || value.version !== 1 || value.environment !== request.environment || value.installationId !== request.installationId || value.requestId !== request.requestId || value.nonce !== request.nonce || !Number.isSafeInteger(value.sentAt) || Math.abs(now - value.sentAt) > 120_000 || typeof value.ok !== 'boolean') throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
   if (!value.ok) {
-    const allowed = { REPLAY: 409, BUSY: 503, SCHEMA_REQUIRED: 503, FORBIDDEN: 403, BINDING_MISMATCH: 503 };
+    const allowed = { REPLAY: 409, BUSY: 503, SCHEMA_REQUIRED: 503, FORBIDDEN: 403, BINDING_MISMATCH: 503, UNAUTHENTICATED: 401, IDENTITY_UNAVAILABLE: 503 };
     const code = value.error?.code;
-    throw new ApiError(allowed[code] || 502, Object.hasOwn(allowed, code) ? `WORKSPACE_${code}` : 'UPSTREAM_UNAVAILABLE');
+    throw new ApiError(allowed[code] || 502, code === 'UNAUTHENTICATED' ? 'UNAUTHENTICATED' : Object.hasOwn(allowed, code) ? `WORKSPACE_${code}` : 'UPSTREAM_UNAVAILABLE');
   }
   return value.data;
 }

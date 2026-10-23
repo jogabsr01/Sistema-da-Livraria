@@ -9,8 +9,18 @@ import { pack, unpack, requestMessage, verifyResponse } from '../../backend/prot
 import { createWorkspaceClient } from '../../backend/workspace-client.mjs';
 import { createSchemaHandler } from '../../netlify/functions/schema.mjs';
 function setup() {
-  const gas = createGasEmulator(properties), result = gas.call('provisionDevelopment');
+  const gas = createGasEmulator({ ...properties, IDENTITY_SESSIONS_ENABLED: 'true' }), result = gas.call('provisionDevelopment');
   const config = loadConfig(environment({ WORKSPACE_SPREADSHEET_ID: result.spreadsheetId, WORKSPACE_DRIVE_ROOT_ID: result.driveRootId }));
+  const ss = gas.sheets.get(result.spreadsheetId), principal = actor();
+  function append(name, fields) {
+    const sheet = ss.getSheetByName(name); sheet.appendRow(sheet.rows[0].map(column => fields[column] ?? ''));
+  }
+  append('Usuarios', { ID_Usuario: principal.id, Perfil: principal.role, Status: 'ATIVO', Primeiro_Acesso_Concluido: true });
+  append('Configuracoes', { Chave: 'identity.version.' + principal.id, Valor: 1 });
+  append('Sessoes', { ID_Sessao: '6ac4f13e-9467-4e96-8dc2-0506681d75eb', ID_Usuario: principal.id,
+    Criado_Em: new Date(principal.authenticatedAt).toISOString(), Expira_Em: new Date(Date.now() + 3_600_000).toISOString(),
+    Ultima_Atividade: new Date(principal.authenticatedAt).toISOString(), Token_Hash: principal.sessionTokenHash,
+    Nivel_Autenticacao: principal.assurance, Versao_Autorizacao: 1 });
   return { gas, config };
 }
 function send(gas, config, request) { return gas.post(pack(request, config.secret, 'request')); }
@@ -93,4 +103,26 @@ test('timeouts and unexpected upstream content fail closed without leaking messa
   try { await assert.rejects(timeout.schema(actor()), { code: 'UPSTREAM_TIMEOUT' }); } finally { clearTimeout(keepAlive); }
   const malformed = createWorkspaceClient(config, { fetchImpl: async () => new Response('not-json-and-private-data') });
   await assert.rejects(malformed.schema(actor()), { code: 'UPSTREAM_UNAVAILABLE' });
+});
+
+test('GAS schema rechecks revocation and authorization epoch within its operation lock', () => {
+  for (const change of ['revoked', 'epoch', 'disabled', 'no-reference', 'identity-off']) {
+    const { gas, config } = setup(), ss = gas.sheets.get(config.spreadsheetId);
+    const read = requestMessage(config, null); read.action = 'identity.session.read'; read.payload = { tokenHash: actor().sessionTokenHash };
+    assert.equal(unpack(send(gas, config, read), config.secret, 'response').ok, true);
+    if (change === 'revoked') {
+      const table = ss.getSheetByName('Sessoes'); table.rows[1][table.rows[0].indexOf('Revogado_Em')] = new Date().toISOString();
+    }
+    if (change === 'epoch') {
+      const table = ss.getSheetByName('Configuracoes'); table.rows[1][table.rows[0].indexOf('Valor')] = 2;
+    }
+    if (change === 'disabled') {
+      const table = ss.getSheetByName('Usuarios'); table.rows[1][table.rows[0].indexOf('Status')] = 'INATIVO';
+    }
+    if (change === 'identity-off') gas.props.IDENTITY_SESSIONS_ENABLED = 'false';
+    const principal = actor(); if (change === 'no-reference') delete principal.sessionTokenHash;
+    const result = unpack(send(gas, config, requestMessage(config, principal)), config.secret, 'response');
+    assert.equal(result.ok, false, change);
+    assert.ok(['UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE'].includes(result.error.code));
+  }
 });

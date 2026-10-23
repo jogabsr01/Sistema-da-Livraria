@@ -50,7 +50,7 @@ test('GAS readiness requires signature, nonce and bindings, never grants a user 
   assert.deepEqual(data, { ready: true, environment: 'dev', schemaVersion: 1 });
   assert.equal(unpack(gas.post(envelope), config.secret, 'response').error.code, 'REPLAY');
   const schema = requestMessage(config, null);
-  assert.equal(unpack(gas.post(pack(schema, config.secret, 'request')), config.secret, 'response').error.code, 'FORBIDDEN');
+  assert.equal(unpack(gas.post(pack(schema, config.secret, 'request')), config.secret, 'response').error.code, 'IDENTITY_UNAVAILABLE');
   assert.equal(gas.post(pack({ ...message, nonce: 'a'.repeat(64) }, '00'.repeat(32), 'request')).error.code, 'UNAUTHORIZED');
 });
 

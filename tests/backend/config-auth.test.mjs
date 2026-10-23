@@ -17,7 +17,7 @@ test('foundation administrative API is not activated by default', async () => {
   const body = await response.text(); assert.ok(!body.includes('2468')); assert.ok(!body.includes('spreadsheet'));
 });
 test('demo PINs and caller role claims never authenticate a real identity', async () => {
-  for (const pin of ['1357', '2468']) await assert.rejects(authenticate(new Request('https://example.invalid/', { headers: { authorization: `Bearer ${pin}`, 'x-role': 'SUPER_ADMIN' } })), { code: 'IDENTITY_NOT_IMPLEMENTED' });
+  for (const pin of ['1357', '2468']) await assert.rejects(authenticate(new Request('https://example.invalid/', { headers: { authorization: `Bearer ${pin}`, 'x-role': 'SUPER_ADMIN' } })), { code: 'IDENTITY_NOT_ACTIVATED' });
 });
 test('server authorization requires admin plus recent MFA/passkey', () => {
   assert.equal(requireSchemaPermission(actor()).role, 'ADMIN');
