@@ -27,3 +27,7 @@ Isso não substitui uma verificação em Android/iOS físico de foco, iluminaç�
 ## Diagnóstico e isolamento do transporte local
 
 `npm run build` seguido de `npm run test:diagnostics` executa cinco cenários Chromium sobre o HTML publicado: coexistência com scripts que usam window.google, namespace somente leitura, cadastro/recarga, relatório de erro com arquivo/pilha e preservação de falhas reais. Scripts e erros injetados são fixtures explícitas; não identificam uma extensão real. A execução por unittest discover também inclui esses cenários e requer dist atualizado pelo build.
+
+## Teste aprofundado de capas
+
+Após npm run build, executar ZXING_JS=<biblioteca verificada> npm run test:cover-hardening. A suíte usa o PNG editorial real incluído no build, verifica persistência nas telas, quota cheia e corrupção, e executa câmera virtual. Metadados de APIs são fixtures/replays explícitos; o cenário de fotografia manual não significa que uma capa editorial foi encontrada. O experimento com consultas externas reais e seus limites está em docs/v17/QA_CAPAS_HARDENING.md.

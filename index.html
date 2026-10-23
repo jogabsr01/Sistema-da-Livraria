@@ -11,6 +11,7 @@
 <!-- Tailwind para utilitários. Os estilos essenciais também estão inline, para
        preservar o visual se o CDN falhar depois do primeiro carregamento. -->
 
+  <script defer src="/cover-references.js"></script>
   <script id="demo-diagnostics">
   (function(){
     const records=[];
@@ -257,7 +258,9 @@
       border-radius:20px;font-size:11px;font-weight:750;margin:3px 4px 3px 0}
     .cover-upload{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:8px 0 14px}
     .cover-upload .cover-upload-label{font-size:12px;color:#475569;line-height:1.5;flex:1;min-width:180px}
-    .cover-upload label.btn{cursor:pointer}
+    .cover-upload .btn{cursor:pointer;white-space:normal}
+    .cover-camera-panel{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFC}
+    .cover-camera-panel video{display:block;width:100%;max-height:320px;background:#102A22;border-radius:10px;margin-bottom:10px}
     @media(max-width:440px){.book-cover.cover-large{width:92px;height:130px}.cover-highlight{gap:10px}}
 
 
@@ -546,7 +549,11 @@ const DemoRPC = (function () {
     p.descricao=String(p.descricao||'').trim();
     p.fonteBibliografica=String(p.fonteBibliografica||'').trim();
   });
-  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db));}catch(_){}};
+  let lastStoredJSON=JSON.stringify(db);
+  const save=()=>{
+    try{const serialized=JSON.stringify(db);localStorage.setItem(KEY,serialized);lastStoredJSON=serialized;}
+    catch(_){db=JSON.parse(lastStoredJSON);const error=Error('Não foi possível salvar: o armazenamento deste navegador está indisponível ou cheio. Mantenha o formulário aberto e tente novamente.');error.code='DEMO_STORAGE_FAILED';throw error;}
+  };
   const clone=value=>JSON.parse(JSON.stringify(value));
   const dayKey = date => {
     const parts=new Intl.DateTimeFormat('en-US',{
@@ -1072,6 +1079,11 @@ const Bibliografia={
     return false;
   },
   async buscarCapa(fontes,isbn){
+    const cached=window.LivrariaCoverReferences?.[isbn];
+    if(cached && /^\/covers\/97[89]\d{10}-[a-f0-9]{16}\.png$/.test(cached.path) && location.protocol==='https:'){
+      const local=location.origin+cached.path;
+      if(await testarImagem(local,2000))return {url:local,fonte:cached.source+' — cópia local'};
+    }
     const candidatos=[
       ...fontes.filter(Boolean).flatMap(source=>
         [source.capaUrl,...(source.capas||[])].map(url=>({url:coverHTTPS(url),fonte:source.fonte}))),
@@ -1139,7 +1151,7 @@ const Bibliografia={
       const specialOnly=dados.fontes.length===1&&!!referencia &&
         dados.fontes[0]===referencia.fonte;
       const statusCapa=dados.capaUrl?'✅ Capa encontrada e verificada.':
-        '⚠️ A ficha do livro foi encontrada, mas nenhuma capa disponível passou na verificação. Você pode enviar uma foto da capa.';
+        '⚠️ A ficha do livro foi encontrada, mas nenhuma capa foi validada. Use “Tirar foto da capa” ou “Escolher da galeria” para completar o cadastro.';
       return {dados,mensagem:(specialOnly
         ? 'Dados preenchidos por referência editorial conferida (não por API).'
         : 'Dados encontrados; confira título, edição e capa antes de salvar.')+
@@ -1286,13 +1298,97 @@ const UI = {
   useDemoBookExample(){
     this.lookupNewBook(Bibliografia.exampleISBN);
   },
+  async findCoverForForm(button){
+    if(state.busy)return;this.closeCoverCamera();
+    const form=button.closest('form'),preview=form?.querySelector('#stockCoverPreview,#editCoverPreview');
+    if(!form||!preview)return;
+    const isbn=isoCode(form.elements.isbn?.value||'');
+    if(!Bibliografia.isbnValido(isbn)){toast('Este livro não possui ISBN válido. Use a câmera ou a galeria.','warn');return;}
+    if(form.elements.capaLocal?.value||form.elements.capaUrl?.value.trim()){toast('A capa existente foi preservada. Para buscar outra, limpe o link primeiro.','warn');return;}
+    const token=Symbol();preview.coverToken=token;button.disabled=true;
+    try{
+      let selected=null;const local=window.LivrariaCoverReferences?.[isbn];
+      if(local&&/^\/covers\/97[89]\d{10}-[a-f0-9]{16}\.png$/.test(local.path)&&location.protocol==='https:'){
+        const url=location.origin+local.path;if(await testarImagem(url,2000))selected={url,source:local.source+' — cópia local'};
+      }
+      if(!selected){const result=await Bibliografia.consultar(isbn);if(result.dados?.capaUrl)selected={url:result.dados.capaUrl,source:result.dados.capaFonte};}
+      if(!form.isConnected||preview.coverToken!==token||form.elements.capaLocal?.value||form.elements.capaUrl?.value.trim())return;
+      if(!selected){toast('Nenhuma capa carregou para este ISBN. Use Tirar foto da capa ou Escolher da galeria.','warn');return;}
+      form.elements.capaUrl.value=selected.url;if(form.elements.capaFonte)form.elements.capaFonte.value=selected.source;
+      preview.innerHTML=bookCover({capaUrl:selected.url,titulo:form.elements.titulo?.value||'Livro'},'cover-large');
+      toast('Capa encontrada. Confira a prévia e salve para confirmar.');
+    }catch(_){if(form.isConnected)toast('Não foi possível buscar a capa. Seus campos foram preservados; use câmera ou galeria.','warn');}
+    finally{if(button.isConnected)button.disabled=false;}
+  },
+  coverCameraSession:0,
+  coverCameraStream:null,
+  coverCameraForm:null,
+  closeCoverCamera(){
+    ++this.coverCameraSession;
+    this.coverCameraStream?.getTracks().forEach(track=>track.stop());
+    const panel=this.coverCameraForm?.querySelector('[data-cover-camera-panel]');
+    const video=panel?.querySelector('video');
+    if(video)video.srcObject=null;
+    if(panel)panel.hidden=true;
+    this.coverCameraStream=null;this.coverCameraForm=null;
+  },
+  async openCoverCamera(button){
+    const form=button.closest('form');if(!form)return;
+    this.closeCoverCamera();
+    if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){
+      toast('A prévia da câmera não está disponível. Tentando o seletor de câmera do aparelho; a galeria também pode ser usada.','warn');
+      form.querySelector('[data-cover-camera]')?.click();return;
+    }
+    const panel=form.querySelector('[data-cover-camera-panel]'),video=panel.querySelector('video');
+    this.coverCameraForm=form;
+    const session=this.coverCameraSession;
+    panel.hidden=false;
+    panel.querySelector('[data-cover-camera-status]').textContent='Solicitando permissão para usar a câmera…';
+    panel.scrollIntoView({block:'nearest'});
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+      if(session!==this.coverCameraSession||!form.isConnected){stream.getTracks().forEach(t=>t.stop());return;}
+      this.coverCameraStream=stream;video.srcObject=stream;await video.play();
+      if(session!==this.coverCameraSession)return;
+      panel.querySelector('[data-cover-camera-status]').textContent='Enquadre a frente do livro e toque em “Usar esta foto”.';
+      panel.scrollIntoView({block:'nearest'});
+    }catch(e){
+      if(session!==this.coverCameraSession)return;
+      this.closeCoverCamera();
+      toast(e?.name==='NotAllowedError'?'Permissão da câmera negada. Permita o acesso no navegador ou escolha da galeria.':
+        e?.name==='NotFoundError'?'Nenhuma câmera encontrada. Conecte uma câmera ou escolha da galeria.':'Não foi possível abrir a câmera. Tente novamente ou escolha da galeria.','warn');
+    }
+  },
+  async captureCoverPhoto(button){
+    const form=button.closest('form'),video=form?.querySelector('[data-cover-camera-panel] video');
+    if(!video?.videoWidth||!video.videoHeight||video.readyState<2){toast('Aguarde a câmera ficar pronta.','warn');return;}
+    const session=this.coverCameraSession,canvas=document.createElement('canvas');
+    canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    const ctx=canvas.getContext('2d');if(!ctx){toast('Não foi possível preparar a foto.','warn');return;}
+    let blob;
+    try{
+      ctx.drawImage(video,0,0);
+      blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.85));
+    }catch(_){
+      if(session===this.coverCameraSession)toast('Não foi possível preparar a foto. Tente novamente.','warn');
+      return;
+    }
+    if(session!==this.coverCameraSession||!form.isConnected)return;
+    if(!blob){toast('Não foi possível preparar a foto. Tente novamente.','warn');return;}
+    this.closeCoverCamera();
+    await this.applyCoverPhoto(new File([blob],'capa-camera.jpg',{type:'image/jpeg'}),form);
+  },
   async coverFileChanged(ev){
     const input=ev.target, file=input.files?.[0];
     if(!file)return;
+    this.closeCoverCamera();
+    try{await this.applyCoverPhoto(file,input.closest('form'));}
+    finally{input.value='';}
+  },
+  async applyCoverPhoto(file,form){
     if(!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size>8*1024*1024){
-      toast('Escolha JPG, PNG ou WebP com até 8 MB.','warn');input.value='';return;
+      toast('Escolha JPG, PNG ou WebP com até 8 MB.','warn');return;
     }
-    const form=input.closest('form');
     const localField=form?.elements?.capaLocal;
     if(!form||!localField)return;
     const target=$('stockCoverPreview')||$('editCoverPreview');
@@ -1319,10 +1415,10 @@ const UI = {
       form.elements.capaUrl.value='';
       if(target)target.innerHTML=bookCover({capaUrl:encoded,titulo:form.elements.titulo?.value||'Livro'},'cover-large');
       const hint=$('stockCoverHint');
-      if(hint)hint.textContent='Foto adicionada ao protótipo. Na integração real, a imagem será enviada ao Google Drive.';
+      if(hint)hint.textContent='Foto da capa preparada. Confira a imagem e salve o cadastro para mantê-la.';
       toast('Foto da capa adicionada. Confira a prévia antes de salvar.');
     }catch(e){toast('Não foi possível usar esta foto: '+e.message,'error');}
-    finally{URL.revokeObjectURL(tempUrl);input.value='';}
+    finally{URL.revokeObjectURL(tempUrl);}
   },
   async coverInput(value){
     const form=$('stockCoverPreview')?.closest('form')||$('editCoverPreview')?.closest('form');
@@ -2116,6 +2212,22 @@ const View = {
         </div>
       </form>`);
   },
+  coverUpload(){
+    return `<div class="cover-upload">
+      <button type="button" class="btn btn-outline" onclick="UI.findCoverForForm(this)">🔎 Buscar capa pelo ISBN</button>
+      <button type="button" class="btn btn-outline" onclick="UI.openCoverCamera(this)">📷 Tirar foto da capa</button>
+      <input data-cover-camera type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onchange="UI.coverFileChanged(event)">
+      <button type="button" class="btn btn-outline" onclick="this.parentElement.querySelector('[data-cover-gallery]').click()">🖼️ Escolher da galeria</button>
+      <input data-cover-gallery type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="UI.coverFileChanged(event)">
+      <span class="cover-upload-label">Fotografe a frente do livro ou escolha uma imagem JPG, PNG ou WebP (até 8 MB). Confira a prévia antes de salvar.</span>
+      <div data-cover-camera-panel class="cover-camera-panel" hidden>
+        <video autoplay muted playsinline aria-label="Prévia da câmera para a capa"></video>
+        <p data-cover-camera-status role="status" aria-live="polite"></p>
+        <button type="button" class="btn btn-primary" onclick="UI.captureCoverPhoto(this)">Usar esta foto</button>
+        <button type="button" class="btn btn-outline" onclick="UI.closeCoverCamera()">Fechar câmera</button>
+      </div>
+    </div>`;
+  },
   modalEditMetadata(product){
     if(!product)return;
     this.modal(`<h3>✏️ Dados editoriais do livro</h3>
@@ -2132,12 +2244,7 @@ const View = {
         <div class="form-group"><label>Edição</label><input class="field" name="edicao" value="${esc(product.edicao)}"></div>
         <div class="form-grid"><div class="form-group"><label>Ano / data de publicação</label><input class="field" name="anoPublicacao" value="${esc(product.anoPublicacao||'')}"></div>
           <div class="form-group"><label>Páginas</label><input class="field" name="numeroPaginas" type="number" min="0" value="${product.numeroPaginas||''}"></div></div>
-        <div class="cover-upload">
-          <label class="btn btn-outline">📷 Trocar foto da capa
-            <input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="UI.coverFileChanged(event)">
-          </label>
-          <span class="cover-upload-label">Se não houver imagem on-line, escolha uma foto da capa.</span>
-        </div>
+        ${this.coverUpload()}
         <input type="hidden" name="capaLocal" value="${product.capaUrl?.startsWith('data:image/')?esc(product.capaUrl):''}">
         <input type="hidden" name="capaFonte" value="${esc(product.capaFonte||'')}">
         <div class="form-group"><label>Link HTTPS da capa</label><input class="field" name="capaUrl" type="url"
@@ -2221,13 +2328,8 @@ const View = {
         <div class="lookup-preview">
           <span id="stockCoverPreview">${bookCover({capaUrl:d.capaUrl,titulo:d.titulo},'cover-large')}</span>
           <div class="helper"><b>📘 Capa do livro</b><div>Será exibida no Catálogo, Caixa e carrinho.</div>
-            <div id="stockCoverHint" style="margin-top:5px">Você pode trocar a imagem usando o link abaixo.</div></div></div>
-        <div class="cover-upload">
-          <label class="btn btn-outline">📷 Escolher foto da capa
-            <input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="UI.coverFileChanged(event)">
-          </label>
-          <span class="cover-upload-label">Foto tirada com o celular ou escolhida na galeria (opcional).</span>
-        </div>
+            <div id="stockCoverHint" style="margin-top:5px">Tire uma foto, escolha da galeria ou informe um link de imagem.</div></div></div>
+        ${this.coverUpload()}
         <input type="hidden" name="capaLocal" value="">
         <div class="form-group"><label>Link HTTPS da capa (opcional)</label>
           <input class="field" name="capaUrl" type="url" value="${esc(d.capaUrl||'')}" placeholder="https://..."
@@ -2378,6 +2480,7 @@ const View = {
 };
 
 /* ====================== EVENTOS E INICIALIZAÇÃO ======================== */
+window.addEventListener('pagehide',()=>{UI.closeCoverCamera();stopDemoCamera();});
 window.addEventListener('online',()=>{onlineStatus();if(state.pin)Sync.run();});
 window.addEventListener('offline',onlineStatus);
 window.addEventListener('storage',ev=>{
@@ -2412,11 +2515,12 @@ const baseCloseDemo=View.closeModal.bind(View);
 const baseModalDemo=View.modal.bind(View);
 View.modal=inner=>{
   // Trocar de formulário também encerra leituras/permissões ainda pendentes.
+  UI.closeCoverCamera();
   stopDemoCamera();
   baseModalDemo(inner);
 };
 View.closeModal=(force=false)=>{
-  if(!state.busy || force){stopDemoCamera();state.lookupToken++;}
+  if(!state.busy || force){UI.closeCoverCamera();stopDemoCamera();state.lookupToken++;}
   baseCloseDemo(force);
 };
 function scanStatus(message,warning=false){
@@ -3172,6 +3276,7 @@ const LoginUI={
   },
   switchRole(){this.logout();},
   logout(){
+    UI.closeCoverCamera();
     this.authenticated=false;this.busy=false;
     window.DemoAdminSession.active=false;
     ReportUI.last=null;ReportUI.draftText='';ReportUI.draftAllowed=false;

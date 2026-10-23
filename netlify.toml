@@ -33,3 +33,16 @@
     X-Content-Type-Options = "nosniff"
     X-Frame-Options = "DENY"
     Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src https:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+[[headers]]
+  for = "/covers/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    X-Content-Type-Options = "nosniff"
+    Cross-Origin-Resource-Policy = "same-origin"
+
+[[headers]]
+  for = "/cover-references.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+    X-Content-Type-Options = "nosniff"

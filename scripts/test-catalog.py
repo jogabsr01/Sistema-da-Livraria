@@ -30,6 +30,11 @@ class Catalog(OwnerAccess):
         path=urlsplit(route.request.url).path
         if urlsplit(route.request.url).hostname=='covers.example.org':
             route.fulfill(status=404 if path=='/missing.png' else 200,content_type='image/png',body=b'' if path=='/missing.png' else PNG);return
+        if path.startswith('/covers/') and urlsplit(route.request.url).hostname==urlsplit(ORIGIN).hostname:
+            asset=(ROOT/'dist'/path.lstrip('/')).resolve()
+            if asset.is_relative_to((ROOT/'dist/covers').resolve()) and asset.is_file():route.fulfill(status=200,content_type='image/png',body=asset.read_bytes())
+            else:route.fulfill(status=404,body='')
+            return
         if path in ['/catalogo-dev.html','/catalogo-dev.js','/catalogo-dev.css']:
             headers={}
             for rule in tomllib.loads((ROOT/'netlify.toml').read_text()).get('headers',[]):

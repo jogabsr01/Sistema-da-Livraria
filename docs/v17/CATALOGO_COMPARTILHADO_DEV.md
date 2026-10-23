@@ -1,6 +1,6 @@
 # Catálogo compartilhado DEV — cadastro e edição de livros
 
-Incremento sobre o PR #13, integrado exclusivamente em dev no commit `1b7ca092a6283431de4b9c78c9e41e6afb1d774a`. Este código está em revisão e não altera main, produção, configurações privadas nem dados Google reais.
+Incremento sobre o PR #13, integrado exclusivamente em dev no commit `1b7ca092a6283431de4b9c78c9e41e6afb1d774a`. O PR #14 foi integrado em dev em `5b6b57668f79ef377c89183a7262fef8005e3eba`; não altera main, produção, configurações privadas nem dados Google reais.
 
 ## Entrega
 
@@ -54,3 +54,7 @@ Chromium executa cadastro visual, recarga, detalhes e sincronização em duas se
 Comandos: `npm test`; `npm run build`; `npm run test:catalog`; `npm run test:access`; `npm run test:passkeys`; `ZXING_JS=<arquivo verificado> npm run test:browser`.
 
 Capacidade inicial: 1.000 comandos de catálogo, 5.000 linhas por tabela de negócio e 200 nichos; paginação de dez livros. Atingir limites/corrupção falha fechado, sem truncar histórico. Ainda faltam arquivamento/retenção, testes de quota/desempenho/IAM e persistência Google real, gestão de nichos, upload privado de capas, adaptação da consulta automática de ISBN e integração com estoque/vendas/filas offline. A tela é uma primeira integração compartilhada, não a conclusão da fase B ou do V17.
+
+## Incremento ISBN em revisão
+
+[ISBN_COMPARTILHADO_DEV.md](ISBN_COMPARTILHADO_DEV.md) descreve a consulta autenticada de cinco fontes e a validação visual de capas. As descrições e contagens acima registram a entrega original do catálogo. O novo incremento não liga a flag real nem integra automaticamente o PR #15 de fotos; não há nova migração Google.
