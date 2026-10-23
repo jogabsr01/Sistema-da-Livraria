@@ -28,6 +28,13 @@ export function createGasEmulator(initialProperties = {}) {
     getId() { return this.id; }
     getDescription() { return this.description; }
     getSharingAccess() { return this.sharing; }
+    getName() { return this.name; }
+    getMimeType() { return this.mime || ''; }
+    getSize() { return this.bytes?.length || 0; }
+    getParents() { const list = this.parent ? [resources.get(this.parent)] : []; let i=0; return {hasNext:()=>i<list.length,next:()=>list[i++]}; }
+    getBlob() { return blob(this.bytes,this.mime,this.name); }
+    getFilesByName(name) { const list=[...resources.values()].filter(r=>r.parent===this.id&&r.name===name&&r.kind==='image');let i=0;return{hasNext:()=>i<list.length,next:()=>list[i++]}; }
+    createFile(value) { const file = new Resource('image',value.getName());file.bytes=Buffer.from(value.getBytes());file.mime=value.getContentType();file.parent=this.id;writes++;return file; }
     setDescription(value) { writes++; this.description = value; return this; }
     moveTo(folder) { this.parent = folder.id; return this; }
     createFolder(name) { const r = new Resource('folder', name); r.parent = this.id; return r; }
@@ -47,9 +54,9 @@ export function createGasEmulator(initialProperties = {}) {
       writes++; const s = new Sheet(name); this.tables.set(name, s); return s;
     }
   }
-  const blob = value => {
+  const blob = (value,mime='',name='') => {
     const bytes = Buffer.isBuffer(value) || Array.isArray(value) ? Buffer.from(value) : Buffer.from(String(value), 'utf8');
-    return { getBytes: () => [...bytes], getDataAsString: () => bytes.toString('utf8') };
+    return { getBytes: () => [...bytes], getDataAsString: () => bytes.toString('utf8'),getContentType:()=>mime,getName:()=>name };
   };
   const context = vm.createContext({
     Date, JSON, Object, Array, Number, String, Math, Error, Set, console: { info() {} },
@@ -58,12 +65,12 @@ export function createGasEmulator(initialProperties = {}) {
     LockService: { getScriptLock: () => ({ tryLock: () => { if (locked) return false; locked = true; return true; }, releaseLock: () => { locked = false; } }) },
     DriveApp: { Access: { PRIVATE: 'private' }, createFolder: name => new Resource('folder', name), getFolderById: id => { const r = resources.get(id); if (r?.kind !== 'folder') throw new Error('UNKNOWN_FOLDER'); return r; }, getFileById: id => { const r = resources.get(id); if (!r) throw new Error('UNKNOWN_FILE'); return r; } },
     SpreadsheetApp: { create: name => { const f = new Resource('sheet', name), ss = new Spreadsheet(f); sheets.set(f.id, ss); return ss; }, openById: id => { if (!sheets.has(id)) throw new Error('UNKNOWN_SHEET'); return sheets.get(id); }, flush() {} },
-    Utilities: { newBlob: blob, base64Encode: value => Buffer.from(value).toString('base64'), base64Decode: value => [...Buffer.from(value, 'base64')], computeHmacSha256Signature: (value, key) => [...createHmac('sha256', Buffer.from(key)).update(Buffer.from(value)).digest()], computeDigest: (_, value) => [...createHash('sha256').update(value).digest()], DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF-8' } },
+    Utilities: { newBlob: blob, base64Encode: value => Buffer.from(value).toString('base64'), base64Decode: value => [...Buffer.from(value, 'base64')], computeHmacSha256Signature: (value, key) => [...createHmac('sha256', Buffer.from(key)).update(Buffer.from(value)).digest()], computeDigest: (_, value) => [...createHash('sha256').update(Array.isArray(value)?Buffer.from(value):value).digest()], DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF-8' } },
     ContentService: { MimeType: { JSON: 'application/json' }, createTextOutput: text => ({ text, setMimeType() { return this; } }) },
     MailApp: { getRemainingDailyQuota: () => mailQuota, sendEmail: value => { if (mailFailure) throw Error('FAKE_MAIL_FAILURE'); outbox.push(value); mailQuota--; } },
   });
   context.Utilities.getUuid = randomUUID;
-  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs', 'OwnerAccess.gs', 'Catalog.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
+  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs', 'OwnerAccess.gs', 'Catalog.gs', 'CoverPhotos.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
   return { context, props, resources, sheets, outbox,
     call(name, ...args) { return context[name](...args); },
     post(envelope) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(envelope) } }).text); },

@@ -42,7 +42,7 @@ class Catalog(OwnerAccess):
             if path=='/api/v1/catalog/save' and self.fail_next_save_ack:
                 self.fail_next_save_ack=False;route.abort();return
             if result['cookies']:result['headers']['set-cookie']='\n'.join(result['cookies'])
-            route.fulfill(status=result['status'],headers=result['headers'],body=result['body']);return
+            route.fulfill(status=result['status'],headers=result['headers'],body=base64.b64decode(result['bodyBase64']) if 'bodyBase64' in result else result['body']);return
         super().relay(route)
     def catalog(self):
         self.page.goto(ORIGIN+'/catalogo-dev.html');expect(self.page.locator('#catalog')).to_be_visible()

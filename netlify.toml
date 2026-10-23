@@ -8,6 +8,7 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["sharp"]
 
 [[headers]]
   for = "/api/*"
@@ -32,4 +33,5 @@
     Referrer-Policy = "no-referrer"
     X-Content-Type-Options = "nosniff"
     X-Frame-Options = "DENY"
-    Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src https:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob: https:; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    Permissions-Policy = "camera=(self), microphone=()"

@@ -1,6 +1,6 @@
 # Catálogo compartilhado DEV — cadastro e edição de livros
 
-Incremento sobre o PR #13, integrado exclusivamente em dev no commit `1b7ca092a6283431de4b9c78c9e41e6afb1d774a`. Este código está em revisão e não altera main, produção, configurações privadas nem dados Google reais.
+Incremento sobre o PR #13, integrado exclusivamente em dev no commit `1b7ca092a6283431de4b9c78c9e41e6afb1d774a`. PR #14 integrado em dev no commit `5b6b57668f79ef377c89183a7262fef8005e3eba`. Não altera main, produção, configurações privadas nem dados Google reais.
 
 ## Entrega
 
@@ -54,3 +54,7 @@ Chromium executa cadastro visual, recarga, detalhes e sincronização em duas se
 Comandos: `npm test`; `npm run build`; `npm run test:catalog`; `npm run test:access`; `npm run test:passkeys`; `ZXING_JS=<arquivo verificado> npm run test:browser`.
 
 Capacidade inicial: 1.000 comandos de catálogo, 5.000 linhas por tabela de negócio e 200 nichos; paginação de dez livros. Atingir limites/corrupção falha fechado, sem truncar histórico. Ainda faltam arquivamento/retenção, testes de quota/desempenho/IAM e persistência Google real, gestão de nichos, upload privado de capas, adaptação da consulta automática de ISBN e integração com estoque/vendas/filas offline. A tela é uma primeira integração compartilhada, não a conclusão da fase B ou do V17.
+
+## Incremento posterior em revisão — fotos privadas
+
+[FOTOS_CAPAS_DEV.md](FOTOS_CAPAS_DEV.md) documenta o próximo incremento: câmera/galeria, normalização JPEG no servidor e rota de imagem autenticada. As descrições e contagens acima registram a entrega original do PR #14. O incremento posterior amplia o limite HTTP somente para pedidos de foto e a CSP somente para prévias locais/câmera. A consulta automática de ISBN ainda não está ligada ao catálogo compartilhado.

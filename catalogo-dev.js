@@ -1,9 +1,10 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id), message = text => { $('status').textContent = text; };
-  let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false;
+  let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false, photosEnabled = false, pendingPhoto, photoPreview = '', cameraStream = null, cameraGeneration = 0;
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   function explain(error) {
+    if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
     if (error.code === 'UNAUTHENTICATED') return 'Entre na conta verificada para usar o catálogo.';
     if (error.code?.includes('CONFLICT')) return 'Outro acesso alterou este livro. Carregue a versão mais recente antes de salvar de novo.';
     if (error.code?.includes('DUPLICATE')) return 'Já existe um livro ativo com esse ISBN ou código interno.';
@@ -33,7 +34,7 @@
     const data = await api('list', null, '?' + params); nextOffset = data.nextOffset; $('books').replaceChildren();
     data.products.forEach(book => {
       const article = document.createElement('article'); article.className = 'book';
-      const image = document.createElement('span'); cover(book.coverUrl, image); const content = document.createElement('div');
+      const image = document.createElement('span'); cover(book.photoUrl || book.coverUrl, image); const content = document.createElement('div');
       const title = document.createElement('h2'); title.textContent = book.title;
       const author = document.createElement('p'); author.textContent = book.author || 'Autor não informado';
       const price = document.createElement('p'); price.textContent = money(book.priceCents) + ' · Estoque: ' + book.stock + (book.active ? '' : ' · Inativo');
@@ -50,6 +51,7 @@
     });
   }
   async function openBook(id) {
+    cleanupPhoto();
     editing = id ? (await api('get', null, '?id=' + encodeURIComponent(id))).product : null; command = null;
     draftId = editing?.id || crypto.randomUUID();
     $('book-form').reset(); $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar livro'; $('form-status').textContent = ''; $('reload-book').hidden = true;
@@ -58,7 +60,7 @@
     $('price').value = editing ? (editing.priceCents / 100).toFixed(2).replace('.',',') : '';
     $('minimum-stock').value = editing?.minimumStock ?? 0; $('year').value = editing?.year || ''; $('pages').value = editing?.pages || ''; $('active').checked = editing?.active ?? true;
     $('stock-info').textContent = editing ? `Estoque atual: ${editing.stock}. O cadastro não altera o saldo.` : 'Estoque inicial: 0. Entradas e vendas serão integradas na etapa de estoque.';
-    choices(editing?.nicheIds || (niches.filter(n => n.active).length === 1 ? [niches.find(n => n.active).id] : [])); cover($('cover').value, $('cover-preview'), true);
+    choices(editing?.nicheIds || (niches.filter(n => n.active).length === 1 ? [niches.find(n => n.active).id] : [])); cover(editing?.photoUrl || $('cover').value, $('cover-preview'), true);
     if (!$('editor').open) $('editor').showModal();
   }
   $('book-form').addEventListener('submit', event => { event.preventDefault(); run(async () => {
@@ -68,9 +70,9 @@
       publisher:$('publisher').value,edition:$('edition').value,supplier:$('supplier').value,priceCents,minimumStock:Number($('minimum-stock').value),category:$('category').value,
       coverUrl:$('cover').value,year:Number($('year').value),pages:Number($('pages').value),synopsis:$('synopsis').value,
       nicheIds:[...document.querySelectorAll('#niche-choices input:checked')].map(input => input.value),active:$('active').checked };
-    const signature = JSON.stringify(fields); if (!command || command.signature !== signature) command = { signature, id:crypto.randomUUID() };
+    const signature = JSON.stringify({fields,photo:pendingPhoto}); if (!command || command.signature !== signature) command = { signature, id:crypto.randomUUID() };
     $('form-status').textContent = 'Salvando e aguardando a confirmação…';
-    await api('save', { commandId:command.id,id:draftId,expectedVersion:editing?.version || 0,record:fields });
+    await api('save', { commandId:command.id,id:draftId,expectedVersion:editing?.version || 0,record:fields,...(pendingPhoto === undefined ? {}:{photo:pendingPhoto}) });
     $('editor').close();
     try { await list(); message('Livro salvo com confirmação do servidor.'); }
     catch { message('Livro salvo com confirmação do servidor. Não foi possível atualizar a lista; use Atualizar catálogo.'); }
@@ -78,17 +80,77 @@
   $('new').addEventListener('click', () => run(() => openBook(null))); $('close').addEventListener('click', () => $('editor').close());
   $('reload-book').addEventListener('click', () => run(() => openBook(editing.id), true));
   $('editor').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+  $('editor').addEventListener('close', cleanupPhoto);
+  window.addEventListener('pagehide', cleanupPhoto);
   $('cover').addEventListener('change', () => { let url; try { url = new URL($('cover').value); } catch { url = null; }
     const valid = url?.protocol === 'https:' && !url.username && !url.password && !url.port && !url.hash && url.hostname.includes('.') && !url.hostname.endsWith('.') &&
       !/^(?:[\d.]+|\[.*\])$/.test(url.hostname) && !/(?:^|\.)(?:localhost|local|internal|invalid|test)$/.test(url.hostname);
-    cover(valid ? url.href : '', $('cover-preview'), true); });
+    if (valid && photosEnabled && (editing?.hasPhoto || pendingPhoto !== undefined)) { pendingPhoto = null; releasePreview(); stopCamera(); }
+    cover(valid ? url.href : photoPreview || (pendingPhoto === undefined ? editing?.photoUrl : '') || '', $('cover-preview'), true); });
+  function stopCamera() {
+    cameraGeneration++; cameraStream?.getTracks().forEach(track => track.stop()); cameraStream = null;
+    $('camera-video').srcObject = null; $('camera-panel').hidden = true;
+  }
+  function releasePreview() { if (photoPreview) URL.revokeObjectURL(photoPreview); photoPreview = ''; }
+  function cleanupPhoto() { stopCamera(); releasePreview(); pendingPhoto = undefined; $('photo-file').value = ''; $('photo-status').textContent = 'Use a câmera do celular ou a webcam do computador, ou escolha uma imagem.'; }
+  async function acceptPhoto(source) {
+    let width = source.width || source.videoWidth, height = source.height || source.videoHeight;
+    if (!width || !height) throw Error('EMPTY_IMAGE');
+    const ratio = Math.min(1, 1200 / Math.max(width,height)); width = Math.max(1,Math.round(width*ratio)); height = Math.max(1,Math.round(height*ratio));
+    const canvas = document.createElement('canvas'); let blob;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,width,height); ctx.drawImage(source,0,0,width,height);
+      blob = await new Promise(resolve => canvas.toBlob(resolve,'image/jpeg', Math.max(.45,.8-attempt*.08)));
+      if (blob && blob.size <= 60000) break;
+      width = Math.max(1,Math.round(width*.8)); height = Math.max(1,Math.round(height*.8));
+    }
+    if (!blob || blob.size > 60000) throw Error('LARGE_IMAGE');
+    // Only an in-memory preview; the server validates and re-encodes once more.
+    const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = ''; bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+    pendingPhoto = btoa(binary); releasePreview(); photoPreview = URL.createObjectURL(blob); $('cover').value = '';
+    cover(photoPreview,$('cover-preview'),true); $('photo-status').textContent = 'Foto pronta. Clique em Salvar livro para enviá-la.';
+  }
+  $('gallery-open').addEventListener('click', () => { stopCamera(); $('photo-file').click(); });
+  $('photo-file').addEventListener('change', () => {
+    const file = $('photo-file').files[0]; if (!file) return;
+    run(async () => {
+      let image;
+      try {
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 12*1024*1024) throw Error('INVALID_IMAGE');
+        image = await createImageBitmap(file); await acceptPhoto(image);
+      } catch { $('photo-status').textContent = 'Não foi possível abrir esta imagem. Escolha JPEG, PNG ou WebP de até 12 MB.'; }
+      finally { image?.close(); $('photo-file').value = ''; }
+    },true);
+  });
+  $('camera-open').addEventListener('click', async () => {
+    stopCamera(); const generation = cameraGeneration;
+    $('photo-status').textContent = 'Autorize o uso da câmera quando o navegador pedir.';
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw Error('NO_CAMERA');
+      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}},audio:false});
+      if (generation !== cameraGeneration || !$('editor').open) { stream.getTracks().forEach(track => track.stop()); return; }
+      cameraStream = stream; $('camera-video').srcObject = stream; $('camera-panel').hidden = false;
+      await $('camera-video').play();
+      if (generation === cameraGeneration) $('photo-status').textContent = 'Posicione a capa e clique em Usar foto.';
+    } catch {
+      if (generation === cameraGeneration) { stopCamera(); $('photo-status').textContent = 'A câmera não está disponível ou a permissão foi negada. Você pode escolher uma imagem da galeria.'; }
+    }
+  });
+  $('camera-cancel').addEventListener('click', () => { stopCamera(); $('photo-status').textContent = 'Câmera encerrada. Você pode escolher uma imagem da galeria.'; });
+  $('camera-capture').addEventListener('click', () => run(async () => {
+    try { await acceptPhoto($('camera-video')); stopCamera(); }
+    catch { $('photo-status').textContent = 'A câmera ainda não está pronta. Aguarde a prévia ou escolha uma imagem da galeria.'; }
+  },true));
+  $('photo-remove').addEventListener('click', () => { stopCamera(); releasePreview(); pendingPhoto = null; $('cover').value = ''; cover('',$('cover-preview'),true); $('photo-status').textContent = 'Capa removida deste cadastro. Salve para confirmar.'; });
   $('search-form').addEventListener('submit', event => { event.preventDefault(); offset = 0; run(list); });
   $('refresh').addEventListener('click', () => run(list)); $('next').addEventListener('click', () => { offset = nextOffset; run(list); }); $('previous').addEventListener('click', () => { offset = Math.max(0,offset-10); run(list); });
   if (location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app' || location.protocol !== 'https:') { message('Este catálogo está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {
     const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); if (!response.ok) { message('Entre na conta verificada para usar o catálogo.'); return; }
     const { data } = await response.json(); csrf = data.csrfToken;
-    niches = (await api('niches')).niches.sort((a,b) => a.order-b.order || a.name.localeCompare(b.name));
+    const capabilities = await api('niches'); photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;
+    niches = capabilities.niches.sort((a,b) => a.order-b.order || a.name.localeCompare(b.name));
     niches.filter(n => n.active).forEach(niche => { const option = document.createElement('option'); option.value = niche.id; option.textContent = niche.name; $('niche-filter').append(option); });
     await list(); $('catalog').hidden = false;
   });

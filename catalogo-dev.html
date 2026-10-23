@@ -36,9 +36,17 @@
       <p id="stock-info">Estoque inicial: 0. Entradas e vendas serão integradas na etapa de estoque.</p>
       <label>Categoria<input id="category" maxlength="80"></label>
       <fieldset><legend>Nichos *</legend><div id="niche-choices"></div></fieldset>
+      <fieldset id="photo-controls" hidden><legend>Foto da capa</legend>
+        <div class="toolbar"><button id="camera-open" type="button">Tirar foto</button><button id="gallery-open" type="button" class="secondary">Escolher da galeria</button><button id="photo-remove" type="button" class="secondary">Remover foto</button></div>
+        <input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        <p id="photo-status" role="status" aria-live="polite">Use a câmera do celular ou a webcam do computador, ou escolha uma imagem.</p>
+        <div id="camera-panel" hidden><video id="camera-video" autoplay muted playsinline aria-label="Prévia da câmera"></video>
+          <div class="toolbar"><button id="camera-capture" type="button">Usar foto</button><button id="camera-cancel" type="button" class="secondary">Cancelar câmera</button></div>
+        </div>
+      </fieldset>
       <label>Link HTTPS da capa<input id="cover" type="url" maxlength="2000" placeholder="https://…"></label>
       <div id="cover-preview" class="cover-preview"><span>Capa não informada</span></div>
-      <p>A capa aparece quando o endereço permite carregar a imagem. Se falhar, confira o link ou a edição do livro.</p>
+      <p>A foto será enviada somente ao salvar. Para usar um link, informe um endereço HTTPS. A capa aparece quando o endereço permite carregar a imagem. Se falhar, confira o link ou a edição do livro.</p>
       <div class="columns"><label>Ano<input id="year" type="number" min="1000" max="3000" step="1"></label><label>Páginas<input id="pages" type="number" min="0" max="100000" step="1"></label></div>
       <label>Sinopse<textarea id="synopsis" maxlength="5000" rows="4"></textarea></label>
       <label class="check"><input id="active" type="checkbox" checked> Livro ativo</label>
