@@ -39,3 +39,7 @@ Após npm run build, executar ZXING_JS=<biblioteca verificada> npm run test:cove
 ### Caixa compartilhado DEV
 
 Após `npm run build`, `npm run test:checkout` executa a tela anônima com cookies/sessões/WebAuthn, API e Apps Script reais sobre armazenamento Google descartável emulado. Cobre formas de pagamento, recarga após resposta perdida, falha de projeção, preço alterado, conexão indisponível, quota local, escopo por conta, sessão independente e layout móvel. As rotas `/test/*` existem somente no harness, nunca nas Functions. Resultado local não comprova integração Google remota nem hardware/Safari. Pré-requisitos e limites operacionais: [CAIXA_COMPARTILHADO_DEV.md](../docs/v17/CAIXA_COMPARTILHADO_DEV.md).
+
+### Reposição e livros esgotados
+
+`npm run test:stock` executa cinco cenários: vender/esgotar/editar/repor/vender o mesmo cadastro, recuperar entrada após resposta perdida/recarga, restrição administrativa, bloqueio do checkout por quantidade e quota local. A suíte pública acrescenta três testes contra override/linhas duplicadas e verifica edição/reposição no protótipo. Contratos Node cobrem falhas entre gravações e checkpoints mistos, inclusive foto privada após venda. Guia: [ESTOQUE_REPOSICAO_DEV.md](../docs/v17/ESTOQUE_REPOSICAO_DEV.md).

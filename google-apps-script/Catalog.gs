@@ -1,4 +1,4 @@
-/* Authenticated DEV product persistence. No stock/sale/customer writes.
+/* Authenticated DEV catalog, positive stock receipts and admin-only removal.
  * Dispatcher owns the installation lock; durable intent precedes projections. */
 var CATALOG_COLUMNS = ['Command_ID', 'Actor_ID', 'Actor_Role', 'Product_ID', 'Expected_Version', 'Command_Hash', 'Before_JSON', 'After_JSON', 'Created_At', 'State', 'Completed_At', 'Record_Hash'];
 function catalogFail_(code) { failure_(code || 'CATALOG_INVALID'); }
@@ -112,13 +112,14 @@ function catalogValidateSnapshot_(snapshot, columns, id) {
   if (!Number.isSafeInteger(row.Estoque_Atual) || row.Estoque_Atual < 0 || !Number.isSafeInteger(row.Versao_Registro) || row.Versao_Registro < 1) catalogFail_('CATALOG_UNAVAILABLE');
   return row;
 }
-function catalogProject_(c, command) {
-  var ss = storage_(c, false).spreadsheet, products = catalogProducts_(ss), links = catalogLinks_(ss), before, after;
-  catalogReferences_(products, links, catalogNiches_(ss));
+// Validate an intent independently of its current projection. Inventory replay
+// uses completed metadata intents as stock-preserving version checkpoints.
+function catalogIntent_(c, command, columns) {
+  var before, after;
   try { before = JSON.parse(command.Before_JSON); after = JSON.parse(command.After_JSON); } catch (_) { catalogFail_('CATALOG_UNAVAILABLE'); }
-  var desired = catalogValidateSnapshot_(after, products.columns, command.Product_ID);
-  if (before !== null) catalogValidateSnapshot_(before, products.columns, command.Product_ID);
-  if (desired.Versao_Registro !== command.Expected_Version + 1 || before === null && command.Expected_Version !== 0 || before && before.values[products.columns.indexOf('Versao_Registro')] !== command.Expected_Version) catalogFail_('CATALOG_UNAVAILABLE');
+  var desired = catalogValidateSnapshot_(after, columns, command.Product_ID);
+  if (before !== null) catalogValidateSnapshot_(before, columns, command.Product_ID);
+  if (desired.Versao_Registro !== command.Expected_Version + 1 || before === null && command.Expected_Version !== 0 || before && before.values[columns.indexOf('Versao_Registro')] !== command.Expected_Version) catalogFail_('CATALOG_UNAVAILABLE');
   var record = catalogDto_(desired, { rows: after.nicheIds.map(function (id) { return { ID_Produto: command.Product_ID, ID_Nicho: id }; }) }, true);
   delete record.id; delete record.stock; delete record.version; delete record.updatedAt; delete record.hasPhoto;
   record = catalogRecord_(record);
@@ -132,8 +133,14 @@ function catalogProject_(c, command) {
   if (digest_(JSON.stringify(canonical)) !== command.Command_Hash ||
       desired.Atualizado_Em !== command.Created_At || desired.Atualizado_Por !== command.Actor_ID ||
       before === null && (desired.Estoque_Atual !== 0 || desired.Criado_Em !== command.Created_At || desired.Criado_Por !== command.Actor_ID) ||
-      before && ['Estoque_Atual', 'Criado_Em', 'Criado_Por'].some(function (key) { return before.values[products.columns.indexOf(key)] !== desired[key]; }) ||
-      !Object.prototype.hasOwnProperty.call(after,'photoHash') && desired.Capa_Drive_ID !== (before ? before.values[products.columns.indexOf('Capa_Drive_ID')] : '')) catalogFail_('CATALOG_UNAVAILABLE');
+      before && ['Estoque_Atual', 'Criado_Em', 'Criado_Por'].some(function (key) { return before.values[columns.indexOf(key)] !== desired[key]; }) ||
+      !Object.prototype.hasOwnProperty.call(after,'photoHash') && desired.Capa_Drive_ID !== (before ? before.values[columns.indexOf('Capa_Drive_ID')] : '')) catalogFail_('CATALOG_UNAVAILABLE');
+  return { before: before, after: after, desired: desired };
+}
+function catalogProject_(c, command) {
+  var ss = storage_(c, false).spreadsheet, products = catalogProducts_(ss), links = catalogLinks_(ss);
+  catalogReferences_(products, links, catalogNiches_(ss));
+  var intent = catalogIntent_(c, command, products.columns), before = intent.before, after = intent.after, desired = intent.desired;
   var found = products.rows.filter(function (row) { return row.ID_Produto === command.Product_ID; }), actual = found.length ? catalogSnapshot_(products, found[0], links) : null;
   if (actual && !same_(actual.values, after.values) && (!before || !same_(actual.values, before.values)) || !actual && before) catalogFail_('CATALOG_CONFLICT');
   var allowed = (before ? before.nicheIds : []).concat(after.nicheIds);
@@ -175,22 +182,18 @@ function catalogSave_(c, principal, p) {
     if (prior[0].Actor_ID !== principal.id || prior[0].Product_ID !== p.id || prior[0].Command_Hash !== hash) catalogFail_('CATALOG_CONFLICT');
     return { id: p.id, version: prior[0].Expected_Version + 1 };
   }
+  if (identityRows_(storage_(c, false).spreadsheet, '_Eventos_Dominio').rows.some(function (row) { return row.ID_Evento === p.commandId; })) catalogFail_('CATALOG_CONFLICT');
   if (journal.rows.length >= 1000) catalogFail_('CATALOG_UNAVAILABLE');
   var ss = storage_(c, false).spreadsheet, products = catalogProducts_(ss), links = catalogLinks_(ss), niches = catalogNiches_(ss);
   catalogReferences_(products, links, niches);
   var matches = products.rows.filter(function (row) { return row.ID_Produto === p.id; }), existing = matches[0];
   if (existing ? existing.Versao_Registro !== p.expectedVersion : p.expectedVersion !== 0) catalogFail_('CATALOG_CONFLICT');
   if (!existing && products.rows.length >= 5000) catalogFail_('CATALOG_UNAVAILABLE');
+  // A forged save must not bypass the dedicated administrative removal route.
+  if ((!existing && !p.record.active || existing && p.record.active !== existing.Ativo) && !['ADMIN', 'SUPER_ADMIN'].includes(principal.role)) failure_('FORBIDDEN');
   if (existing && existing.Capa_Drive_ID && p.record.coverUrl && !hasPhoto) catalogFail_();
   if (p.record.nicheIds.some(function (id) { return !niches.rows.some(function (row) { return row.ID_Nicho === id && row.Ativo; }); })) catalogFail_();
   if (p.record.active && products.rows.some(function (row) { return row.ID_Produto !== p.id && row.Ativo && (p.record.isbn && row.ISBN === p.record.isbn || p.record.internalCode && row.Codigo_Interno === p.record.internalCode); })) catalogFail_('CATALOG_DUPLICATE');
-  // The older sale projector uses a stock/version checkpoint chain. Until that
-  // integration is upgraded, refuse metadata edits of products in that journal.
-  if (existing) identityRows_(ss, '_Eventos_Dominio').rows.forEach(function (row) {
-    var event; try { event = JSON.parse(row.Conteudo_JSON); } catch (_) { catalogFail_('CATALOG_UNAVAILABLE'); }
-    if (row.Tipo !== 'SALE_COMMITTED' || !Array.isArray(event.lines)) catalogFail_('CATALOG_UNAVAILABLE');
-    if (event.lines.some(function (line) { return line.productId === p.id; })) catalogFail_('CATALOG_STOCK_HISTORY');
-  });
   var now = new Date().toISOString(), row = {};
   products.columns.forEach(function (key) { row[key] = existing ? existing[key] : ''; });
   var map = { ISBN: 'isbn', Codigo_Interno: 'internalCode', Titulo: 'title', Autor: 'author', Editora: 'publisher', Edicao: 'edition', Fornecedor: 'supplier', Preco_Venda: 'priceCents', Estoque_Minimo: 'minimumStock', Categoria: 'category', Capa_URL_Externa: 'coverUrl', Ano_Publicacao: 'year', Paginas: 'pages', Sinopse: 'synopsis', Ativo: 'active' };
@@ -216,6 +219,24 @@ function catalogOperation_(request, c) {
   var p = request.payload, ss = storage_(c, false).spreadsheet;
   // A failed checkout must finish its durable projections before exposing stock.
   recoverSales_(ss);
+  if (request.action === 'catalog.receive') return receiveStock_(request, c, principal, ss);
+  if (request.action === 'catalog.remove') {
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance)) failure_('FORBIDDEN');
+    authControlExact_(p, ['commandId', 'id', 'expectedVersion']);
+    if (!identityUuid_(p.commandId) || !identityUuid_(p.id) || !Number.isSafeInteger(p.expectedVersion) || p.expectedVersion < 1 || p.expectedVersion > 1000000000) catalogFail_();
+    var prior = catalogJournal_(c).rows.filter(function (row) { return row.Command_ID === p.commandId; });
+    if (prior.length) {
+      var old = catalogIntent_(c, prior[0], rowValues_(ss.getSheetByName('Produtos')));
+      if (prior[0].Actor_ID !== principal.id || prior[0].Product_ID !== p.id || prior[0].Expected_Version !== p.expectedVersion || !old.before || old.desired.Ativo !== false || old.before.values[rowValues_(ss.getSheetByName('Produtos')).indexOf('Ativo')] !== true) catalogFail_('CATALOG_CONFLICT');
+      return { id: p.id, version: p.expectedVersion + 1 };
+    }
+    var row = catalogProducts_(ss).rows.filter(function (product) { return product.ID_Produto === p.id; })[0];
+    if (!row) catalogFail_('CATALOG_NOT_FOUND');
+    if (row.Ativo !== true) catalogFail_('CATALOG_CONFLICT');
+    var record = catalogDto_(row, catalogLinks_(ss), true);
+    ['id', 'stock', 'version', 'updatedAt', 'hasPhoto'].forEach(function (key) { delete record[key]; }); record.active = false;
+    return catalogSave_(c, principal, { commandId: p.commandId, id: p.id, expectedVersion: p.expectedVersion, record: record });
+  }
   if (request.action === 'catalog.save') return catalogSave_(c, principal, p);
   if (request.action === 'catalog.niches') {
     authControlExact_(p, []); return { niches: catalogNiches_(ss).rows.map(function (row) { return { id: row.ID_Nicho, name: row.Nome, color: row.Cor_Destaque, order: row.Ordem_Exibicao, active: row.Ativo }; }) };

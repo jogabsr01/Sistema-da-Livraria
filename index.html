@@ -670,12 +670,20 @@ const DemoRPC = (function () {
       if(incomingAddr.cep && (!/^\d{8}$/.test(String(incomingAddr.cep))||
          !String(incomingAddr.numero||'').trim()))
         return failure('VALIDATION','Confira o CEP e número do endereço.');
+      if(!Array.isArray(p.itens)||!p.itens.length||p.itens.length>100)return failure('VALIDATION','Carrinho inválido.');
+      const quantities=new Map();
+      for(const item of p.itens){
+        if(!item||typeof item.isbn!=='string'||!Number.isSafeInteger(item.quantidade)||item.quantidade<1)return failure('VALIDATION','Quantidade inválida.');
+        const quantity=(quantities.get(item.isbn)||0)+item.quantidade;
+        if(!Number.isSafeInteger(quantity))return failure('VALIDATION','Quantidade inválida.');
+        quantities.set(item.isbn,quantity);
+      }
       const items=[];let total=0;
-      for(const it of p.itens||[]){
+      for(const it of [...quantities].map(([isbn,quantidade])=>({isbn,quantidade}))){
         const product=db.produtos.find(x=>x.isbn===it.isbn);
         if(!product)return failure('NOT_FOUND','Livro não localizado no catálogo.');
         if(!Number.isInteger(it.quantidade)||it.quantidade<1)return failure('VALIDATION','Quantidade inválida.');
-        if(it.quantidade>product.estoque&&!p.permitirEstoqueNegativo)
+        if(it.quantidade>product.estoque)
           return failure('INSUFFICIENT_STOCK','Estoque insuficiente para '+product.titulo+'. Disponível: '+product.estoque);
         const subtotal=it.quantidade*product.precoCentavos;
         items.push({isbn:it.isbn,titulo:product.titulo,quantidade:it.quantidade,
@@ -840,6 +848,7 @@ const uid = prefix => prefix + '-' + (self.crypto?.randomUUID?.() || (Date.now()
 const productOf = isbn => state.data?.produtos.find(p=>p.isbn===isbn);
 const pendingFor = isbn => state.queue.reduce((total,q) => total + (q.payload.itens||[]).filter(it=>it.isbn===isbn).reduce((s,it)=>s+it.quantidade,0),0);
 const cartTotal = () => state.cart.reduce((s,it)=>s+(productOf(it.isbn)?.precoCentavos||0)*it.quantidade,0);
+const cartHasStock = () => state.cart.length>0 && state.cart.every(it=>Number.isSafeInteger(it.quantidade)&&it.quantidade>0&&it.quantidade<=(productOf(it.isbn)?.estoque??0)-pendingFor(it.isbn));
 const cartCount = () => state.cart.reduce((s,it)=>s+it.quantidade,0);
 function toast(message,type='ok') {
   const el = document.createElement('div'); el.className='toast'+(type==='ok'?'':' '+type); el.textContent=message;
@@ -1642,6 +1651,7 @@ const UI = {
   pdvBarcodeEnter(ev){if(ev.key==='Enter'){ev.preventDefault();this.scan(ev.target.value,'pdv');}},
   openCheckout(){
     if(!state.cart.length){toast('Adicione livros ao carrinho.','warn');return;}
+    if(!cartHasStock()){toast('Estoque insuficiente. Reponha as unidades ou ajuste o carrinho para continuar.','warn');return;}
     View.modalCheckout(state.checkoutDraft || {});
   },
   closeCheckout(){ View.closeModal(); },
@@ -1720,6 +1730,7 @@ const UI = {
   async checkout(ev) {
     ev.preventDefault(); if(state.busy)return;
     if(!state.cart.length){toast('Carrinho vazio.','warn');return;}
+    if(!cartHasStock()){toast('Estoque insuficiente. Reponha as unidades ou ajuste o carrinho para continuar.','warn');return;}
     const form=ev.target;
     const cpf=onlyDigits(form.elements.cpf.value);
     if(cpf && (!cpfValido(cpf)||form.elements.cpf.dataset.checkedCpf!==cpf)){
@@ -1746,7 +1757,7 @@ const UI = {
     if (!state.saleId) state.saleId=uid('V');
     const payload={idVenda:state.saleId,
       itens:state.cart.map(it=>({isbn:it.isbn,quantidade:it.quantidade})),
-      totalPrevistoCentavos:cartTotal(),cliente,pagamento,permitirEstoqueNegativo:false};
+      totalPrevistoCentavos:cartTotal(),cliente,pagamento};
     // Write-ahead: persistir ANTES de transmitir. A venda nunca recebe novo ID no reenvio.
     let found=state.queue.find(q=>q.payload.idVenda===payload.idVenda);
     if(found){found.payload=payload;found.status='aguardando';delete found.error;}
@@ -1757,18 +1768,7 @@ const UI = {
     }
     onlineStatus();state.busy=true;View.setBusy(true);
     try{
-      let result;
-      try {result=await Api.call('checkout',payload);}
-      catch(e) {
-        if(e.code==='INSUFFICIENT_STOCK') {
-          if(!confirm(e.message+'\n\nAutorizar EXCEPCIONALMENTE a venda com estoque negativo?')) throw e;
-          payload.permitirEstoqueNegativo=true;
-          const q=state.queue.find(x=>x.payload.idVenda===payload.idVenda);
-          if(q)q.payload=payload;
-          if(!queueSave())throw Error('Não foi possível salvar a confirmação.');
-          result=await Api.call('checkout',payload);
-        } else throw e;
-      }
+      const result=await Api.call('checkout',payload);
       const id=payload.idVenda;
       state.queue=state.queue.filter(q=>q.payload.idVenda!==id);
       queueSave();onlineStatus();
@@ -1813,7 +1813,7 @@ const Cart = {
     const p=productOf(isbn);if(!p)return;
     const item=state.cart.find(i=>i.isbn===isbn);
     const available=p.estoque-pendingFor(isbn);
-    if((item?.quantidade||0)>=available && !confirm('Estoque disponível: '+available+'. Adicionar mesmo assim? A finalização exigirá confirmação de override.'))return;
+    if((item?.quantidade||0)>=available){toast('Sem unidades disponíveis para esta compra. Reponha o estoque antes de vender.','warn');return;}
     if(item)item.quantidade++;else state.cart.push({isbn,quantidade:1});
     persistCart();View.render();toast('Livro adicionado: '+p.titulo);
     const input=$('barcode');if(input)input.focus();
@@ -1821,8 +1821,7 @@ const Cart = {
   change(isbn,amount){
     const item=state.cart.find(it=>it.isbn===isbn);if(!item)return;
     const p=productOf(isbn);
-    if(amount>0 && item.quantidade >= (p?.estoque ?? 0)-pendingFor(isbn) &&
-      !confirm('Quantidade acima do estoque. Continuar?'))return;
+    if(amount>0 && item.quantidade+amount > (p?.estoque ?? 0)-pendingFor(isbn)){toast('Quantidade acima do estoque disponível.','warn');return;}
     item.quantidade+=amount;
     if(item.quantidade<=0)state.cart=state.cart.filter(it=>it.isbn!==isbn);
     persistCart();View.render();
@@ -1969,7 +1968,7 @@ const View = {
         <div id="cartList">${this.cartRows()}</div>
         <div class="summary"><div class="summary-row"><span class="small muted">Total da compra</span><strong>${cartCount()} itens</strong></div>
           <div class="summary-row"><span class="small">Valor a receber</span><strong class="total">${money(cartTotal())}</strong></div></div>
-        <button class="btn btn-primary btn-wide" ${!state.cart.length?'disabled':''} onclick="UI.openCheckout()">Finalizar venda →</button>
+        <button class="btn btn-primary btn-wide" ${!cartHasStock()?'disabled':''} onclick="UI.openCheckout()">Finalizar venda →</button>
         <button class="btn btn-light btn-wide" style="margin-top:8px" onclick="Cart.clear()" ${!state.cart.length?'disabled':''}>Limpar carrinho</button>
         ${state.queue.length?`<p class="notice warn" style="margin-top:13px"><b>${state.queue.length} venda(s) pendente(s).</b> Não confunda com vendas confirmadas. <button class="btn btn-sm btn-outline" style="margin-top:7px" onclick="UI.openPending()">Ver pendências</button></p>`:''}
       </div></aside>

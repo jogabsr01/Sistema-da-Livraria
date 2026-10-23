@@ -33,7 +33,7 @@ Compatibilidade com o projetor de vendas anterior: seu histórico usa checkpoint
 Não configurar produção nem promover branch deploy com Publish deploy. As flags reais continuam desligadas nesta entrega.
 
 1. Concluir o lote de primeiro acesso em [PRIMEIRO_ACESSO_OWNER.md](PRIMEIRO_ACESSO_OWNER.md), com arquivos atuais, permissões Google e chaves privadas. Nenhuma chave deve ser enviada ao chat ou ao repositório.
-2. Incluir **Catalog.gs** e atualizar **Code.gs** e **Sales.gs** no mesmo projeto Google DEV. Os demais arquivos devem continuar nas versões atuais. Não copiar ferramentas de teste para o Apps Script.
+2. Atualizar em lote todos os `.gs` da versão atual no mesmo projeto Google DEV, incluindo **Catalog.gs**, **Code.gs**, **Sales.gs** e **Stock.gs**. Não copiar ferramentas de teste para o Apps Script. A entrada de unidades e edição após vendas exigem o lote compatível descrito em [ESTOQUE_REPOSICAO_DEV.md](ESTOQUE_REPOSICAO_DEV.md).
 3. Executar `provisionDevelopmentCatalog` no seletor de funções, como proprietário, após `prepareDevelopmentOwnerAccess`. Cria/reutiliza journal privado e, se necessário, o nicho Geral. Não altera livros existentes, clientes ou vendas.
 4. Atualizar a implantação Google existente para a nova versão, mantendo a URL /exec. Não precisa de novos escopos Google nem novas chaves além do lote do PR #13.
 5. Na homologação controlada, criar CATALOG_ENABLED=true nas propriedades privadas Google e WORKSPACE_CATALOG_ENABLED=true no Netlify, somente em **Branch deploys** limitado a dev. Manter variáveis de produção/previews vazias e os vínculos existentes DEV. As dependências de backend/sessão do primeiro acesso também precisam estar habilitadas. WORKSPACE_VERIFY_CONNECTION permanece false.

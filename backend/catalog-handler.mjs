@@ -8,6 +8,7 @@ import { catalogUuid, normalizeProduct, normalizedIsbn } from './catalog-model.m
 import { prepareCoverPhoto } from './cover-photo.mjs';
 import { createIsbnLookupService } from './isbn-lookup.mjs';
 import { loadLoginGuardSettings } from './login-guard.mjs';
+import { normalizeStockReceipt } from './stock-command.mjs';
 const ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
 export function loadCatalogSettings(env = process.env) {
   if (env.WORKSPACE_CATALOG_ENABLED !== 'true') throw new ApiError(503, 'CATALOG_NOT_ACTIVATED');
@@ -23,14 +24,14 @@ export function createCatalogHandler(dependencies = {}) {
     const requestId = randomUUID();
     try {
       if (new URL(request.url).origin !== ORIGIN) throw new ApiError(403, 'FORBIDDEN');
-      const operation = new URL(request.url).pathname.split('/').at(-1), method = ['save','isbn'].includes(operation) ? 'POST' : 'GET';
-      if (!['list', 'get', 'niches', 'save', 'isbn', 'cover'].includes(operation)) throw new ApiError(404, 'NOT_FOUND');
+      const operation = new URL(request.url).pathname.split('/').at(-1), method = ['save','isbn','receive','remove'].includes(operation) ? 'POST' : 'GET';
+      if (!['list', 'get', 'niches', 'save', 'isbn', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(404, 'NOT_FOUND');
       if (request.method !== method) { const response = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); response.headers.set('allow', method); return response; }
       const settings = (dependencies.loadSettings || loadCatalogSettings)(), client = (dependencies.createClient || createWorkspaceClient)(settings.config);
       const sessions = createSessionService(settings, { client });
       if (method === 'POST') requireSameOriginMutation(request, ORIGIN);
       const principal = await sessions.authenticate(request);
-      requirePermission(principal, ['save','isbn'].includes(operation) ? 'products.write' : 'products.read');
+      requirePermission(principal, operation === 'remove' ? 'products.delete' : operation === 'receive' ? 'stock.receive' : ['save','isbn'].includes(operation) ? 'products.write' : 'products.read');
       // Resolve CSRF against the same authoritative cookie, never a caller role.
       if (method === 'POST') requireCsrfToken(request, (await sessions.current(request)).csrfToken);
       const actor = { sessionTokenHash: principal.sessionTokenHash };
@@ -45,15 +46,21 @@ export function createCatalogHandler(dependencies = {}) {
         if (!/^\d{1,5}$/.test(offset) || Number(offset) > 5000 || search.length > 100 || nicheId && !catalogUuid(nicheId) || query.has('inactive') && !['true', 'false'].includes(query.get('inactive'))) throw new ApiError(400, 'INVALID_PRODUCT');
         payload = { search, offset: Number(offset), nicheId, includeInactive: query.get('inactive') === 'true' };
       }
-      if (['save','isbn'].includes(operation)) {
+      if (['save','isbn','receive','remove'].includes(operation)) {
         if (query.size) throw new ApiError(400, 'INVALID_PRODUCT');
         const reader = request.body?.getReader(); let size = 0, content = '';
         if (reader) { const decoder = new TextDecoder('utf-8', { fatal: true }); try {
           while (true) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength;
-            if (size > (operation === 'isbn' ? 128 : 135000)) { await reader.cancel(); throw new ApiError(413, 'INVALID_PRODUCT'); } content += decoder.decode(value, { stream: true }); }
+            if (size > (operation === 'isbn' ? 128 : ['receive','remove'].includes(operation) ? 2000 : 135000)) { await reader.cancel(); throw new ApiError(413, 'INVALID_PRODUCT'); } content += decoder.decode(value, { stream: true }); }
           content += decoder.decode();
         } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError(400, 'INVALID_PRODUCT'); } }
         let input; try { input = JSON.parse(content); } catch { throw new ApiError(400, 'INVALID_PRODUCT'); }
+        if (operation === 'receive') return json({ data: await client.catalog(operation, actor, normalizeStockReceipt(input)), requestId });
+        if (operation === 'remove') {
+          if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(['commandId','expectedVersion','id']) ||
+              !catalogUuid(input.commandId) || !catalogUuid(input.id) || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1 || input.expectedVersion >= 1_000_000_000) throw new ApiError(400, 'INVALID_PRODUCT');
+          return json({ data: await client.catalog(operation, actor, input), requestId });
+        }
         if (operation === 'isbn') {
           if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1 || !Object.hasOwn(input,'isbn')) throw new ApiError(400,'INVALID_ISBN');
           let isbn;try { isbn=normalizedIsbn(input.isbn); } catch { throw new ApiError(400,'INVALID_ISBN'); } if (!isbn) throw new ApiError(400,'INVALID_ISBN');

@@ -12,7 +12,7 @@ const attendant = new Set([
 ]);
 const admin = new Set([
   ...attendant, 'reports.read', 'audit.read', 'niches.write', 'schedule.write',
-  'stock.adjust', 'users.attendant.manage',
+  'stock.adjust', 'users.attendant.manage', 'products.delete',
 ]);
 const superAdmin = new Set([...admin, 'users.admin.manage', 'config.manage']);
 const recent = new Set([

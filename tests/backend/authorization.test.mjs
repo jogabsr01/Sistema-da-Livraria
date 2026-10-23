@@ -17,7 +17,7 @@ test('attendant capability matrix permits operations but rejects management and 
   const actor = principal();
   for (const action of ['products.read', 'products.write', 'stock.receive', 'sales.create', 'profile.self.read',
     'schedule.self.read', 'notifications.self.read', 'sessions.self.revoke']) assert.equal(check(actor, action), actor);
-  for (const action of ['reports.read', 'audit.read', 'niches.write', 'schedule.write', 'stock.adjust',
+  for (const action of ['products.delete', 'reports.read', 'audit.read', 'niches.write', 'schedule.write', 'stock.adjust',
     'users.attendant.manage', 'users.admin.manage', 'config.manage', 'unknown.action', '__proto__']) {
     assert.throws(() => check(actor, action), forbidden);
   }

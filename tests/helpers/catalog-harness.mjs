@@ -28,6 +28,11 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/disable-photos'){fixture.env.WORKSPACE_COVER_PHOTOS_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/disable-lookup'){fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/disable-checkout'){fixture.env.WORKSPACE_CHECKOUT_ENABLED='false';res.end('{}');return;}
+    if(req.url==='/test/set-role'){
+      const role=JSON.parse(body).role;if(!['ATENDENTE','ADMIN','SUPER_ADMIN'].includes(role))throw Error('TEST_ROLE_INVALID');
+      const table=fixture.main.getSheetByName('Usuarios'),owner=fixture.gas.props.IDENTITY_OWNER_USER_ID;
+      const row=table.rows.find(row=>row[table.rows[0].indexOf('ID_Usuario')]===owner);row[table.rows[0].indexOf('Perfil')]=role;res.end('{}');return;
+    }
     if(req.url==='/test/seed-checkout'){
       const table=fixture.main.getSheetByName('Produtos'),niche=fixture.main.getSheetByName('Nichos').rows[1][0],ids=[];
       for(const [title,price,stock] of [['Livro de teste do Caixa',3290,2],['Livro sem estoque',1500,0]]){
