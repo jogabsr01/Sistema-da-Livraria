@@ -1,0 +1,503 @@
+// Generated from schema/workspace-v1.json. Do not edit manually.
+var LIVRARIA_SCHEMA = {
+  "version": 1,
+  "application": "livraria-ipb",
+  "storage_timestamps": "UTC ISO-8601",
+  "display_timezone": "America/Sao_Paulo",
+  "money_unit": "integer_centavos",
+  "tables": [
+    {
+      "name": "Produtos",
+      "columns": [
+        "ID_Produto",
+        "ISBN",
+        "Codigo_Interno",
+        "Titulo",
+        "Autor",
+        "Editora",
+        "Edicao",
+        "Fornecedor",
+        "Preco_Venda",
+        "Estoque_Atual",
+        "Estoque_Minimo",
+        "Categoria",
+        "Capa_Drive_ID",
+        "Capa_URL_Externa",
+        "Ano_Publicacao",
+        "Paginas",
+        "Sinopse",
+        "Criado_Em",
+        "Criado_Por",
+        "Atualizado_Em",
+        "Atualizado_Por",
+        "Versao_Registro",
+        "Ativo"
+      ],
+      "primary_key": [
+        "ID_Produto"
+      ],
+      "text_columns": [
+        "ID_Produto",
+        "ISBN",
+        "Codigo_Interno",
+        "Capa_Drive_ID",
+        "Criado_Em",
+        "Atualizado_Em"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Produto_Nichos",
+      "columns": [
+        "ID_Produto",
+        "ID_Nicho"
+      ],
+      "primary_key": [
+        "ID_Produto",
+        "ID_Nicho"
+      ],
+      "text_columns": [
+        "ID_Produto",
+        "ID_Nicho"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Nichos",
+      "columns": [
+        "ID_Nicho",
+        "Nome",
+        "Descricao",
+        "Imagem_Drive_ID",
+        "Cor_Destaque",
+        "Ordem_Exibicao",
+        "Ativo",
+        "Criado_Por",
+        "Criado_Em"
+      ],
+      "primary_key": [
+        "ID_Nicho"
+      ],
+      "text_columns": [
+        "ID_Nicho",
+        "Imagem_Drive_ID",
+        "Criado_Em"
+      ],
+      "restricted_columns": [
+        "Nome"
+      ],
+      "append_only": false
+    },
+    {
+      "name": "Clientes",
+      "columns": [
+        "ID_Cliente",
+        "CPF",
+        "CPF_Indice",
+        "Nome",
+        "Email",
+        "Whatsapp",
+        "CEP",
+        "Logradouro",
+        "Numero",
+        "Complemento",
+        "Bairro",
+        "Cidade",
+        "UF",
+        "Data_Cadastro",
+        "Ultima_Compra",
+        "Preferencia_Contato",
+        "Consentimento_Marketing",
+        "Data_Consentimento"
+      ],
+      "primary_key": [
+        "ID_Cliente"
+      ],
+      "text_columns": [
+        "ID_Cliente",
+        "CPF",
+        "Whatsapp",
+        "CEP",
+        "Numero",
+        "CPF_Indice",
+        "Data_Cadastro",
+        "Ultima_Compra"
+      ],
+      "restricted_columns": [
+        "CPF",
+        "Nome",
+        "Email",
+        "Whatsapp",
+        "CEP",
+        "Logradouro",
+        "Numero",
+        "Complemento",
+        "Bairro",
+        "Cidade",
+        "UF",
+        "CPF_Indice"
+      ],
+      "append_only": false
+    },
+    {
+      "name": "Usuarios",
+      "columns": [
+        "ID_Usuario",
+        "Nome",
+        "CPF",
+        "CPF_Indice",
+        "Email",
+        "Email_Indice",
+        "Whatsapp",
+        "Perfil",
+        "Status",
+        "Foto_Perfil_Drive_ID",
+        "Criado_Por",
+        "Criado_Em",
+        "Ultimo_Acesso",
+        "Primeiro_Acesso_Concluido"
+      ],
+      "primary_key": [
+        "ID_Usuario"
+      ],
+      "text_columns": [
+        "ID_Usuario",
+        "CPF",
+        "Whatsapp",
+        "Foto_Perfil_Drive_ID",
+        "CPF_Indice",
+        "Email_Indice",
+        "Criado_Em",
+        "Ultimo_Acesso"
+      ],
+      "restricted_columns": [
+        "Nome",
+        "CPF",
+        "Email",
+        "Whatsapp",
+        "CPF_Indice",
+        "Email_Indice"
+      ],
+      "append_only": false
+    },
+    {
+      "name": "Vendas",
+      "columns": [
+        "ID_Venda",
+        "Data_Hora",
+        "ID_Cliente",
+        "ID_Atendente",
+        "Valor_Total",
+        "Forma_Pagamento",
+        "Status",
+        "Origem",
+        "Idempotency_Key"
+      ],
+      "primary_key": [
+        "ID_Venda"
+      ],
+      "text_columns": [
+        "ID_Venda",
+        "ID_Cliente",
+        "ID_Atendente",
+        "Idempotency_Key",
+        "Data_Hora"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Itens_Venda",
+      "columns": [
+        "ID_Venda",
+        "ID_Produto",
+        "Quantidade",
+        "Preco_Unitario",
+        "Subtotal"
+      ],
+      "primary_key": [
+        "ID_Venda",
+        "ID_Produto"
+      ],
+      "text_columns": [
+        "ID_Venda",
+        "ID_Produto"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Movimentacoes_Estoque",
+      "columns": [
+        "ID_Movimentacao",
+        "Data_Hora",
+        "ID_Produto",
+        "Tipo",
+        "Quantidade",
+        "Saldo_Anterior",
+        "Saldo_Posterior",
+        "Motivo",
+        "ID_Venda",
+        "ID_Usuario"
+      ],
+      "primary_key": [
+        "ID_Movimentacao"
+      ],
+      "text_columns": [
+        "ID_Movimentacao",
+        "ID_Produto",
+        "ID_Venda",
+        "ID_Usuario",
+        "Data_Hora"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Logs_Auditoria",
+      "columns": [
+        "ID_Log",
+        "Data_Hora",
+        "ID_Usuario",
+        "Perfil",
+        "Acao",
+        "Entidade",
+        "ID_Entidade",
+        "Antes",
+        "Depois",
+        "Resultado",
+        "ID_Requisicao"
+      ],
+      "primary_key": [
+        "ID_Log"
+      ],
+      "text_columns": [
+        "ID_Log",
+        "ID_Usuario",
+        "ID_Entidade",
+        "ID_Requisicao",
+        "Data_Hora"
+      ],
+      "restricted_columns": [
+        "Antes",
+        "Depois"
+      ],
+      "append_only": true
+    },
+    {
+      "name": "Notificacoes",
+      "columns": [
+        "ID_Notificacao",
+        "Tipo",
+        "Prioridade",
+        "Titulo",
+        "Mensagem",
+        "Entidade_Referencia",
+        "ID_Referencia",
+        "Status",
+        "Criado_Em",
+        "Resolvido_Em",
+        "Resolvido_Por"
+      ],
+      "primary_key": [
+        "ID_Notificacao"
+      ],
+      "text_columns": [
+        "ID_Notificacao",
+        "ID_Referencia",
+        "Criado_Em",
+        "Resolvido_Em"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Notificacoes_Usuarios",
+      "columns": [
+        "ID_Notificacao",
+        "ID_Usuario",
+        "Lida_Em",
+        "Confirmada_Em"
+      ],
+      "primary_key": [
+        "ID_Notificacao",
+        "ID_Usuario"
+      ],
+      "text_columns": [
+        "ID_Notificacao",
+        "ID_Usuario",
+        "Lida_Em",
+        "Confirmada_Em"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Escalas",
+      "columns": [
+        "ID_Escala",
+        "ID_Usuario",
+        "Data",
+        "Hora_Inicio",
+        "Hora_Fim",
+        "Criado_Por",
+        "Atualizado_Em",
+        "Observacoes",
+        "Status"
+      ],
+      "primary_key": [
+        "ID_Escala"
+      ],
+      "text_columns": [
+        "ID_Escala",
+        "ID_Usuario",
+        "Hora_Inicio",
+        "Hora_Fim",
+        "Atualizado_Em"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "Sessoes",
+      "columns": [
+        "ID_Sessao",
+        "ID_Usuario",
+        "Criado_Em",
+        "Expira_Em",
+        "Revogado_Em",
+        "Dispositivo",
+        "Ultima_Atividade",
+        "Token_Hash",
+        "Nivel_Autenticacao",
+        "Versao_Autorizacao"
+      ],
+      "primary_key": [
+        "ID_Sessao"
+      ],
+      "text_columns": [
+        "ID_Sessao",
+        "ID_Usuario",
+        "Token_Hash",
+        "Criado_Em",
+        "Expira_Em",
+        "Revogado_Em",
+        "Ultima_Atividade"
+      ],
+      "restricted_columns": [
+        "Dispositivo"
+      ],
+      "append_only": false
+    },
+    {
+      "name": "Configuracoes",
+      "columns": [
+        "Chave",
+        "Valor",
+        "Atualizado_Em",
+        "Atualizado_Por"
+      ],
+      "primary_key": [
+        "Chave"
+      ],
+      "text_columns": [
+        "Atualizado_Em"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "_Migracoes",
+      "columns": [
+        "Versao",
+        "Aplicada_Em",
+        "Backup_Drive_ID",
+        "Hash_Esquema"
+      ],
+      "primary_key": [
+        "Versao"
+      ],
+      "text_columns": [
+        "Backup_Drive_ID",
+        "Hash_Esquema",
+        "Aplicada_Em"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "_Requisicoes",
+      "columns": [
+        "Hash_Nonce",
+        "Recebida_Em",
+        "Expira_Em",
+        "ID_Requisicao"
+      ],
+      "primary_key": [
+        "Hash_Nonce"
+      ],
+      "text_columns": [
+        "Hash_Nonce",
+        "ID_Requisicao",
+        "Recebida_Em",
+        "Expira_Em"
+      ],
+      "restricted_columns": [],
+      "append_only": false
+    },
+    {
+      "name": "_Eventos_Dominio",
+      "columns": [
+        "ID_Evento",
+        "Tipo",
+        "Chave_Idempotencia",
+        "Hash_Comando",
+        "Conteudo_JSON",
+        "Estado_Projecao",
+        "Criado_Em",
+        "Versao_Esquema"
+      ],
+      "primary_key": [
+        "ID_Evento"
+      ],
+      "text_columns": [
+        "ID_Evento",
+        "Chave_Idempotencia",
+        "Hash_Comando",
+        "Criado_Em"
+      ],
+      "restricted_columns": [
+        "Conteudo_JSON"
+      ],
+      "append_only": true
+    }
+  ],
+  "constraints": {
+    "Produtos": [
+      "ISBN não vazio único para produto ativo; Codigo_Interno exclusivo para livro sem ISBN; estoque inteiro não negativo; preço em centavos"
+    ],
+    "Produto_Nichos": [
+      "FK Produtos.ID_Produto e Nichos.ID_Nicho; par único"
+    ],
+    "Usuarios": [
+      "Email canônico único; Perfil SUPER_ADMIN/ADMIN/ATENDENTE; nenhum verificador de PIN nesta planilha"
+    ],
+    "Vendas": [
+      "Idempotency_Key única; ID_Cliente opcional; valores e operador confirmados pelo servidor"
+    ],
+    "Sessoes": [
+      "Token_Hash SHA-256 único; nunca guardar token bruto"
+    ],
+    "_Eventos_Dominio": [
+      "Chave_Idempotencia única; evento autoritativo; recuperação sob bloqueio antes de nova venda"
+    ]
+  },
+  "personal_data_storage": {
+    "phase": "Design; no personal data writes implemented in Phase A",
+    "encrypted_columns": "Personal fields use AEAD ciphertext with key version; keys outside Sheets/repository",
+    "lookup_indices": "CPF_Indice and Email_Indice use keyed HMAC with independent per-environment keys; still personal data",
+    "auth_verifiers": "Separate restricted identity store; never in Usuarios or public files"
+  }
+};
