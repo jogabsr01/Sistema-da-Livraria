@@ -2,6 +2,8 @@
 
 Esta entrega liga o núcleo de vendas ao Apps Script e à tela `/caixa-dev.html`, partindo de `dev/7108cf0` (fotos privadas já integradas pelo PR #15). É um incremento das fases B/E; não conclui o PROMPT MASTER v17. `index.html` e produção são preservados.
 
+Atualização posterior ao PR #18: regras vigentes de reposição, edição após vendas/esgotamento e exclusão administrativa em [ESTOQUE_REPOSICAO_DEV.md](ESTOQUE_REPOSICAO_DEV.md). O novo incremento também remove a exceção de estoque negativo do protótipo.
+
 ## Comportamento
 
 - Conta verificada com permissão `sales.create`; atendentes, administradores e proprietário. Administradores exigem autenticação forte. O operador é resolvido novamente dentro do ScriptLock do Google, sem aceitar papel/usuário no corpo da compra.
@@ -55,8 +57,8 @@ Não alterar flags agora: a entrega deve ser revisada no PR para `dev`. A homolo
 
 ## Limites que continuam abertos
 
-- Entradas/ajustes/estornos de estoque, cancelamento financeiro, clientes identificados, recibos imprimíveis e busca operacional de vendas ainda não estão ligados a este fluxo.
-- O projetor legado exige uma cadeia de versão/estoque sem lacunas. O catálogo já recusava editar livros com eventos de venda; essa proteção continua (`CATALOG_STOCK_HISTORY`). É necessário unificar os eventos de catálogo/estoque antes de liberar edições após vendas. Não contornar a restrição alterando a planilha.
+- Ajustes/estornos de estoque, cancelamento financeiro, clientes identificados, recibos imprimíveis e consulta operacional seguem pendentes. Entradas positivas foram acrescentadas no incremento de reposição.
+- A reposição permite editar livros após vendas/esgotamento por checkpoints de catálogo validados junto das entradas/saídas. Não alterar estoque/versões manualmente na planilha.
 - Capacidade explícita: 2.000 eventos de venda e 5.000 auditorias. Sem compactação versionada/backup, atingir a capacidade bloqueia novas operações. A recuperação varre o histórico e pode ser limitada por quotas/tempo do Apps Script; não há garantia de throughput comercial.
 - Proteção de borda/tráfego, retenção, reconciliação entre abas/aparelhos, recuperação de conta e homologação real permanecem necessárias. Não existe promessa de transação ACID entre abas do Sheets.
 - Testes locais usam Google/Drive/Mail emulados e usuários fictícios; Chromium executa WebAuthn real com autenticador virtual. Não representam Google IAM/quota reais, hardware móvel, Safari/WebKit, cobrança bancária nem ativação do proprietário.
