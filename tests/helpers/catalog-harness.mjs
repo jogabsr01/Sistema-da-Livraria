@@ -7,6 +7,7 @@ import { createIsbnLookupService } from '../../backend/isbn-lookup.mjs';
 import { randomUUID } from 'node:crypto';
 import { normalizeProduct } from '../../backend/catalog-model.mjs';
 import { createCheckoutHandler, loadCheckoutSettings } from '../../backend/checkout-handler.mjs';
+import { createNotificationHandler, loadNotificationSettings } from '../../backend/notification-handler.mjs';
 import { isbnProviderFixture } from './isbn-provider-fixtures.mjs';
 const origin='https://dev--merry-chimera-49a1f3.netlify.app', fixture=ownerFixture();
 fixture.env.WORKSPACE_COVER_PHOTOS_ENABLED='true'; fixture.gas.props.COVER_PHOTOS_ENABLED='true';
@@ -14,6 +15,7 @@ fixture.env.WORKSPACE_CATALOG_ENABLED='true'; fixture.gas.props.CATALOG_ENABLED=
 fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='true';
 fixture.env.WORKSPACE_CHECKOUT_ENABLED='true'; fixture.gas.props.CHECKOUT_ENABLED='true';
 const checkoutHandler=createCheckoutHandler({loadSettings:()=>loadCheckoutSettings(fixture.env),createClient:()=>fixture.client});
+const notificationHandler=createNotificationHandler({loadSettings:()=>loadNotificationSettings(fixture.env),createClient:()=>fixture.client});
 let lookupMode='normal';const providerCalls=[];
 const makeLookup=()=>createIsbnLookupService({fetchImpl:(...args)=>isbnProviderFixture(lookupMode,providerCalls)(...args)});
 let lookupService=makeLookup();
@@ -28,6 +30,8 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/disable-photos'){fixture.env.WORKSPACE_COVER_PHOTOS_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/disable-lookup'){fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/disable-checkout'){fixture.env.WORKSPACE_CHECKOUT_ENABLED='false';res.end('{}');return;}
+    if(req.url==='/test/enable-notifications'){fixture.env.WORKSPACE_NOTIFICATIONS_ENABLED='true';fixture.gas.props.NOTIFICATIONS_ENABLED='true';res.end('{}');return;}
+    if(req.url==='/test/disable-notifications'){fixture.env.WORKSPACE_NOTIFICATIONS_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/set-role'){
       const role=JSON.parse(body).role;if(!['ATENDENTE','ADMIN','SUPER_ADMIN'].includes(role))throw Error('TEST_ROLE_INVALID');
       const table=fixture.main.getSheetByName('Usuarios'),owner=fixture.gas.props.IDENTITY_OWNER_USER_ID;
@@ -53,7 +57,7 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/disable'){fixture.env.WORKSPACE_CATALOG_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/state'){res.end(JSON.stringify({files:[...fixture.gas.resources.values()].filter(r=>r.kind==='image').length,providerRequests:providerCalls.length,products:fixture.main.getSheetByName('Produtos').getLastRow()-1,logs:fixture.main.getSheetByName('Logs_Auditoria').getLastRow()-1}));return;}
     const request=new Request(origin+req.url,{method:req.method,headers:req.headers,...(req.method==='GET'?{}:{body})});
-    const response=req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
+    const response=req.url.startsWith('/api/v1/notifications/')?await notificationHandler(request):req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
     const headers=Object.fromEntries(response.headers);delete headers['set-cookie'];
     res.end(JSON.stringify({status:response.status,headers,cookies:response.headers.getSetCookie(),...(response.headers.get('content-type')==='image/jpeg'?{bodyBase64:Buffer.from(await response.arrayBuffer()).toString('base64')}:{body:await response.text()})}));
   }catch{res.statusCode=500;res.end(JSON.stringify({error:'TEST_HARNESS_FAILURE'}));}

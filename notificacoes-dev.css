@@ -1,0 +1,13 @@
+#report-tools,#report { margin-top:24px; padding:20px; background:white; border:1px solid #d5e1d9; border-radius:14px; }
+.alert { display:block; } .alert p { margin:8px 0; } .alert .toolbar { justify-content:start; }
+.report-scroll { max-width:100%; overflow:auto; }
+table { width:100%; border-collapse:collapse; text-align:left; margin:12px 0 24px; }
+th,td { border-bottom:1px solid #d5e1d9; padding:10px; vertical-align:top; min-width:75px; overflow-wrap:anywhere; }
+th:first-child,td:first-child { min-width:180px; } #supplier-warning { color:#754509; font-weight:600; }
+th:nth-child(2),td:nth-child(2) { min-width:160px; } th:nth-child(3),td:nth-child(3) { min-width:150px; }
+#draft { font-family:inherit; }
+@media print {
+  .no-print { display:none!important; } body { background:white; color:black; padding:0; } main { max-width:none; }
+  #report { border:0; padding:0; } .report-scroll { overflow:visible; } th,td { min-width:0!important; font-size:10pt; padding:6px; }
+  tr { break-inside:avoid; } thead { display:table-header-group; } a { color:inherit; }
+}

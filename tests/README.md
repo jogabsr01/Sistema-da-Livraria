@@ -43,3 +43,7 @@ Após `npm run build`, `npm run test:checkout` executa a tela anônima com cooki
 ### Reposição e livros esgotados
 
 `npm run test:stock` executa cinco cenários: vender/esgotar/editar/repor/vender o mesmo cadastro, recuperar entrada após resposta perdida/recarga, restrição administrativa, bloqueio do checkout por quantidade e quota local. A suíte pública acrescenta três testes contra override/linhas duplicadas e verifica edição/reposição no protótipo. Contratos Node cobrem falhas entre gravações e checkpoints mistos, inclusive foto privada após venda. Guia: [ESTOQUE_REPOSICAO_DEV.md](../docs/v17/ESTOQUE_REPOSICAO_DEV.md).
+
+### Notificações e relatório de reposição
+
+Após build, `npm run test:notifications` executa sete cenários de alertas/leitura/atendimento/resolução, fornecedor ausente, filtros, CSV, impressão interceptada, texto sem envio, XSS/fórmulas, permissões e celular. Os 12 contratos Node novos cobrem recuperação, deduplicação, escalada e um relatório completo de 400 livros além da paginação. Google é emulado; não há pedido, mensagem, cobrança ou integração Google real. Evidência: [QA_NOTIFICACOES_REPOSICAO.md](../docs/v17/QA_NOTIFICACOES_REPOSICAO.md).

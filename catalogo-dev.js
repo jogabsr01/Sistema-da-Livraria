@@ -51,7 +51,7 @@
           remove.addEventListener('click', () => run(async () => {
             if (!confirm('Excluir “' + book.title + '” do catálogo ativo? O cadastro e seu histórico serão preservados.')) return;
             if (!archiveCommand || archiveCommand.id !== book.id || archiveCommand.expectedVersion !== book.version) archiveCommand = { commandId:crypto.randomUUID(),id:book.id,expectedVersion:book.version };
-            await api('remove', archiveCommand); archiveCommand = null; await list(); message('Livro excluído do catálogo ativo. Cadastro e histórico preservados.');
+            await api('remove', archiveCommand); window.dispatchEvent(new Event('livraria:stock-changed')); archiveCommand = null; await list(); message('Livro excluído do catálogo ativo. Cadastro e histórico preservados.');
           })); content.append(remove);
         }
       }
@@ -91,6 +91,7 @@
     const signature = JSON.stringify({fields,photo:pendingPhoto}); if (!command || command.signature !== signature) command = { signature, id:crypto.randomUUID() };
     $('form-status').textContent = 'Salvando e aguardando a confirmação…';
     await api('save', { commandId:command.id,id:draftId,expectedVersion:editing?.version || 0,record:fields,...(pendingPhoto === undefined ? {}:{photo:pendingPhoto}) });
+    window.dispatchEvent(new Event('livraria:stock-changed'));
     $('editor').close();
     try { await list(); message('Livro salvo com confirmação do servidor.'); }
     catch { message('Livro salvo com confirmação do servidor. Não foi possível atualizar a lista; use Atualizar catálogo.'); }
@@ -124,6 +125,7 @@
       const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); const current = await response.json();
       if (!response.ok || 'catalog.stock.pending.' + current.data?.user?.id !== stockStorageKey) throw Error('ACCOUNT_CHANGED'); csrf = current.data.csrfToken;
       const result = await api('receive', pendingStock);
+      window.dispatchEvent(new Event('livraria:stock-changed'));
       try { sessionStorage.removeItem(stockStorageKey); } catch { $('stock-status').textContent = 'Entrada confirmada. Não foi possível limpar a referência local. Use Verificar entrada para recuperar este mesmo resultado antes de iniciar outra.'; return; }
       pendingStock = null; $('resume-stock').hidden = true; $('stock-editor').close();
       let updated = true; try { await list(); } catch { updated = false; }
@@ -272,5 +274,8 @@
     niches = capabilities.niches.sort((a,b) => a.order-b.order || a.name.localeCompare(b.name));
     niches.filter(n => n.active).forEach(niche => { const option = document.createElement('option'); option.value = niche.id; option.textContent = niche.name; $('niche-filter').append(option); });
     await list(); $('catalog').hidden = false;
+    const params = new URL(location.href).searchParams, focusId = params.get('livro'), stockId = params.get('entrada');
+    const validId = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
+    if (validId(stockId)) await openStock(stockId); else if (validId(focusId)) await openBook(focusId);
   });
 })();

@@ -91,6 +91,7 @@
     finally { refreshing = false; }
   }
   function showReceipt(data) {
+    window.dispatchEvent(new Event('livraria:stock-changed'));
     receipt = data; $('receipt').hidden = false;
     $('receipt-text').textContent = 'Venda ' + data.saleId + ' · ' + money(data.totalCents) + ' · ' + methods[data.paymentMethod] + ' · ' +
       new Date(data.createdAt).toLocaleString('pt-BR', { timeZone:'America/Sao_Paulo' }) + ' · Sem cadastro de cliente.';

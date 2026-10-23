@@ -29,7 +29,7 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
     await writeFile(resolve(destination,'cover-references.js'),'globalThis.LivrariaCoverReferences=Object.freeze('+JSON.stringify(publicRefs)+');\n');
   }
   // Explicit allowlist: backend, Apps Script, tests and configuration are never published.
-  for (const file of ['index.html', 'teste-dev.txt', 'acesso-dev.html', 'acesso-dev.js', 'acesso-dev.css', 'catalogo-dev.html', 'catalogo-dev.js', 'catalogo-dev.css', 'caixa-dev.html', 'caixa-dev.js', 'caixa-dev.css']) {
+  for (const file of ['index.html', 'teste-dev.txt', 'acesso-dev.html', 'acesso-dev.js', 'acesso-dev.css', 'catalogo-dev.html', 'catalogo-dev.js', 'catalogo-dev.css', 'caixa-dev.html', 'caixa-dev.js', 'caixa-dev.css', 'notificacoes-dev.html', 'notificacoes-dev.js', 'notificacoes-dev.css', 'notification-badge.js']) {
     const input = resolve(root, file);
     const info = await lstat(input).catch(e => { if (e.code !== 'ENOENT') throw e; });
     if (!info && file !== 'index.html') continue;

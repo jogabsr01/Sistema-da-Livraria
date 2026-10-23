@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
 import { catalogUuid, normalizeProduct, productFields } from './catalog-model.mjs';
 import { paymentMethods } from './checkout-command.mjs';
+import { validateNotificationResponse } from './notification-model.mjs';
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
   async function invoke(action, actor, payload = {}) {
     const request = requestMessage(config, actor);
@@ -21,10 +22,17 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         response = await fetchImpl(url.href, { method: 'GET', redirect: 'manual', signal });
       }
       if (!response.ok) throw new ApiError(502, 'UPSTREAM_UNAVAILABLE');
-      const text = await response.text();
-      if (text.length > 180_000) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
-      const signed = unpack(JSON.parse(text), config.secret, 'response');
+      const limit = action === 'notifications.report' ? 4_000_000 : 180_000;
+      let text;
+      if (action === 'notifications.report') {
+        const reader = response.body?.getReader(), decoder = new TextDecoder('utf-8', { fatal:true }); text = ''; let size = 0;
+        if (reader) { while (true) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength;
+          if (size > limit) { await reader.cancel(); throw new ApiError(502,'UPSTREAM_UNTRUSTED'); } text += decoder.decode(value,{stream:true}); } text += decoder.decode(); }
+      } else text = await response.text();
+      if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
+      const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);
+      if (action.startsWith('notifications.')) return validateNotificationResponse(action.slice('notifications.'.length), data, payload, request.requestId);
       if (action === 'sales.checkout') {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
         if (!data || data.saleId !== payload.idempotencyKey || data.totalCents !== payload.expectedTotalCents ||
@@ -169,6 +177,10 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    notifications: (operation, actor, payload) => {
+      if (!['summary','list','read','state','report'].includes(operation)) throw new ApiError(400,'INVALID_NOTIFICATION');
+      return invoke('notifications.' + operation, actor, payload);
+    },
     checkout: (actor, payload) => invoke('sales.checkout', actor, payload),
     catalog: (operation, actor, payload) => {
       if (!['list', 'get', 'niches', 'save', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');

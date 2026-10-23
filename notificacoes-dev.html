@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer">
+  <title>Notificações e reposição — Livraria DEV</title>
+  <link rel="stylesheet" href="/catalogo-dev.css"><link rel="stylesheet" href="/notificacoes-dev.css">
+  <script src="/notificacoes-dev.js" defer></script>
+</head><body><main>
+  <header class="no-print"><p class="badge">AMBIENTE DE TESTES — DEV</p><h1>Notificações e reposição</h1>
+    <p>Acompanhe os livros esgotados e prepare a lista para solicitar novas unidades.</p>
+    <nav><a href="/catalogo-dev.html">Catálogo</a> · <a href="/caixa-dev.html">Caixa</a> · <a href="/acesso-dev.html">Minha conta</a></nav>
+  </header>
+  <p id="status" role="status" aria-live="polite" class="no-print">Conferindo acesso…</p>
+  <section id="notifications" hidden class="no-print">
+    <div class="toolbar"><h2>Alertas de estoque <span id="unread"></span></h2><button id="refresh" type="button">Atualizar</button></div>
+    <p>Marcar como lida é pessoal. Em atendimento indica acompanhamento; o alerta só é encerrado quando o saldo é regularizado ou o livro desativado.</p>
+    <label class="check"><input id="history" type="checkbox"> Incluir alertas resolvidos</label>
+    <div id="alerts" class="books"></div>
+    <div class="toolbar"><button id="previous" type="button" class="secondary" hidden>Anterior</button><button id="next" type="button" class="secondary" hidden>Próxima página</button></div>
+  </section>
+  <section id="report-tools" hidden class="no-print">
+    <h2>Preparar reposição por fornecedor</h2>
+    <p>Lista de planejamento, sem envio ou compra automática. Confira disponibilidade e condições diretamente com o fornecedor.</p>
+    <form id="report-form" class="filters"><label>Livros<select id="scope"><option value="zero">Somente sem estoque</option><option value="low">Sem estoque e abaixo do mínimo</option></select></label>
+      <label>Fornecedor<select id="supplier"><option value="null">Todos os fornecedores</option></select></label><button id="generate">Gerar relatório</button></form>
+    <div class="toolbar"><button id="export" type="button" class="secondary" disabled>Baixar CSV (Excel)</button><button id="print" type="button" class="secondary" disabled>Imprimir / salvar PDF</button><button id="copy" type="button" class="secondary" disabled>Preparar texto para encaminhar</button></div>
+    <p id="report-status" role="status" aria-live="polite"></p>
+    <label id="draft-label" hidden>Texto para revisar e copiar<textarea id="draft" rows="10" readonly></textarea></label>
+  </section>
+  <section id="report" hidden aria-labelledby="report-title"><h2 id="report-title">Lista de reposição</h2><p id="report-meta"></p>
+    <p id="report-summary"></p><p id="supplier-warning"></p>
+    <p>Quantidade sugerida = unidades necessárias para atingir o estoque mínimo. Sem mínimo definido e com saldo zero, sugere-se uma unidade para revisão. Não é previsão de demanda nem pedido confirmado.</p>
+    <p class="no-print">No celular, deslize a tabela para consultar todas as colunas.</p><div id="report-groups"></div>
+  </section>
+</main></body></html>
