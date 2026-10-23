@@ -1,11 +1,13 @@
 /* DEV-only private controls. No credentials, sessions or accounts are issued.
  * All operations run under the installation ScriptLock in processRequest_. */
 var AUTH_CONTROL_SCHEMA = {
-  version: 1,
+  version: 2,
   tables: [
     { name: '_Control_Migrations', columns: ['Version', 'Schema_Hash', 'Created_At', 'Backup_Drive_ID'] },
     { name: '_Auth_Limits', columns: ['Key', 'Window_Start', 'Attempt_Count', 'Blocked_Until', 'Penalty_Level', 'Updated_At'] },
-    { name: '_Auth_Challenges', columns: ['ID', 'Subject_ID', 'Purpose', 'Token_Hash', 'Created_At', 'Expires_At', 'Consumed_At', 'Attempt_Count', 'Authorization_Version', 'Revoked_At'] }
+    { name: '_Auth_Challenges', columns: ['ID', 'Subject_ID', 'Purpose', 'Token_Hash', 'Created_At', 'Expires_At', 'Consumed_At', 'Attempt_Count', 'Authorization_Version', 'Revoked_At'] },
+    { name: '_Passkey_Ceremonies', columns: ['ID', 'Subject_ID', 'Purpose', 'Challenge', 'Created_At', 'Expires_At', 'Consumed_At', 'Authorization_Version', 'Completed_At', 'Credential_ID', 'Expected_Counter'] },
+    { name: '_Passkeys', columns: ['Credential_ID', 'Subject_ID', 'Public_Key', 'Counter', 'Transports_JSON', 'Created_At', 'Updated_At', 'Authorization_Version', 'Revoked_At', 'Registration_Ceremony_ID'] }
   ]
 };
 function authControlDefinition_(name) {
@@ -25,14 +27,25 @@ function authControlRows_(ss, name) {
     definition.columns.forEach(function (key, i) { row[key] = values[i]; }); return row;
   }) };
 }
+function authControlInstalled_(ss) {
+  var history = authControlRows_(ss, '_Control_Migrations'), seen = new Set(), latest = 0;
+  // SHA-256 of the approved v1 schema in commit bc3d6d2; never derive from mutable v2 definitions.
+  var legacy = '357da73009e9d28b09650f78dbc8c59b2114ee13f23dbe5b6a2a6334b11d75f2';
+  history.rows.forEach(function (row) {
+    if (![1, 2].includes(row.Version) || seen.has(row.Version) || row.Version <= latest ||
+        row.Schema_Hash !== (row.Version === 1 ? legacy : digest_(JSON.stringify(AUTH_CONTROL_SCHEMA)))) failure_('IDENTITY_UNAVAILABLE');
+    seen.add(row.Version); latest = row.Version;
+  });
+  return latest;
+}
 function authControlStore_(c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
   storage_(c, false); // Validate public-data bindings as well as the private store.
   var id = PropertiesService.getScriptProperties().getProperty('IDENTITY_CONTROL_SPREADSHEET_ID');
   if (!id) failure_('IDENTITY_UNAVAILABLE');
   assertMarker_(DriveApp.getFileById(id), c, 'identity-controls');
-  var ss = SpreadsheetApp.openById(id), history = authControlRows_(ss, '_Control_Migrations');
-  if (history.rows.length !== 1 || history.rows[0].Version !== 1 || history.rows[0].Schema_Hash !== digest_(JSON.stringify(AUTH_CONTROL_SCHEMA))) failure_('IDENTITY_UNAVAILABLE');
+  var ss = SpreadsheetApp.openById(id);
+  if (authControlInstalled_(ss) !== 2) failure_('IDENTITY_UNAVAILABLE');
   AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { authControlRows_(ss, table.name); });
   return ss;
 }
@@ -54,23 +67,24 @@ function provisionDevelopmentAuthControls() {
       if (sheet && sheet.getLastRow() && !same_(rowValues_(sheet), table.columns)) failure_('SCHEMA_CONFLICT');
     });
     var history = ss.getSheetByName('_Control_Migrations');
-    if (history && history.getLastRow() > 1) { authControlStore_(c); return { environment: 'dev', version: 1, changed: false }; }
+    var installed = history && history.getLastRow() > 1 ? authControlInstalled_(ss) : 0;
+    if (installed === 2) { authControlStore_(c); return { environment: 'dev', version: 2, changed: false }; }
     // Each initial/resumed migration backs up BEFORE any header mutation.
-    var backup = resource.makeCopy('DEV controls before v1 ' + new Date().toISOString(), store.backup);
+    var backup = resource.makeCopy('DEV controls before v2 ' + new Date().toISOString(), store.backup);
     AUTH_CONTROL_SCHEMA.tables.forEach(function (table) {
       var sheet = ss.getSheetByName(table.name) || ss.insertSheet(table.name);
       if (!sheet.getLastRow()) sheet.getRange(1, 1, 1, table.columns.length).setValues([table.columns]);
       sheet.setFrozenRows(1);
       table.columns.forEach(function (column, index) {
-        if (!['Version', 'Attempt_Count', 'Penalty_Level', 'Authorization_Version'].includes(column)) {
+        if (!['Version', 'Attempt_Count', 'Penalty_Level', 'Authorization_Version', 'Counter', 'Expected_Counter'].includes(column)) {
           sheet.getRange(2, index + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
         }
       });
     });
     SpreadsheetApp.flush();
-    ss.getSheetByName('_Control_Migrations').appendRow([1, digest_(JSON.stringify(AUTH_CONTROL_SCHEMA)), new Date().toISOString(), backup.getId()]);
+    ss.getSheetByName('_Control_Migrations').appendRow([2, digest_(JSON.stringify(AUTH_CONTROL_SCHEMA)), new Date().toISOString(), backup.getId()]);
     SpreadsheetApp.flush(); authControlStore_(c);
-    return { environment: 'dev', version: 1, changed: true };
+    return { environment: 'dev', version: 2, changed: true };
   });
 }
 function authControlExact_(payload, keys) {

@@ -4,7 +4,7 @@ Incremento da fase C sobre dev após o PR #10. Implementa controles internos do 
 
 ## Armazenamento privado
 
-`AuthControl.gs` mantém uma planilha separada, com marcador `identity-controls`, mesma instalação DEV e compartilhamento privado. Contém três abas: `_Control_Migrations`, `_Auth_Limits` e `_Auth_Challenges`. Não altera o schema das 17 abas de negócio. Não armazena PIN nem dados pessoais em texto puro.
+`AuthControl.gs` mantém uma planilha separada, com marcador `identity-controls`, mesma instalação DEV e compartilhamento privado. A v1 contém `_Control_Migrations`, `_Auth_Limits` e `_Auth_Challenges`. O incremento de passkeys em revisão adiciona duas abas na v2, com backup e preservação dos controles anteriores. Não altera o schema das 17 abas de negócio. Não armazena PIN nem dados pessoais em texto puro.
 
 O provisionamento `provisionDevelopmentAuthControls` exige o proprietário Google configurado e DEV, sob ScriptLock. Cria/reutiliza o recurso privado, guarda ID em Script Properties (`IDENTITY_CONTROL_SPREADSHEET_ID`), valida cabeçalhos, faz backup antes de escrever e registra hash/versão do schema. Uma execução parcial pode ser retomada sem apagar linhas. IDs incorretos, marcadores incompatíveis, compartilhamento público, PROD e outro proprietário recusam novas escritas.
 
@@ -50,3 +50,7 @@ Nenhum teste desta entrega usou conta/credencial pessoal ou executou controles d
 ## Próxima entrega necessária
 
 Conectar cadastro/convite, entrega privada de e-mail, verificação de PIN e prova forte de administrador aos controles persistentes, com emissão transacional/recuperável de sessão, bootstrap de uso único, CSRF e interface real. As configurações atuais devem continuar fechadas até essa homologação.
+
+## Incremento posterior
+
+A verificação WebAuthn e o schema privado v2 estão implementados em revisão: [PASSKEYS.md](PASSKEYS.md). Não habilitar flags por esse motivo; entrega de e-mail, PIN e emissão recuperável de sessão ainda precisam de integração.
