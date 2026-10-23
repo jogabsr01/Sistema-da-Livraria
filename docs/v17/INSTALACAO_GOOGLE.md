@@ -90,3 +90,7 @@ Atualizar também `Staff.gs` junto com o lote de scripts existente. Sem nova aba
 ## Incremento de clientes (ativação posterior)
 
 Atualizar também `Customers.gs`, preservando o lote completo/IDs/chaves existentes. Flags independentes `WORKSPACE_CUSTOMERS_ENABLED` e `CUSTOMERS_ENABLED`, desligadas por padrão. Sem nova aba ou escopo. Cifra, metadados, limites e contratos estão em [CLIENTES_CAIXA_DEV.md](CLIENTES_CAIXA_DEV.md). Não usar dados reais até homologação; a configuração Google continua reservada à etapa posterior solicitada.
+
+## Operações e CEP (ativação posterior)
+
+Atualizar o lote completo, incluindo `Operations.gs`, antes de usar o novo `Sales.gs`. Flags DEV independentes `WORKSPACE_OPERATIONS_ENABLED` e `OPERATIONS_ENABLED`, desligadas por padrão. Sem migração ou escopo novo. Ver [OPERACOES_ADMIN_DEV.md](OPERACOES_ADMIN_DEV.md) e [CEP_BRASILAPI_DEV.md](CEP_BRASILAPI_DEV.md). A consulta opcional de CEP já foi autorizada; apenas CEP sai para a BrasilAPI, ao clique, com limites privados de guardas existentes. Configuração Google real continua para a etapa posterior.

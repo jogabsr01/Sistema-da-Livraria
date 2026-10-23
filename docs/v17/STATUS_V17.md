@@ -10,7 +10,8 @@ A v17 continua em evolução incremental. Código integrado, testes locais, depl
 - PR #19 integrado em `dev/dc0c5996393e425fc87643088caafe8abaefddd8`: [reposição, edição de livros esgotados e exclusão administrativa](ESTOQUE_REPOSICAO_DEV.md), com entrada positiva no mesmo cadastro e bloqueio de estoque negativo.
 - PR #20 integrado em `dev/2528ca0636976d4d5c6833ce44d07d2681d12150`: [notificações e relatório de reposição por fornecedor](NOTIFICACOES_REPOSICAO_DEV.md), com leitura pessoal, atendimento administrativo, resolução automática e CSV/impressão/texto manual.
 - PR #21 integrado em `dev/26268992dc3032deab5f4673e4433a144a549b81`: [gestão de funcionários e primeiro acesso por CPF/e-mail](EQUIPE_DEV.md), dados pessoais cifrados, alterações recuperáveis e revogação de credenciais. Home de entrada e instalação Google real ficam para a etapa posterior solicitada.
-- Incremento desta branch: [clientes cifrados e Caixa identificado](CLIENTES_CAIXA_DEV.md), com consentimento, busca por CPF, revisão concorrente, venda recuperável e limpeza entre compras. Endereço manual por CEP disponível; consulta automática externa depende de autorização específica.
+- PR #22 integrado em `dev/d3bd501786524d5a89730499b5c009254a9018a9`: [clientes cifrados e Caixa identificado](CLIENTES_CAIXA_DEV.md), com consentimento, busca por CPF, revisão concorrente, venda recuperável e limpeza entre compras. Endereço manual por CEP disponível; consulta externa autorizada posteriormente pelo proprietário.
+- Incremento desta branch: [operações, ajustes e estornos integrais](OPERACOES_ADMIN_DEV.md), histórico/comprovantes e [consulta opcional de CEP autorizada](CEP_BRASILAPI_DEV.md). [QA](QA_OPERACOES_CEP.md). Sem ativação Google real.
 - `main`/produção seguem fora do escopo desta publicação DEV.
 
 ## Fases e pendências
@@ -18,10 +19,10 @@ A v17 continua em evolução incremental. Código integrado, testes locais, depl
 | Fase | Implementação disponível | Pendências para conclusão |
 | --- | --- | --- |
 | A — Fundação | Modelo de 17 abas, provisionamento DEV, assinatura, isolamento e build. Confirmação anterior do proprietário: schema v1/17 tabelas e conexão DEV. | Backups/restauração reais, IAM e provisionamento de PROD após homologação. |
-| B — Persistência | Catálogo, nichos existentes, capas/fotos privadas, ISBN, vendas anônimas e estoque recuperável. Esta branch acrescenta entradas positivas e edição de livros vendidos/esgotados. | Homologação de clientes/vendas identificadas (código neste incremento), ajustes/estornos/cancelamento, gestão de nichos, documentos, reconciliação entre aparelhos, compactação e homologação Google. |
+| B — Persistência | Catálogo, nichos existentes, capas/fotos privadas, ISBN, vendas anônimas e estoque recuperável. Esta branch acrescenta entradas positivas e edição de livros vendidos/esgotados. | Homologação de clientes/vendas identificadas (código neste incremento), homologação de ajustes/estornos integrais (código neste incremento), devoluções parciais, gestão de nichos, documentos, reconciliação entre aparelhos, compactação e homologação Google. |
 | C — Identidade | PIN protegido, sessões/revogação, CSRF, papéis, limites persistentes, WebAuthn, bootstrap e primeiro acesso/login do proprietário em código. | Homologação Google/aparelhos reais, recuperação/rotação, proteção de tráfego e perfil/avatar. Funcionários e CPF disponíveis neste incremento, ainda sem homologação Google. |
 | D — Gestão | Auditoria de catálogo/vendas/entradas; nesta branch, alertas compartilhados de estoque e relatório administrativo de reposição por fornecedor. | Homologação Google, consulta de auditoria, demais notificações, escalas com conflitos, nichos administráveis, relatórios comerciais e pedidos de compra. |
-| E — Operação | Caixa com/sem cliente, atualização de estoque por foco/intervalo, recuperação de referência anônima de compra/entrada por aba. | Reconciliação entre aparelhos, recibos e consultas operacionais, usabilidade e aceite multiusuário real. |
+| E — Operação | Caixa com/sem cliente, atualização de estoque por foco/intervalo, recuperação de referência anônima de compra/entrada por aba. | Homologação de recibos/consultas (código neste incremento), reconciliação entre aparelhos, usabilidade e aceite multiusuário real. |
 
 ## Regras atuais
 

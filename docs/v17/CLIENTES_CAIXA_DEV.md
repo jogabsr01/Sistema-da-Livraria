@@ -6,7 +6,7 @@ Incremento a partir de `dev/26268992dc3032deab5f4673e4433a144a549b81` (equipe, P
 
 O Caixa apresenta duas escolhas explícitas quando a funcionalidade está habilitada: **Finalizar compra sem cadastro** (padrão) e **Identificar ou cadastrar cliente**. CPF é consultado somente após ação do operador, por POST com sessão/CSRF; não aparece em URL/query string. Um resultado encontrado precisa ser selecionado explicitamente antes da venda. Sem identificação, nenhum dado pessoal é exigido.
 
-Cadastro: nome e CPF válido; e-mail, celular e endereço opcionais, incluindo CEP preenchido manualmente. A consulta automática a provedor de CEP não foi adicionada: aguarda autorização específica para envio desse dado a serviço externo. Não há requisição externa de endereço neste incremento.
+Cadastro: nome e CPF válido; e-mail, celular e endereço opcionais, incluindo CEP preenchido manualmente. O incremento posterior documentado em [CEP_BRASILAPI_DEV.md](CEP_BRASILAPI_DEV.md) acrescenta consulta opcional à BrasilAPI, explicitamente autorizada pelo proprietário; somente ao clique e com envio apenas do CEP. O preenchimento manual permanece.
 
 O cadastro aceita preferência `NONE`, `WHATSAPP` ou `EMAIL` e autorização promocional explícita, inicialmente desmarcada. Telefone não implica consentimento; autorização exige canal compatível com contato válido e não condiciona a compra. Datas de concessão/alteração/revogação são registradas no servidor. Não há mensagens automáticas ou compras externas.
 
