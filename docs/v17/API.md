@@ -64,3 +64,9 @@ Detalhes e limites da parte de identidade: [SESSOES_E_PERMISSOES.md](SESSOES_E_P
 `POST /api/v1/reports/query` recebe `{filters}` com tipo SALES/STOCK/MOVEMENTS, período UTC canônico quando aplicável e filtros do contrato. Exige administrador com autenticação forte recente, origem exata e CSRF. Nunca usar CPF em URL. Resposta contém conjunto completo protegido, indicadores/rankings e prova de consulta válida por cinco minutos.
 
 `POST /api/v1/reports/export` recebe `{commandId, filters, sourceSnapshot, expiresAt, proof}` da consulta anterior. Mesma sessão/versão/filtros/fonte; após alteração relevante ou expiração é necessário consultar novamente. Retorna `.xlsx` binário com todos os resultados após registrar a autorização. RPCs internas reports.source/record são assinadas e não são endpoints públicos de consulta livre. Flags próprias fechadas por padrão. [Contrato](RELATORIOS_COMERCIAIS_DEV.md).
+
+## Perfil de compra e preparação manual DEV
+
+`POST /api/v1/customer-insights/query`: `{customerId}`. ADMIN/SUPER_ADMIN com autenticação forte recente, origem DEV e CSRF. Localizar o cadastro por `customers/find` já existente (CPF em POST). Retorna perfil individual completo dentro dos limites, indicadores, nichos, faixa histórica e até 12 sugestões entre todos os candidatos, com contagem explícita. Sem contatos/CPF na resposta.
+
+`POST /api/v1/customer-insights/message`: `{commandId,customerId,productIds,sourceSnapshot,expiresAt,proof}`. De um a três produtos sugeridos na mesma fonte/consulta/sessão válida por cinco minutos; preferência WhatsApp, consentimento/data e telefone válido no cadastro são revalidados. Registra autorização e retorna apenas texto para revisão/cópia, sem envio, link, telefone ou provedor externo. Mesma chave/carga é idempotente; alteração de fonte/expiração exige nova consulta. RPCs internas `insights.source/record` assinadas, sem Function pública livre. Flags próprias fechadas por padrão. [Contrato](PERFIL_COMPRA_DEV.md).
