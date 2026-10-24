@@ -192,7 +192,7 @@ function catalogSave_(c, principal, p) {
   // A forged save must not bypass the dedicated administrative removal route.
   if ((!existing && !p.record.active || existing && p.record.active !== existing.Ativo) && !['ADMIN', 'SUPER_ADMIN'].includes(principal.role)) failure_('FORBIDDEN');
   if (existing && existing.Capa_Drive_ID && p.record.coverUrl && !hasPhoto) catalogFail_();
-  if (p.record.nicheIds.some(function (id) { return !niches.rows.some(function (row) { return row.ID_Nicho === id && row.Ativo; }); })) catalogFail_();
+  if (p.record.nicheIds.some(function (id) { return !niches.rows.some(function (row) { return row.ID_Nicho === id && (row.Ativo || existing&&catalogLinkIds_(links,existing.ID_Produto).includes(id)); }); })) catalogFail_();
   if (p.record.active && products.rows.some(function (row) { return row.ID_Produto !== p.id && row.Ativo && (p.record.isbn && row.ISBN === p.record.isbn || p.record.internalCode && row.Codigo_Interno === p.record.internalCode); })) catalogFail_('CATALOG_DUPLICATE');
   var now = new Date().toISOString(), row = {};
   products.columns.forEach(function (key) { row[key] = existing ? existing[key] : ''; });
@@ -239,7 +239,7 @@ function catalogOperation_(request, c) {
   }
   if (request.action === 'catalog.save') return catalogSave_(c, principal, p);
   if (request.action === 'catalog.niches') {
-    authControlExact_(p, []); return { niches: catalogNiches_(ss).rows.map(function (row) { return { id: row.ID_Nicho, name: row.Nome, color: row.Cor_Destaque, order: row.Ordem_Exibicao, active: row.Ativo }; }) };
+    authControlExact_(p, []); return { niches: nicheDtos_(ss,catalogNiches_(ss).rows) };
   }
   var products = catalogProducts_(ss), links = catalogLinks_(ss);
   catalogReferences_(products, links, catalogNiches_(ss));

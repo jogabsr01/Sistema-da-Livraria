@@ -16,7 +16,7 @@ const admin = new Set([
 ]);
 const superAdmin = new Set([...admin, 'users.admin.manage', 'config.manage']);
 const recent = new Set([
-  'reports.read', 'audit.read', 'stock.adjust', 'sales.reverse', 'users.attendant.manage',
+  'niches.write', 'reports.read', 'audit.read', 'stock.adjust', 'sales.reverse', 'users.attendant.manage',
   'users.admin.manage', 'config.manage', 'profile.self.write',
 ]);
 const selfOperations = new Set([
