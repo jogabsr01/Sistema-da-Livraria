@@ -37,14 +37,15 @@
         const card = document.createElement('article'); card.className = 'book alert'; card.dataset.id = item.id;
         const title = document.createElement('h3'), info = document.createElement('p'), since = document.createElement('p'), tools = document.createElement('div'); tools.className = 'toolbar';
         title.textContent = item.title; info.textContent = (item.type === 'STOCK_ZERO' ? 'Sem estoque' : 'Abaixo do mínimo') + ' · Saldo atual: ' + item.stock + ' · Mínimo: ' + item.minimumStock + ' · ' + labels[item.state] + (item.read ? ' · Lida' : ' · Não lida');
+        const schedule=item.type.startsWith('SCHEDULE_');if(schedule)info.textContent=item.message+' · '+(item.read?'Lida':'Não lida');
         since.textContent = 'Alerta desde ' + date(item.createdAt) + (item.resolvedAt ? ' · Resolvido em ' + date(item.resolvedAt) : '');
-        const link = document.createElement('a'); link.href = '/catalogo-dev.html?livro=' + item.productId; link.textContent = 'Abrir livro'; tools.append(link);
-        if (item.state !== 'RESOLVIDA') { const receive = document.createElement('a'); receive.href = '/catalogo-dev.html?entrada=' + item.productId; receive.textContent = 'Adicionar unidades'; tools.append(receive); }
+        const link = document.createElement('a'); link.href = schedule?'/escalas-dev.html?data='+item.date+'&escala='+item.scheduleId:'/catalogo-dev.html?livro=' + item.productId; link.textContent = schedule?'Abrir minha escala':'Abrir livro'; tools.append(link);
+        if (!schedule&&item.state !== 'RESOLVIDA') { const receive = document.createElement('a'); receive.href = '/catalogo-dev.html?entrada=' + item.productId; receive.textContent = 'Adicionar unidades'; tools.append(receive); }
         if (!item.read) {
           const read = document.createElement('button'); read.type = 'button'; read.className = 'secondary'; read.textContent = 'Marcar como lida'; read.disabled = busy;
           read.addEventListener('click', () => mutate(async () => { await api('read',{id:item.id}); })); tools.append(read);
         }
-        if (admin && item.state !== 'RESOLVIDA') {
+        if (!schedule&&admin && item.state !== 'RESOLVIDA') {
           const state = document.createElement('button'); state.type = 'button'; state.textContent = item.state === 'ABERTA' ? 'Marcar em atendimento' : 'Voltar para aberta'; state.disabled = busy;
           const command = {commandId:crypto.randomUUID(),id:item.id,state:item.state === 'ABERTA' ? 'EM_ATENDIMENTO' : 'ABERTA'};
           state.addEventListener('click', () => mutate(async () => { await api('state',command); })); tools.append(state);
@@ -58,7 +59,7 @@
   }
   async function mutate(fn) {
     if (busy) return; busy = true; document.querySelectorAll('button').forEach(b => b.disabled = true);
-    try { await session(); await fn(); await refresh(); } catch (error) { $('status').textContent = explain(error); if (error.status === 401 || error.status === 403) { clearReport(); $('report-tools').hidden = true; } }
+    try { await session(); await fn();window.dispatchEvent(new Event('livraria:notifications-changed')); await refresh(); } catch (error) { $('status').textContent = explain(error); if (error.status === 401 || error.status === 403) { clearReport(); $('report-tools').hidden = true; } }
     finally { busy = false; document.querySelectorAll('button').forEach(b => b.disabled = false); ['export','print','copy'].forEach(id => $(id).disabled = !report); }
   }
   function showReport(data) {

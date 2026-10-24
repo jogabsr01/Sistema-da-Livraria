@@ -8,13 +8,13 @@
 <link rel="stylesheet" href="/account-menu.css"><script src="/account-menu.js" defer></script></head><body><main>
   <header class="no-print"><p class="badge">AMBIENTE DE TESTES — DEV</p><h1>Notificações e reposição</h1>
     <p>Acompanhe os livros esgotados e prepare a lista para solicitar novas unidades.</p>
-    <nav><a href="/catalogo-dev.html">Catálogo</a> · <a href="/caixa-dev.html">Caixa</a> · <a href="/acesso-dev.html">Minha conta</a></nav>
+    <nav><a href="/catalogo-dev.html">Catálogo</a> · <a href="/caixa-dev.html">Caixa</a> · <a href="/acesso-dev.html">Minha conta</a> <a href="/escalas-dev.html">Escalas</a></nav>
   </header>
   <p id="status" role="status" aria-live="polite" class="no-print">Conferindo acesso…</p>
   <section id="notifications" hidden class="no-print">
     <div class="toolbar"><h2>Alertas de estoque <span id="unread"></span></h2><button id="refresh" type="button">Atualizar</button></div>
     <p>Marcar como lida é pessoal. Em atendimento indica acompanhamento; o alerta só é encerrado quando o saldo é regularizado ou o livro desativado.</p>
-    <label class="check"><input id="history" type="checkbox"> Incluir alertas resolvidos</label>
+    <label class="check"><input id="history" type="checkbox"> Incluir alertas resolvidos e avisos de escala lidos</label>
     <div id="alerts" class="books"></div>
     <div class="toolbar"><button id="previous" type="button" class="secondary" hidden>Anterior</button><button id="next" type="button" class="secondary" hidden>Próxima página</button></div>
   </section>
