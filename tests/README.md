@@ -83,3 +83,7 @@ Após build, `npm run test:audit` executa cinco cenários Chromium com download 
 ### Eventos de segurança e alterações de livros
 
 Após build, `npm run test:security-audit` cobre seis cenários Chromium de negativa de PIN/assinatura, limite compartilhado, logout/menu com resposta perdida e novos detalhes de catálogo na auditoria. `security-audit.test.mjs` cobre falhas antes/depois das projeções privadas/públicas, corrupção/capacidade, anonimização, legado e 4.999 sessões revogadas. Não usa credenciais reais; Google emulado e WebAuthn virtual. [QA_EVENTOS_AUDITORIA.md](../docs/v17/QA_EVENTOS_AUDITORIA.md).
+
+### Relatórios comerciais
+
+Após build, `npm run test:reports` cobre sete cenários Chromium com dados de venda reais sobre emulação descartável: totais/estorno/estoque/movimentação, CPF/cidade, papel, alteração da fonte, repetição após resposta perdida e download XLSX. `reports.test.mjs` cobre 13 grupos financeiros/de autorização/capacidade e OOXML/CRC/Unicode/fórmulas, inclusive 5.000 livros e overflow. [QA_RELATORIOS_COMERCIAIS.md](../docs/v17/QA_RELATORIOS_COMERCIAIS.md).

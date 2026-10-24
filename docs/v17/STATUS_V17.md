@@ -18,9 +18,10 @@ O v17 ainda não está concluído. Código integrado, testes locais, publicaçã
 | PR #26 | Gestão administrativa completa, fundo privado, cor/ordem, múltiplos nichos por livro, cards/filtros no Caixa e desativação preservando vínculos e edição. [Contrato](NICHOS_DEV.md) e [QA](QA_NICHOS.md). |
 | PR #27 | Calendário mensal/semanal, gestão administrativa, acesso somente à própria escala publicada, conflitos, histórico e notificações pessoais recuperáveis. [Contrato](ESCALAS_DEV.md) e [QA](QA_ESCALAS.md). |
 | PR #28 | Filtros administrativos, detalhes protegidos e exportação Excel real com autorização registrada e repetição sem duplicação. [Contrato](AUDITORIA_DEV.md) e [QA](QA_AUDITORIA.md). |
-| Eventos de acesso e livros | Negativas anônimas, bloqueios temporários/provas, logout e revogação recuperáveis; novos logs de metadados/preço/ativação/nichos antes/depois, com compatibilidade de registros antigos. [Contrato](EVENTOS_AUDITORIA_DEV.md) e [QA](QA_EVENTOS_AUDITORIA.md). |
+| PR #29 | Negativas anônimas, bloqueios temporários/provas, logout e revogação recuperáveis; novos logs de metadados/preço/ativação/nichos antes/depois, com compatibilidade de registros antigos. [Contrato](EVENTOS_AUDITORIA_DEV.md) e [QA](QA_EVENTOS_AUDITORIA.md). |
+| Relatórios comerciais | Vendas/estornos, estoque atual e movimentações com filtros combinados, indicadores/rankings e Excel autorizado após consulta. [Contrato](RELATORIOS_COMERCIAIS_DEV.md) e [QA](QA_RELATORIOS_COMERCIAIS.md). |
 
-Referência DEV antes deste lote: `ef6a48ae96c50ab22e14a224037ed705f447516d`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
+Referência DEV antes deste lote: `3f5527cef2e9a4a27e53f7fd571d2e813c727498`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
 
 ## Pendências originais
 
@@ -28,7 +29,7 @@ Referência DEV antes deste lote: `ef6a48ae96c50ab22e14a224037ed705f447516d`. Ma
 | --- | --- |
 | Identidade | Recuperação quando todas as passkeys forem perdidas, gestão/rotação das demais credenciais, proteção de tráfego e homologação com aparelhos reais. Perfil/telefone/avatar e recuperação de PIN com uma passkey existente estão nos PRs anteriores; alteração verificada de e-mail no PR #25. Nome/CPF de funcionários seguem administrativos. |
 | Gestão | Demais notificações administrativas e de sincronização. Escalas e seus avisos pessoais foram implementados no PR #27. |
-| Inteligência | Relatórios comerciais integrados, perfil de compra e recomendações consultivas, mensagens preparadas conforme preferência/consentimento. |
+| Inteligência | Perfil de compra individual (histórico, frequência, nichos e faixa habitual) e recomendações consultivas, mensagens preparadas conforme preferência/consentimento. |
 | Operação e persistência | Revisão de reconciliação entre aparelhos, tratamento offline, documentos adicionais, retenção/compactação, backup/restauração e testes de recuperação reais. |
 | Homologação posterior | Instalação privada do lote completo, IAM e quotas Google, MailApp/Drive reais, múltiplos aparelhos/usuários, aceite integrado e provisionamento PROD somente após homologação. |
 
@@ -46,4 +47,4 @@ Concluir as pendências originais incrementalmente: dados de identidade/credenci
 
 ## Validação deste incremento
 
-Resultados deste lote registrados em [QA_EVENTOS_AUDITORIA.md](QA_EVENTOS_AUDITORIA.md); consulta anterior em [QA_AUDITORIA.md](QA_AUDITORIA.md); escalas anteriores em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.
+Resultados deste lote registrados em [QA_RELATORIOS_COMERCIAIS.md](QA_RELATORIOS_COMERCIAIS.md); eventos anteriores em [QA_EVENTOS_AUDITORIA.md](QA_EVENTOS_AUDITORIA.md); consulta anterior em [QA_AUDITORIA.md](QA_AUDITORIA.md); escalas anteriores em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.

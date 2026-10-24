@@ -58,3 +58,9 @@ Detalhes e limites da parte de identidade: [SESSOES_E_PERMISSOES.md](SESSOES_E_P
 ## Eventos internos de segurança
 
 `identity.security.record` é uma RPC interna assinada, sem Function pública própria. Aceita somente `commandId`, `phase` e `code` permitidos; registra autor SYSTEM_AUTH sem identificador/credenciais recebidos do usuário. O controlador só a usa após negativa de autenticação validada. Logout mantém `POST /api/v1/session/logout` com cookie/origem/CSRF e pode reconhecer repetição de revogação já concluída sem voltar a conceder autenticação. Ver [EVENTOS_AUDITORIA_DEV.md](EVENTOS_AUDITORIA_DEV.md).
+
+## Relatórios comerciais DEV
+
+`POST /api/v1/reports/query` recebe `{filters}` com tipo SALES/STOCK/MOVEMENTS, período UTC canônico quando aplicável e filtros do contrato. Exige administrador com autenticação forte recente, origem exata e CSRF. Nunca usar CPF em URL. Resposta contém conjunto completo protegido, indicadores/rankings e prova de consulta válida por cinco minutos.
+
+`POST /api/v1/reports/export` recebe `{commandId, filters, sourceSnapshot, expiresAt, proof}` da consulta anterior. Mesma sessão/versão/filtros/fonte; após alteração relevante ou expiração é necessário consultar novamente. Retorna `.xlsx` binário com todos os resultados após registrar a autorização. RPCs internas reports.source/record são assinadas e não são endpoints públicos de consulta livre. Flags próprias fechadas por padrão. [Contrato](RELATORIOS_COMERCIAIS_DEV.md).
