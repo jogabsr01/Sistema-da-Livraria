@@ -182,6 +182,7 @@ function processRequest_(request, c) {
       if(c.environment!=='dev'||['CUSTOMERS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return customerProps.getProperty(key)!=='true';})) failure_('CUSTOMERS_UNAVAILABLE');
       return customerOperation_(request,c);
     }
+    if(typeof request.action==='string'&&request.action.indexOf('audit.')===0){if(c.environment!=='dev'||['AUDIT_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('AUDIT_UNAVAILABLE');return auditOperation_(request,c);}
     if(typeof request.action==='string'&&request.action.indexOf('schedules.')===0){if(c.environment!=='dev'||['SCHEDULES_ENABLED','CATALOG_ENABLED','NOTIFICATIONS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('SCHEDULE_UNAVAILABLE');return schedulesOperation_(request,c);}
     if(typeof request.action==='string'&&request.action.indexOf('niches.')===0){if(c.environment!=='dev'||['NICHES_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('NICHES_UNAVAILABLE');return nichesOperation_(request,c);}
     if(typeof request.action==='string'&&request.action.indexOf('profile.')===0){
@@ -258,6 +259,7 @@ function doPost(event) {
     allowed = allowed.concat(['STAFF_UNAVAILABLE','INVALID_STAFF','STAFF_CONFLICT','STAFF_DUPLICATE','STAFF_CAPACITY']);
     allowed = allowed.concat(['CUSTOMERS_UNAVAILABLE','INVALID_CUSTOMER','CUSTOMER_CONFLICT','CUSTOMER_DUPLICATE','CUSTOMER_CAPACITY','CUSTOMER_UNAVAILABLE']);
     allowed = allowed.concat(['EMAIL_CHANGE_UNAVAILABLE','EMAIL_CHANGE_REJECTED','EMAIL_CHANGE_CONFLICT','EMAIL_CHANGE_RATE_LIMITED','EMAIL_CHANGE_DELIVERY']);
+    allowed = allowed.concat(['AUDIT_UNAVAILABLE','INVALID_AUDIT','AUDIT_CHANGED','AUDIT_CONFLICT','AUDIT_CAPACITY','AUDIT_EXPORT_LIMIT']);
     allowed = allowed.concat(['SCHEDULE_UNAVAILABLE','INVALID_SCHEDULE','SCHEDULE_NOT_FOUND','SCHEDULE_CONFLICT','SCHEDULE_CAPACITY','SCHEDULE_EMPLOYEE_UNAVAILABLE','SCHEDULE_NO_CHANGE','SCHEDULE_OVERLAP']);
     allowed = allowed.concat(['NICHES_UNAVAILABLE','INVALID_NICHE','NICHE_CONFLICT','NICHE_DUPLICATE','NICHE_NOT_FOUND']);
     allowed = allowed.concat(['PROFILE_UNAVAILABLE','INVALID_PROFILE','PROFILE_CONFLICT','PROFILE_NOT_FOUND']);

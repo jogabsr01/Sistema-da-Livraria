@@ -2,6 +2,7 @@
 import { createServer } from 'node:http';
 import { ownerFixture } from './owner-access-fixture.mjs';
 import { injectCatalogFault } from './catalog-fixture.mjs';
+import { createAuditHandler,loadAuditSettings } from '../../backend/audit-handler.mjs';
 import { createScheduleHandler,loadScheduleSettings } from '../../backend/schedule-handler.mjs';
 import { createNicheHandler,loadNicheSettings } from '../../backend/niche-handler.mjs';
 import { createCatalogHandler, loadCatalogSettings, loadIsbnLookupSettings } from '../../backend/catalog-handler.mjs';
@@ -24,6 +25,7 @@ fixture.env.WORKSPACE_ISBN_LOOKUP_ENABLED='true';
 fixture.env.WORKSPACE_CHECKOUT_ENABLED='true'; fixture.gas.props.CHECKOUT_ENABLED='true';
 const operationsHandler=createOperationsHandler({loadSettings:()=>loadOperationsSettings(fixture.env),createClient:()=>fixture.client});
 const emailChangeHandler=createEmailChangeHandler({loadSettings:()=>loadEmailChangeSettings(fixture.env),createClient:()=>fixture.client});
+const auditHandler=createAuditHandler({loadSettings:()=>loadAuditSettings(fixture.env),createClient:()=>fixture.client});
 const scheduleHandler=createScheduleHandler({loadSettings:()=>loadScheduleSettings(fixture.env),createClient:()=>fixture.client});
 const nicheHandler=createNicheHandler({loadSettings:()=>loadNicheSettings(fixture.env),createClient:()=>fixture.client});
 const profileHandler=createProfileHandler({loadSettings:()=>loadProfileSettings(fixture.env),createClient:()=>fixture.client});
@@ -40,6 +42,9 @@ const server=createServer(async(req,res)=>{
   res.setHeader('content-type','application/json');
   try{
     let body='';for await(const chunk of req){body+=chunk;if(body.length>140000)throw Error('TEST_BODY_LIMIT');}
+    if(req.url==='/test/audit-state'){const table=fixture.main.getSheetByName('Logs_Auditoria');res.end(JSON.stringify({exports:table.rows.filter(r=>r[4]==='AUDIT_EXPORT').length}));return;}
+    if(req.url==='/test/enable-audit'){fixture.env.WORKSPACE_AUDIT_ENABLED='true';fixture.gas.props.AUDIT_ENABLED='true';fixture.env.WORKSPACE_PERSONAL_DATA_KEY||=randomBytes(32).toString('hex');fixture.env.WORKSPACE_PERSONAL_INDEX_KEY||=randomBytes(32).toString('hex');res.end('{}');return;}
+    if(req.url==='/test/audit-seed'){const {count=30}=JSON.parse(body),table=fixture.main.getSheetByName('Logs_Auditoria');const product=randomUUID(),sale=randomUUID();for(let i=0;i<count;i++){const r={ID_Log:randomUUID(),Data_Hora:new Date().toISOString(),ID_Usuario:fixture.gas.props.IDENTITY_OWNER_USER_ID,Perfil:'SUPER_ADMIN',Acao:i%2?'SALE_REJECTED':'SALE_COMMITTED',Entidade:'Vendas',ID_Entidade:sale,Antes:'',Depois:JSON.stringify({totalCents:3290,paymentMethod:'PIX',items:[{productId:product,title:'=1+1 <Livro & ação> 😀',quantity:1,unitPriceCents:3290,subtotalCents:3290}],pin:'TEST_SECRET_NOT_FOR_DISCLOSURE',email:'private@example.invalid'}),Resultado:i%2?'NEGADO':'SUCESSO',ID_Requisicao:randomUUID()};table.appendRow(table.rows[0].map(k=>r[k]));}res.end(JSON.stringify({productId:product,saleId:sale}));return;}
     if(req.url==='/test/schedule-state'){res.end(JSON.stringify({shifts:fixture.main.getSheetByName('Escalas').getLastRow()-1,events:fixture.main.getSheetByName('Notificacoes').rows.filter(r=>String(r[1]).startsWith('SCHEDULE_')).length}));return;}
     if(req.url==='/test/enable-schedules'){fixture.env.WORKSPACE_PROFILE_ENABLED='true';fixture.gas.props.PROFILE_ENABLED='true';fixture.env.WORKSPACE_SCHEDULES_ENABLED='true';fixture.gas.props.SCHEDULES_ENABLED='true';fixture.env.WORKSPACE_NOTIFICATIONS_ENABLED='true';fixture.gas.props.NOTIFICATIONS_ENABLED='true';fixture.env.WORKSPACE_PERSONAL_DATA_KEY||=randomBytes(32).toString('hex');fixture.env.WORKSPACE_PERSONAL_INDEX_KEY||=randomBytes(32).toString('hex');res.end('{}');return;}
     if(req.url==='/test/enable-niches'){fixture.env.WORKSPACE_NICHES_ENABLED='true';fixture.gas.props.NICHES_ENABLED='true';res.end('{}');return;}
@@ -82,9 +87,9 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/disable'){fixture.env.WORKSPACE_CATALOG_ENABLED='false';res.end('{}');return;}
     if(req.url==='/test/state'){res.end(JSON.stringify({files:[...fixture.gas.resources.values()].filter(r=>r.kind==='image').length,providerRequests:providerCalls.length,products:fixture.main.getSheetByName('Produtos').getLastRow()-1,logs:fixture.main.getSheetByName('Logs_Auditoria').getLastRow()-1}));return;}
     const request=new Request(origin+req.url,{method:req.method,headers:req.headers,...(req.method==='GET'?{}:{body})});
-    const response=req.url.startsWith('/api/v1/schedules/')?await scheduleHandler(request):req.url.startsWith('/api/v1/niches/')?await nicheHandler(request):req.url.startsWith('/api/v1/email-change/')?await emailChangeHandler(request):req.url.startsWith('/api/v1/profile/')?await profileHandler(request):req.url==='/api/v1/session/revoke-others'?await revokeOthers(request):req.url.startsWith('/api/v1/operations/')?await operationsHandler(request):req.url.startsWith('/api/v1/customers/')?await customerHandler(request):req.url.startsWith('/api/v1/staff/')?await staffHandler(request):req.url.startsWith('/api/v1/notifications/')?await notificationHandler(request):req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
+    const response=req.url.startsWith('/api/v1/audit/')?await auditHandler(request):req.url.startsWith('/api/v1/schedules/')?await scheduleHandler(request):req.url.startsWith('/api/v1/niches/')?await nicheHandler(request):req.url.startsWith('/api/v1/email-change/')?await emailChangeHandler(request):req.url.startsWith('/api/v1/profile/')?await profileHandler(request):req.url==='/api/v1/session/revoke-others'?await revokeOthers(request):req.url.startsWith('/api/v1/operations/')?await operationsHandler(request):req.url.startsWith('/api/v1/customers/')?await customerHandler(request):req.url.startsWith('/api/v1/staff/')?await staffHandler(request):req.url.startsWith('/api/v1/notifications/')?await notificationHandler(request):req.url==='/api/v1/checkout'?await checkoutHandler(request):req.url.startsWith('/api/v1/catalog/')?await handler(request):req.url==='/api/v1/session'?await fixture.sessions.current(request):req.url==='/api/v1/session/logout'?await fixture.sessions.logout(request):await fixture.handler(request,{ip:'192.0.2.40'});
     const headers=Object.fromEntries(response.headers);delete headers['set-cookie'];
-    res.end(JSON.stringify({status:response.status,headers,cookies:response.headers.getSetCookie(),...(response.headers.get('content-type')==='image/jpeg'?{bodyBase64:Buffer.from(await response.arrayBuffer()).toString('base64')}:{body:await response.text()})}));
+    res.end(JSON.stringify({status:response.status,headers,cookies:response.headers.getSetCookie(),...(['image/jpeg','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(response.headers.get('content-type'))?{bodyBase64:Buffer.from(await response.arrayBuffer()).toString('base64')}:{body:await response.text()})}));
   }catch{res.statusCode=500;res.end(JSON.stringify({error:'TEST_HARNESS_FAILURE'}));}
 });
 server.listen(0,'127.0.0.1',()=>console.log(JSON.stringify({port:server.address().port})));
