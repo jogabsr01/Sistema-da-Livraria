@@ -71,3 +71,7 @@ Após build, `npm run test:email-change` cobre cinco cenários browser: novo end
 ### Nichos administrativos
 
 Após build, `npm run test:niches` cobre cinco cenários browser de gestão, imagem, cards/filtros no Caixa, seleção múltipla, vínculo desativado editável, foco em outro tab, resposta perdida e permissões. `niches.test.mjs` cobre seis grupos de contrato com falhas em cada projeção, versões, unicidade e proxy privado. O teste antigo de catálogo agora recusa associação nova a nicho inativo e o novo contrato confirma preservação da associação existente. Google/Drive emulados; [QA_NICHOS.md](../docs/v17/QA_NICHOS.md).
+
+### Escalas e notificações pessoais
+
+Após build, `npm run test:schedules` cobre seis cenários Chromium: calendário semanal/mensal em celular e fuso do navegador diferente, acesso pessoal com passkey, notificações e leitura, rascunho/publicação/edição/cancelamento, resposta perdida com repetição exata, conflitos e atualização após outra aba. `schedules.test.mjs` cobre 13 grupos de autorização, cifra vinculada ao funcionário/data/horários, concorrência, capacidade de 500 registros Unicode e recuperação antes/depois das projeções, inclusive dois destinatários após reatribuição. Google é emulado; nenhuma mensagem externa é enviada. Ver [QA_ESCALAS.md](../docs/v17/QA_ESCALAS.md).
