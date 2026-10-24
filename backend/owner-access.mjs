@@ -29,7 +29,7 @@ export function loadOwnerAccessSettings(env = process.env) {
       [sessions.config.secret, env.WORKSPACE_SESSION_TOKEN_KEY, env.WORKSPACE_AUTH_GUARD_KEY].some(key => key?.toLowerCase() === pepper.toLowerCase()) ||
       sessions.tokenKey.equals(guards.guardKey)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
   const staffEnabled=env.WORKSPACE_STAFF_ENABLED==='true';
-  return { ...sessions, ...guards, pepper: Buffer.from(pepper, 'hex'),staffEnabled,...(staffEnabled?loadPersonalDataSettings(env):{}) };
+  return { ...sessions, ...guards, pepper: Buffer.from(pepper, 'hex'),staffEnabled,recoveryEnabled:env.WORKSPACE_RECOVERY_ENABLED==='true',...(staffEnabled?loadPersonalDataSettings(env):{}) };
 }
 export function accessCookie(value) {
   if (!canonical(value)) rejected();
@@ -71,12 +71,13 @@ export function createOwnerAccessService(settings, { client }) {
     },
     async execute(operation, input, token, ip) {
       // Trusted platform address only, never body/forwarded HTTP headers.
-      await guard.reserveAttempt({ identifier: ['start', 'login'].includes(operation) ? identifier(input.email) : 'flow:' + hash(token), originAddress: ip });
-      if (operation === 'start') {
+      await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : 'flow:' + hash(token), originAddress: ip });
+      if (operation === 'start'||operation==='recover') {
+        if(operation==='recover'&&!settings.recoveryEnabled)throw new ApiError(503,'RECOVERY_NOT_ACTIVATED');
         const code = randomBytes(32).toString('base64url');
         const value=identifier(input.email),staff=await staffLookup(value),proof={flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code};
-        if(staff) await client.staffAccess('start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery});
-        else await client.access('start', { email:value.includes('@')?value:'unknown@example.invalid',...proof });
+        if(staff) await client.staffAccess(operation==='recover'?'recover':'start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery});
+        else await client.access(operation==='recover'?'recover':'start', { email:value.includes('@')?value:'unknown@example.invalid',...proof });
         return { stage: 'EMAIL', message: 'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.' };
       }
       if (operation === 'login') {
@@ -119,7 +120,7 @@ export function createOwnerAccessService(settings, { client }) {
     },
   };
 }
-const shapes = { start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
+const shapes = { recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
     const requestId = randomUUID();
@@ -136,7 +137,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
         let fresh = false;
         try { token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }
         const data = fresh ? { stage: 'INITIAL' } : await service.state(token);
-        const result = json({ data: { ...data, csrfToken: service.csrf(token) }, requestId });
+        const result = json({ data: { ...data,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId });
         if (fresh) result.headers.set('set-cookie', accessCookie(token)); return result;
       }
       requireSameOriginMutation(request, ACCESS_ORIGIN); token = readCookie(request);
@@ -151,13 +152,13 @@ export function createOwnerAccessHandler(dependencies = {}) {
       let input; try { input = JSON.parse(text); } catch { throw new ApiError(400, 'INVALID_AUTH_REQUEST'); }
       if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(shapes[operation].slice().sort())) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       // Rotate the flow bearer for every new request/login, after CSRF validation.
-      if (['start', 'login'].includes(operation)) token = randomBytes(32).toString('base64url');
+      if (['start', 'login','recover'].includes(operation)) token = randomBytes(32).toString('base64url');
       const output = await service.execute(operation, input, token, context.ip), { cookie, ...data } = output;
-      const result = json({ data: { ...data, csrfToken: service.csrf(token) }, requestId }, operation === 'start' ? 202 : 200);
+      const result = json({ data: { ...data,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation) ? 202 : 200);
       if (cookie) {
         result.headers.append('set-cookie', cookie);
         result.headers.append('set-cookie', `${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);
-      } else if (['start', 'login'].includes(operation)) result.headers.set('set-cookie', accessCookie(token));
+      } else if (['start', 'login','recover'].includes(operation)) result.headers.set('set-cookie', accessCookie(token));
       return result;
     } catch (error) {
       const result = safeFailure(error, requestId);

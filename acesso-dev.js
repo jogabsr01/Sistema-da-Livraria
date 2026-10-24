@@ -8,6 +8,7 @@
   function show(stage) {
     const panel = { INITIAL: 'initial', EMAIL: 'email-form', PIN: 'pin-form', PASSKEY: 'passkey', COMMITTING: 'retry', COMPLETE: 'complete' }[stage];
     panels.forEach(id => { $(id).hidden = id !== panel; });
+    if(stage!=='COMPLETE')$('identity-result').textContent='';
     $('restart').hidden = !panel || ['initial', 'complete'].includes(panel);
   }
   function describe(error) {
@@ -24,6 +25,7 @@
     const result = await response.json();
     if (!response.ok) { const error = new Error('ACCESS_FAILED'); error.code = result.error?.code; throw error; }
     if (result.data.csrfToken) csrfToken = result.data.csrfToken;
+    if(result.data.recoveryEnabled!==undefined)$('recovery-choice').hidden=!result.data.recoveryEnabled;
     return result.data;
   }
   async function run(action) {
@@ -56,6 +58,8 @@
     await api('complete', { response: pendingResponse }); pendingResponse = null; clearSecrets();
     if (!await current()) throw new Error('SESSION_NOT_CONFIRMED');
   }
+  $('recovery-open').addEventListener('click',()=>{$('recovery-form').hidden=!$('recovery-form').hidden;});
+  submit('recovery-form',async()=>{const data=await api('recover',{email:$('recovery-email').value});clearSecrets();show(data.stage);message(data.message);});
   submit('start-form', async () => {
     const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);
   });
@@ -68,7 +72,7 @@
   });
   submit('pin-form', async () => {
     if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.'); return; }
-    try { const data = await api('pin', { pin: $('new-pin').value }); show(data.stage); message('Agora cadastre a passkey para proteger sua conta.'); }
+    try { const data = await api('pin', { pin: $('new-pin').value }); show(data.stage); message('Continue com a passkey para proteger sua conta.'); }
     finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
   });
   $('passkey-button').addEventListener('click', () => run(async () => {
@@ -92,6 +96,7 @@
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {
     const state = await api('state');
+    if(['#entrar','#recuperar-pin'].includes(location.hash)){show('INITIAL');if(location.hash==='#recuperar-pin'&&state.recoveryEnabled)$('recovery-form').hidden=false;message('Confirme sua identidade para continuar.');return;}
     if (!await current()) { show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage); message('Acesso verificado da instalação DEV.'); }
   });
 })();

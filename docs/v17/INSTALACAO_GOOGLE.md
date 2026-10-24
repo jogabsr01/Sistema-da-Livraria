@@ -94,3 +94,7 @@ Atualizar também `Customers.gs`, preservando o lote completo/IDs/chaves existen
 ## Operações e CEP (ativação posterior)
 
 Atualizar o lote completo, incluindo `Operations.gs`, antes de usar o novo `Sales.gs`. Flags DEV independentes `WORKSPACE_OPERATIONS_ENABLED` e `OPERATIONS_ENABLED`, desligadas por padrão. Sem migração ou escopo novo. Ver [OPERACOES_ADMIN_DEV.md](OPERACOES_ADMIN_DEV.md) e [CEP_BRASILAPI_DEV.md](CEP_BRASILAPI_DEV.md). A consulta opcional de CEP já foi autorizada; apenas CEP sai para a BrasilAPI, ao clique, com limites privados de guardas existentes. Configuração Google real continua para a etapa posterior.
+
+## Atualização de perfil e recuperação de PIN
+
+Atualizar o lote inteiro, incluindo `Profile.gs` e `Recovery.gs`; as chamadas de sessão recuperam intenções pendentes desses módulos. Sem novas abas ou escopos. `WORKSPACE_PROFILE_ENABLED` / `PROFILE_ENABLED` e `WORKSPACE_RECOVERY_ENABLED` / `RECOVERY_ENABLED` são independentes, desligadas por padrão. Reutilizar a pasta privada `PROFILES_FOLDER_ID` marcada no provisionamento original e as chaves de dados pessoais existentes. Não recriar planilhas, pasta ou chaves. Ver [PERFIL_RECUPERACAO_DEV.md](PERFIL_RECUPERACAO_DEV.md). Este incremento não ativa Google nem altera propriedades reais.

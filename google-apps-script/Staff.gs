@@ -109,7 +109,7 @@ function staffOperation_(request,c) {
   return {id:p.id,revision:v.revision,reenrollmentRequired:reset};
 }
 function staffAccessOperation_(request,c) {
-  recoverStaff_(c);var p=request.payload,ss=authControlStore_(c),main=storage_(c,false).spreadsheet,now=Date.now();
+  recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);var p=request.payload,ss=authControlStore_(c),main=storage_(c,false).spreadsheet,now=Date.now();
   if(request.action==='identity.staffAccess.lookup'){
     authControlExact_(p,['emailIndex','cpfIndex']);if(p.emailIndex!==''&&!accessHash_(p.emailIndex)||p.cpfIndex!==''&&!accessHash_(p.cpfIndex)||!p.emailIndex&&!p.cpfIndex)accessReject_();
     var matches=staffUsers_(main).rows.filter(function(r){return p.emailIndex&&r.Email_Indice===p.emailIndex||p.cpfIndex&&r.CPF_Indice===p.cpfIndex;});
@@ -118,14 +118,15 @@ function staffAccessOperation_(request,c) {
     return {account:{subjectId:subject.row.ID_Usuario,authorizationVersion:subject.version,contact:subject.row.Nome,activated:subject.row.Primeiro_Acesso_Concluido,
       record:subject.row.Primeiro_Acesso_Concluido&&pins.length===1?accessPinRecord_(pins[0].Record_JSON):null}};
   }
-  if(request.action==='identity.staffAccess.start'){
+  if(['identity.staffAccess.start','identity.staffAccess.recover'].includes(request.action)){
+    var recovery=request.action==='identity.staffAccess.recover',purpose=recovery?'RECOVER':'ACTIVATE';if(recovery&&!recoveryEnabled_())failure_('IDENTITY_UNAVAILABLE');
     authControlExact_(p,['subjectId','contactHash','delivery','flowId','tokenHash','codeHash','code']);
     if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!passkeyText_(p.code,43,43))accessReject_();if(accessEmail_(p.delivery)===accessEmail_(c.owner))accessReject_();
     var subject=staffSubject_(c,p.subjectId),table=accessFlows_(ss);
-    if(!subject||subject.row.Primeiro_Acesso_Concluido||digest_(subject.row.Nome)!==p.contactHash)subject=null;
+    if(!subject||subject.row.Primeiro_Acesso_Concluido!==recovery||digest_(subject.row.Nome)!==p.contactHash)subject=null;
     if(subject&&table.rows.some(function(r){return r.Subject_ID===subject.row.ID_Usuario&&now-authControlTime_(r.Created_At)<60000;}))subject=null;
     if(subject)table.rows.filter(function(r){return r.Subject_ID===subject.row.ID_Usuario&&!['COMMITTING','COMPLETE','REVOKED'].includes(r.State);}).forEach(function(r){r.State='REVOKED';authControlSave_(table,r);});
-    var flow=accessNewFlow_(table,p,subject,'ACTIVATE',now);
+    var flow=accessNewFlow_(table,p,subject,purpose,now);
     if(subject){try{if(MailApp.getRemainingDailyQuota()<1)throw Error('QUOTA');MailApp.sendEmail({to:p.delivery,subject:'Livraria IPB DEV — confirmar acesso',body:'Foi solicitado acesso à sua conta na Livraria IPB DEV.\n\nCódigo de uso único (10 minutos):\n'+p.code+'\n\nUse somente em https://dev--merry-chimera-49a1f3.netlify.app/acesso-dev.html\nSe não solicitou, ignore. Não compartilhe o código.'});}catch(_){flow.State='REVOKED';authControlSave_(accessFlows_(ss),flow);}}
     return {accepted:true};
   }

@@ -23,7 +23,7 @@ function identityTime_(value) {
   return milliseconds;
 }
 function identitySession_(spreadsheet, tokenHash, now) {
-  recoverStaff_(baseSettings_());
+  recoverStaff_(baseSettings_());recoverProfiles_(baseSettings_());recoverRecoveryIntents_(baseSettings_());
   var sessions = identityRows_(spreadsheet, 'Sessoes'), ids = new Set(), hashes = new Set();
   sessions.rows.forEach(function (row) {
     if (!identityUuid_(row.ID_Sessao) || !identityUuid_(row.ID_Usuario) || typeof row.Token_Hash !== 'string' ||
@@ -38,7 +38,7 @@ function identitySession_(spreadsheet, tokenHash, now) {
     var flows = accessFlows_(authControlStore_(c)).rows.filter(function (row) { return row.ID === flowId; });
     if (flows.length !== 1 || flows[0].State !== 'COMPLETE' || flows[0].ID !== session.ID_Sessao ||
         flows[0].Subject_ID !== session.ID_Usuario || flows[0].Session_Token_Hash !== tokenHash ||
-        flows[0].Authorization_Version !== session.Versao_Autorizacao) failure_('UNAUTHENTICATED');
+        (flows[0].Authorization_Version+(flows[0].Purpose==='RECOVER'?1:0)) !== session.Versao_Autorizacao) failure_('UNAUTHENTICATED');
   }
   if (session.Revogado_Em !== '' || !['pin', 'mfa', 'passkey'].includes(session.Nivel_Autenticacao) ||
       !Number.isSafeInteger(session.Versao_Autorizacao) || session.Versao_Autorizacao < 1) failure_('UNAUTHENTICATED');

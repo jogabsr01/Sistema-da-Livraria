@@ -59,3 +59,7 @@ Após build, `npm run test:notifications` executa sete cenários de alertas/leit
 ### Operações e CEP
 
 `npm run test:operations` cobre seis cenários browser financeiros, somente com emulação. `test:customers` agora cobre oito, incluindo consulta de CEP por clique e fallback manual. Backend: `operations.test.mjs` / `postal-code.test.mjs`, falhas, concorrência e isolamento de dados. Ver `docs/v17/QA_OPERACOES_CEP.md`.
+
+### Perfil e recuperação de PIN
+
+Após build, `npm run test:profile` cobre cinco cenários Chromium, incluindo assinatura WebAuthn real com autenticador virtual, PIN novo/antigo, sessão revogada, avatar em celular e repetição após resposta perdida. `profile.test.mjs` e `recovery.test.mjs` exercitam autorização, cifra, Drive privado, concorrência e falhas antes/depois das projeções. Provas de armazenamento dos contratos Node são fixtures descartáveis; não substituem assinaturas. Google/MailApp/Drive emulados; ver [QA_PERFIL_RECUPERACAO.md](../docs/v17/QA_PERFIL_RECUPERACAO.md).

@@ -35,6 +35,7 @@
           <button>Receber código por e-mail</button>
         </form>
       </details>
+      <section id="recovery-choice" hidden><button id="recovery-open" type="button" class="secondary">Alterar ou recuperar meu PIN</button><form id="recovery-form" hidden><h2>Recuperar seu PIN</h2><p>Confirme o e-mail cadastrado e sua passkey existente. As sessões antigas serão encerradas ao concluir. Sem a passkey, solicite recuperação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" autocomplete="username" maxlength="254" required><button>Enviar código de recuperação</button></form></section>
     </section>
     <form id="email-form" hidden>
       <h2>Confirme seu e-mail</h2>
@@ -64,7 +65,7 @@
     <section id="complete" hidden>
       <h2>Identidade confirmada</h2>
       <p id="identity-result"></p>
-      <p><a href="/catalogo-dev.html">Abrir catálogo compartilhado DEV</a></p>
+      <p><a href="/catalogo-dev.html">Abrir catálogo compartilhado DEV</a></p><p><a href="/meu-perfil-dev.html">Meu perfil</a></p>
       <p>Os módulos compartilhados dependem da ativação desta instalação. O protótipo demonstrativo continua disponível separadamente.</p>
       <p id="team-link" hidden><a href="/equipe-dev.html">Gerenciar equipe</a></p>
       <button id="logout-button" type="button">Sair da conta verificada</button>

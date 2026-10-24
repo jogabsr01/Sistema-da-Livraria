@@ -75,7 +75,7 @@ function accessFlows_(ss) {
   var table = authControlRows_(ss, '_Identity_Flows'), seen = new Set(), hashes = new Set(), ceremonies = new Set();
   table.rows.forEach(function (row) {
     if (!identityUuid_(row.ID) || seen.has(row.ID) || !accessHash_(row.Token_Hash) || hashes.has(row.Token_Hash) ||
-        row.Subject_ID !== '' && !identityUuid_(row.Subject_ID) || !['ACTIVATE', 'LOGIN'].includes(row.Purpose) ||
+        row.Subject_ID !== '' && !identityUuid_(row.Subject_ID) || !['ACTIVATE', 'LOGIN','RECOVER'].includes(row.Purpose) ||
         !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE', 'REVOKED'].includes(row.State) ||
         !Number.isSafeInteger(row.Attempt_Count) || row.Attempt_Count < 0 || row.Attempt_Count > 5 ||
         !Number.isSafeInteger(row.Authorization_Version) || row.Authorization_Version < 0 ||
@@ -91,6 +91,7 @@ function accessCurrent_(ss, hash, now) {
   return { table: table, row: found[0] };
 }
 function accessFlowOwner_(c, row) {
+  if(row.Purpose==='RECOVER')return recoverySubject_(c,row);
   var owner = row.Subject_ID === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
   if (!owner || owner.row.ID_Usuario !== row.Subject_ID || owner.version !== row.Authorization_Version) accessReject_();
   if (row.Purpose === 'LOGIN' && owner.row.Primeiro_Acesso_Concluido !== true ||
@@ -100,28 +101,29 @@ function accessFlowOwner_(c, row) {
 function accessNewFlow_(table, p, owner, purpose, now) {
   if (!identityUuid_(p.flowId) || !accessHash_(p.tokenHash) || table.rows.some(function (row) { return row.ID === p.flowId || row.Token_Hash === p.tokenHash; }) || table.rows.length >= 3000) accessReject_();
   var row = { ID: p.flowId, Token_Hash: p.tokenHash, Subject_ID: owner ? owner.row.ID_Usuario : '', Purpose: purpose,
-    State: purpose === 'ACTIVATE' ? 'EMAIL' : 'PASSKEY', Created_At: new Date(now).toISOString(), Expires_At: new Date(now + 600000).toISOString(),
-    Email_Code_Hash: purpose === 'ACTIVATE' ? p.codeHash : '', Attempt_Count: 0, Pin_JSON: '', Ceremony_ID: '', Session_Token_Hash: '',
+    State: purpose !== 'LOGIN' ? 'EMAIL' : 'PASSKEY', Created_At: new Date(now).toISOString(), Expires_At: new Date(now + 600000).toISOString(),
+    Email_Code_Hash: purpose !== 'LOGIN' ? p.codeHash : '', Attempt_Count: 0, Pin_JSON: '', Ceremony_ID: '', Session_Token_Hash: '',
     Authorization_Version: owner ? owner.version : 0, Commit_Started_At: '', Completed_At: '' };
   authControlSave_(table, row); return row;
 }
-function accessStart_(ss, c, p, now) {
+function accessStart_(ss, c, p, now, recovery) {
+  var purpose=recovery?'RECOVER':'ACTIVATE';if(recovery&&!recoveryEnabled_())failure_('IDENTITY_UNAVAILABLE');
   authControlExact_(p, ['email', 'flowId', 'tokenHash', 'codeHash', 'code']);
   if (!accessHash_(p.codeHash) || !passkeyText_(p.code, 43, 43)) accessReject_();
   var owner = accessOwner_(c, p.email), table = accessFlows_(ss);
-  if (owner && owner.row.Primeiro_Acesso_Concluido !== false) owner = null;
+  if(owner&&owner.row.Primeiro_Acesso_Concluido!==!!recovery)owner=null;
   // Throttle delivery as well as requests. Invalid accounts have the same response.
-  var prior = owner && table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === 'ACTIVATE'; });
+  var prior = owner && table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === purpose; });
   if (prior && prior.some(function (row) { return now - authControlTime_(row.Created_At) < 60000; })) owner = null;
-  if (owner) table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === 'ACTIVATE' && !['COMPLETE', 'COMMITTING', 'REVOKED'].includes(row.State); }).forEach(function (row) {
+  if (owner) table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === purpose && !['COMPLETE', 'COMMITTING', 'REVOKED'].includes(row.State); }).forEach(function (row) {
     row.State = 'REVOKED'; authControlSave_(table, row);
   });
-  var flow = accessNewFlow_(table, p, owner, 'ACTIVATE', now);
+  var flow = accessNewFlow_(table, p, owner, purpose, now);
   if (owner) {
     try {
       if (MailApp.getRemainingDailyQuota() < 1) throw new Error('MAIL_QUOTA');
-      MailApp.sendEmail({ to: c.owner, subject: 'Livraria IPB DEV — confirmar primeiro acesso',
-        body: 'Foi solicitado o primeiro acesso da conta proprietária no ambiente DEV.\n\nCódigo de uso único (válido por 10 minutos):\n' + p.code +
+      MailApp.sendEmail({ to: c.owner, subject:recovery?'Livraria IPB DEV — recuperar PIN':'Livraria IPB DEV — confirmar primeiro acesso',
+        body:(recovery?'Foi solicitada a recuperação do PIN da conta proprietária no ambiente DEV.':'Foi solicitado o primeiro acesso da conta proprietária no ambiente DEV.')+'\n\nCódigo de uso único (válido por 10 minutos):\n' + p.code +
           '\n\nDigite esse código somente em:\nhttps://dev--merry-chimera-49a1f3.netlify.app/acesso-dev.html\n\nSe não solicitou, ignore este e-mail. Não compartilhe o código.' });
     } catch (_) {
       // No raw code is persisted or logged, including on provider errors.
@@ -131,6 +133,7 @@ function accessStart_(ss, c, p, now) {
   return { accepted: true };
 }
 function accessCommit_(ss, c, current, p, now) {
+  if(current.row.Purpose==='RECOVER')return recoveryCommit_(ss,c,current,p,now,false);
   var row = current.row, owner = accessFlowOwner_(c, row);
   if (!accessHash_(p.sessionTokenHash) || !['PASSKEY', 'COMMITTING', 'COMPLETE'].includes(row.State)) accessReject_();
   var ceremony = passkeyCeremonies_(ss).rows.filter(function (item) { return item.ID === row.Ceremony_ID; });
@@ -193,10 +196,11 @@ function accessRecoverIntents_(ss, c, now) {
 }
 function ownerAccessOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
-  recoverStaff_(c);
+  recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);
   var p = request.payload, action = request.action, now = Date.now(), ss = authControlStore_(c);
   var schemas = {
     'identity.access.start': ['email', 'flowId', 'tokenHash', 'codeHash', 'code'],
+    'identity.access.recover':['email','flowId','tokenHash','codeHash','code'],
     'identity.access.lookup': ['email'],
     'identity.access.login': ['flowId', 'tokenHash', 'subjectId', 'authorizationVersion'],
     'identity.access.read': ['tokenHash'], 'identity.access.email': ['tokenHash', 'codeHash'],
@@ -205,6 +209,7 @@ function ownerAccessOperation_(request, c) {
   };
   if (!Object.prototype.hasOwnProperty.call(schemas, action)) failure_('FORBIDDEN'); authControlExact_(p, schemas[action]);
   if (['identity.access.start', 'identity.access.lookup'].includes(action)) accessRecoverIntents_(ss, c, now);
+  if(action==='identity.access.recover')return accessStart_(ss,c,p,now,true);
   if (action === 'identity.access.start') return accessStart_(ss, c, p, now);
   if (action === 'identity.access.lookup') {
     var owner = accessOwner_(c, p.email);
@@ -228,7 +233,7 @@ function ownerAccessOperation_(request, c) {
       // A fresh, verified invitation may replace abandoned enrollments while
       // the owner is still pending. Never revoke keys of an activated account.
       var abandoned = passkeyCredentials_(ss);
-      abandoned.rows.filter(function (key) { return key.Subject_ID === row.Subject_ID && key.Authorization_Version === row.Authorization_Version && key.Revoked_At === ''; }).forEach(function (key) {
+      abandoned.rows.filter(function (key) { return row.Purpose==='ACTIVATE'&&key.Subject_ID === row.Subject_ID && key.Authorization_Version === row.Authorization_Version && key.Revoked_At === ''; }).forEach(function (key) {
         key.Revoked_At = new Date(now).toISOString(); authControlSave_(abandoned, key);
       });
       row.State = 'PIN'; row.Email_Code_Hash = '';
@@ -240,7 +245,7 @@ function ownerAccessOperation_(request, c) {
   if (action === 'identity.access.read') return { flowId: row.ID, subjectId: row.Subject_ID, authorizationVersion: row.Authorization_Version,
     purpose: row.Purpose, state: row.State, ceremonyId: row.Ceremony_ID, proofReady: row.Ceremony_ID !== '' && passkeyCeremonies_(ss).rows.some(function (item) { return item.ID === row.Ceremony_ID && item.Completed_At !== ''; }) };
   if (action === 'identity.access.pin') {
-    if (row.State !== 'PIN' || row.Purpose !== 'ACTIVATE') accessReject_();
+    if (row.State !== 'PIN' || !['ACTIVATE','RECOVER'].includes(row.Purpose)) accessReject_();
     accessPinRecord_(p.record); row.Pin_JSON = p.record; row.State = 'PASSKEY'; authControlSave_(current.table, row); return { stored: true };
   }
   if (action === 'identity.access.bind') {
