@@ -54,3 +54,7 @@ Detalhes e limites da parte de identidade: [SESSOES_E_PERMISSOES.md](SESSOES_E_P
 `GET /api/v1/audit/list`: parâmetros `from`/`to` UTC canônicos, `employeeId`, `operation`, `productId`, `saleId`, `result`, `offset` e `snapshot`. Filtros opcionais usam string vazia, período máximo de 366 dias. Página de 25; offset maior que zero exige snapshot. Resposta protegida com campos operacionais autorizados e metadados de responsáveis, sem contatos/cifra.
 
 `POST /api/v1/audit/export`: `{commandId, filters, snapshot}`, com origem exata/CSRF e autenticação administrativa recente. Registra autorização e retorna OOXML `.xlsx` binário, até 500 eventos e 30 mil campos, com no-store. Mudança da origem exige nova consulta; repetição do mesmo comando/autor/carga recupera o resultado original. Nenhuma rota de alteração/exclusão de auditoria. Flags próprias fechadas por padrão. [Contrato completo](AUDITORIA_DEV.md).
+
+## Eventos internos de segurança
+
+`identity.security.record` é uma RPC interna assinada, sem Function pública própria. Aceita somente `commandId`, `phase` e `code` permitidos; registra autor SYSTEM_AUTH sem identificador/credenciais recebidos do usuário. O controlador só a usa após negativa de autenticação validada. Logout mantém `POST /api/v1/session/logout` com cookie/origem/CSRF e pode reconhecer repetição de revogação já concluída sem voltar a conceder autenticação. Ver [EVENTOS_AUDITORIA_DEV.md](EVENTOS_AUDITORIA_DEV.md).

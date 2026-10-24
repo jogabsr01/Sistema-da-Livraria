@@ -1,0 +1,13 @@
+# QA dos eventos de segurança e livros — 24/10/2026 (São Paulo)
+
+Base DEV `ef6a48ae96c50ab22e14a224037ed705f447516d`. [Contrato](EVENTOS_AUDITORIA_DEV.md). Código validado para publicação DEV, sem ativação Google real.
+
+13 grupos novos de contratos aprovados em Node 24 e 22: negativas conhecidas/desconhecidas sem credenciais, quinta prova incorreta, bloqueios por identificador/origem sem repetição indevida, recuperação após intenção/contadores/prova/revogação/auditoria/confirmação, logout idempotente com CSRF, revogação de outras sessões, corrupção de intenção e capacidade cheia, RPC de esquema fechado, valores anteriores/posteriores de produto, recuperação de intenções legadas e novas, consulta/exportação dos eventos de sistema e revogação de 4.999 outras sessões com intenção privada abaixo de 8.000 bytes.
+
+Seis cenários Chromium novos aprovados: PIN errado conhecido/desconhecido e auditoria anônima em celular; assinatura WebAuthn alterada recusada sem sessão; logout com resposta perdida; menu recuperando saída já concluída; limite compartilhado com primeiro acesso, sem transição repetida; alteração real de metadados/preço e desativação administrativa visíveis na auditoria. O orçamento de tentativas não foi modificado para os testes. A conta já havia consumido uma tentativa no primeiro acesso; a automação foi ajustada para conferir esse comportamento compartilhado, não presumir um orçamento novo no login.
+
+287 contratos backend aprovados em Node 24.19.0 e 22.23.4: `work/security-events-full24-final.log` e `work/security-events-full22-final.log`. Os 13 grupos específicos também passaram nas duas versões em `work/security-events-focused24-final.log` e `work/security-events-focused22-final.log`.
+
+73 cenários Chromium aprovados: segurança/auditoria 6, acesso do proprietário 6, equipe 6, perfil 5, e-mail 5, auditoria 5, catálogo 6, Caixa 10, estoque 5, notificações 7, operações 6 e escalas 6. Logs `work/security-events-browser-final.log` e `work/security-regression-*.log`; perfil foi reexecutado após o ajuste do menu em `work/security-regression-profile-final.log`. Captura de celular em `work/qa-security-events/acessos-negados-celular.png`. Build, sintaxe JS/Python e diff check aprovados. Kit `/tmp/livraria-dev-eventos-auditoria.zip` com 41 arquivos, incluindo SecurityAudit.gs e seu guia, conferidos com o código revisado e sem configuração privada.
+
+Google/Sheets/Drive/MailApp são emulados e descartáveis. O navegador usa assinaturas reais de um autenticador virtual; não comprova hardware, políticas/quotas Google reais, restauração de produção ou proteção de tráfego na borda. Não houve envio externo de mensagens, alteração de flags/configuração privada ou produção. O v17 ainda tem pendências.

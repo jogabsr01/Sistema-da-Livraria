@@ -79,3 +79,7 @@ Após build, `npm run test:schedules` cobre seis cenários Chromium: calendário
 ### Consulta de auditoria e Excel
 
 Após build, `npm run test:audit` executa cinco cenários Chromium com download real de `.xlsx`, filtros/detalhes/celular, concorrência na paginação, resposta perdida e perda de papel. `audit.test.mjs` cobre filtros, esquema de divulgação, autorização, limites, histórico e repetição do comando; valida ZIP/CRC/XML/OOXML por Python, sem dependência de Excel ou biblioteca externa. Google é emulado; [QA_AUDITORIA.md](../docs/v17/QA_AUDITORIA.md).
+
+### Eventos de segurança e alterações de livros
+
+Após build, `npm run test:security-audit` cobre seis cenários Chromium de negativa de PIN/assinatura, limite compartilhado, logout/menu com resposta perdida e novos detalhes de catálogo na auditoria. `security-audit.test.mjs` cobre falhas antes/depois das projeções privadas/públicas, corrupção/capacidade, anonimização, legado e 4.999 sessões revogadas. Não usa credenciais reais; Google emulado e WebAuthn virtual. [QA_EVENTOS_AUDITORIA.md](../docs/v17/QA_EVENTOS_AUDITORIA.md).
