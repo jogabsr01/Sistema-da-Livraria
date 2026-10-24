@@ -33,6 +33,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);
+      if(action.startsWith('profile.'))return data; // Self-service DTO/bytes validated before response.
       if (action.startsWith('customers.') || action.startsWith('staff.') || action.startsWith('identity.staffAccess.')) return data; // Validated by staff/access service before disclosure.
       if(action.startsWith('operations.'))return validateOperationData(action.slice('operations.'.length),data,payload);
       if (action.startsWith('notifications.')) return validateNotificationResponse(action.slice('notifications.'.length), data, payload, request.requestId);
@@ -96,7 +97,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (action.startsWith('identity.access.')) {
         const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
         const untrusted = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
-        if (['identity.access.start', 'identity.access.login'].includes(action)) {
+        if (['identity.access.start','identity.access.recover', 'identity.access.login'].includes(action)) {
           if (data?.accepted !== true) untrusted(); return { accepted: true };
         }
         if (action === 'identity.access.lookup') {
@@ -115,7 +116,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         }
         if (action === 'identity.access.read') {
           if (!uuid(data?.flowId) || !uuid(data.subjectId) || !Number.isSafeInteger(data.authorizationVersion) || data.authorizationVersion < 1 ||
-              !['ACTIVATE', 'LOGIN'].includes(data.purpose) || !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE'].includes(data.state) ||
+              !['ACTIVATE', 'LOGIN','RECOVER'].includes(data.purpose) || !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE'].includes(data.state) ||
               data.ceremonyId !== '' && !uuid(data.ceremonyId) || typeof data.proofReady !== 'boolean') untrusted();
           return { flowId: data.flowId, subjectId: data.subjectId, authorizationVersion: data.authorizationVersion,
             purpose: data.purpose, state: data.state, ceremonyId: data.ceremonyId, proofReady: data.proofReady };
@@ -181,10 +182,11 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+    profile:(operation,actor,payload)=>{if(!['get','save','photo'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
     operations:(operation,actor,payload)=>{if(!['list','get','adjust','reverse'].includes(operation))throw new ApiError(400,'INVALID_OPERATION');return invoke('operations.'+operation,actor,payload);},
     customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
     staff:(operation,actor,payload)=> { if(!['list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
-    staffAccess:(operation,payload)=> { if(!['lookup','start'].includes(operation))throw new ApiError(400,'INVALID_AUTH_REQUEST');return invoke('identity.staffAccess.'+operation,null,payload); },
+    staffAccess:(operation,payload)=> { if(!['lookup','start','recover'].includes(operation))throw new ApiError(400,'INVALID_AUTH_REQUEST');return invoke('identity.staffAccess.'+operation,null,payload); },
     notifications: (operation, actor, payload) => {
       if (!['summary','list','read','state','report'].includes(operation)) throw new ApiError(400,'INVALID_NOTIFICATION');
       return invoke('notifications.' + operation, actor, payload);
@@ -196,7 +198,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {
-      if (!['start', 'lookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      if (!['start','recover', 'lookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       return invoke('identity.access.' + operation, null, payload);
     },
     listPasskeys: payload => invoke('identity.passkey.list', null, payload),
