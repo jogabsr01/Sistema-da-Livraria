@@ -19,7 +19,7 @@ export function auditSafeDetail(value,operation){
  for(const k of numbers)if(Number.isSafeInteger(value[k])&&value[k]>=0&&value[k]<=1e12)out[k]=value[k];
  for(const k of flags)if(typeof value[k]==='boolean')out[k]=value[k];
  for(const k of ['employeeId','customerId','productId','saleId'])if(catalogUuid(value[k]))out[k]=value[k];
- for(const k of ['role','status','paymentMethod','code','state','reason','phase'])if(typeof value[k]==='string'&&/^[A-Z_]{1,60}$/.test(value[k]))out[k]=value[k];
+ for(const k of ['role','status','paymentMethod','code','state','reason','phase','reportType'])if(typeof value[k]==='string'&&/^[A-Z_]{1,60}$/.test(value[k]))out[k]=value[k];
  for(const k of ['date','start','end',...(/^NICHE_/.test(operation||'')?['color','name']:[])])if(typeof value[k]==='string'&&value[k].length<=100&&!/[\x00-\x1f\x7f]/.test(value[k]))out[k]=value[k];
  for(const [key,fields]of [['items',['productId','title','quantity','unitPriceCents','subtotalCents']],['lines',['id','expectedVersion','before','after']]]){
   if(Array.isArray(value[key])&&value[key].length<=100)out[key]=value[key].map(v=>Object.fromEntries(fields.filter(k=>['id','productId'].includes(k)?catalogUuid(v?.[k]):k==='title'?typeof v?.[k]==='string'&&v[k].length<=300&&!/[\x00-\x1f\x7f]/.test(v[k]):Number.isSafeInteger(v?.[k])&&v[k]>=0&&v[k]<=1e12).map(k=>[k,v[k]])));

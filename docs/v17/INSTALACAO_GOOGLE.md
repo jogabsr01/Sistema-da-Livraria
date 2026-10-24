@@ -118,3 +118,7 @@ Atualizar o lote completo com `Audit.gs`. Flags `WORKSPACE_AUDIT_ENABLED` / `AUD
 ## Eventos de acesso e alterações de livros
 
 Atualizar o lote completo com `SecurityAudit.gs` e os leitores de sessão/guardas/acesso/catálogo/auditoria. Sem nova aba, migração, chave ou flag. A propriedade privada `IDENTITY_SECURITY_PENDING` é gerida pelo código e não deve ser editada/apagada; não rotacionar a chave de assinatura com intenção pendente. Novos produtos usam `auditVersion:2` no journal; intenções legadas terminam com seu formato anterior. Ver [EVENTOS_AUDITORIA_DEV.md](EVENTOS_AUDITORIA_DEV.md). Nenhuma ativação privada foi feita; a configuração Google permanece posterior.
+
+## Relatórios comerciais
+
+Atualizar o lote completo com `Reports.gs`. Flags `WORKSPACE_REPORTS_ENABLED` / `REPORTS_ENABLED` fechadas por padrão; requer catálogo/sessões e chaves pessoais existentes, sem nova aba/escopo/chave ou recurso. Consulta e exportação são administrativas com autenticação recente; CPF usa POST/índice privado e não aparece no Excel. Consultar resultados antes de exportar, com a mesma fonte/prova ainda válida. [RELATORIOS_COMERCIAIS_DEV.md](RELATORIOS_COMERCIAIS_DEV.md). Configuração Google real permanece posterior, conforme solicitado.
