@@ -1,4 +1,4 @@
-# Situação do PROMPT MASTER v17 — 23/10/2026
+# Situação do PROMPT MASTER v17 — 24/10/2026
 
 O v17 ainda não está concluído. Código integrado, testes locais, publicação DEV e homologação Google são evidências distintas. Home de entrada dos perfis e configuração real Google foram reservadas pelo proprietário para a etapa posterior às melhorias.
 
@@ -13,14 +13,15 @@ O v17 ainda não está concluído. Código integrado, testes locais, publicaçã
 | PR #21 | Equipe, dados pessoais cifrados, CPF mascarado, gestão administrativa, revogação recuperável e primeiro acesso/login de funcionários por CPF/e-mail com passkey. |
 | PR #22 | Clientes cifrados, consentimento de contato, revisão concorrente, Caixa identificado/anônimo, última compra recuperável e limpeza dos dados entre compras. |
 | PR #23 | [Operações administrativas](OPERACOES_ADMIN_DEV.md): ajuste absoluto de estoque, estorno integral uma única vez por venda, histórico autorizado, comprovantes históricos e impressão; [CEP opcional à BrasilAPI](CEP_BRASILAPI_DEV.md), autorizado pelo proprietário e acionado somente ao clique. [QA](QA_OPERACOES_CEP.md). |
+| Perfil e recuperação | Perfil próprio, telefone, avatar privado, menu da conta e recuperação de PIN por e-mail + passkey existente; projeções recuperáveis e revogação das sessões antigas. [Contrato e limites](PERFIL_RECUPERACAO_DEV.md). |
 
-Referência DEV antes do PR #23: `d3bd501786524d5a89730499b5c009254a9018a9`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
+Referência DEV antes deste lote: `c5615eb754a0572d4d124f73613ab3eb56b9be2b`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
 
 ## Pendências originais
 
 | Área | Ainda necessário |
 | --- | --- |
-| Identidade | Recuperação e rotação de acesso, perfil individual/avatar, alteração autônoma segura de dados/PIN, proteção de tráfego e homologação com aparelhos reais. |
+| Identidade | Alteração autônoma verificada de e-mail, recuperação quando todas as passkeys forem perdidas, gestão/rotação das demais credenciais, proteção de tráfego e homologação com aparelhos reais. Perfil/telefone/avatar e recuperação de PIN com uma passkey existente estão neste lote; nome/CPF de funcionários seguem administrativos. |
 | Gestão | Nichos administráveis completos, escalas com conflitos e notificações de publicação/alteração, demais notificações administrativas e de sincronização. |
 | Inteligência | Consulta administrativa da auditoria com filtros/exportação, relatórios comerciais integrados, perfil de compra e recomendações consultivas, mensagens preparadas conforme preferência/consentimento. |
 | Operação e persistência | Revisão de reconciliação entre aparelhos, tratamento offline, documentos adicionais, retenção/compactação, backup/restauração e testes de recuperação reais. |
@@ -36,8 +37,8 @@ Projeções recuperáveis validam cadeias de estoque e versões junto das altera
 
 ## Ordem autorizada de continuidade
 
-Concluir as pendências originais incrementalmente: perfil/recuperação; nichos/escalas e demais notificações; auditoria/relatórios/recomendações; reconciliação, retenção/compactação e backup/restauração. Depois, home dos perfis e configuração real Google, como solicitado. Publicações DEV já autorizadas; não tocar em main nem pedir segredos no chat ou repositório.
+Concluir as pendências originais incrementalmente: dados de identidade/credenciais restantes; nichos/escalas e demais notificações; auditoria/relatórios/recomendações; reconciliação, retenção/compactação e backup/restauração. Depois, home dos perfis e configuração real Google, como solicitado. Publicações DEV já autorizadas; não tocar em main nem pedir segredos no chat ou repositório.
 
 ## Validação deste incremento
 
-224 cenários backend aprovados em Node 24.19.0 e 22.23.4; 42 cenários browser afetados aprovados; build, sintaxe e diff check. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.
+Resultados deste lote registrados em [QA_PERFIL_RECUPERACAO.md](QA_PERFIL_RECUPERACAO.md); build, sintaxe e diff check. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.
