@@ -39,3 +39,9 @@ test('role, recent strong authentication, exact CSRF/origin/input and independen
  for(const k of ['role','stock','createdBy'])assert.equal((await s.nicheHttp('save',{...p,[k]:'forged'})).status,400);assert.equal((await s.nicheHttp('save',{...p,record:{...p.record,color:'url(evil)'}})).status,400);assert.equal((await s.nicheHttp('save',{...p,image:'a'.repeat(100001)})).status,413);
  const t=s.main.getSheetByName('Sessoes'),r=t.rows.find(r=>r[t.rows[0].indexOf('Token_Hash')]===s.admin.tokenHash);r[t.rows[0].indexOf('Criado_Em')]=new Date(Date.now()-301000).toISOString();assert.equal((await s.nicheHttp('save',p)).status,401);
 });
+
+
+test('all 200 niches with full Unicode descriptions fit bounded streamed responses without truncating metadata',async()=>{
+ const s=nicheFixture(),table=s.main.getSheetByName('Nichos'),cols=table.rows[0];for(let i=1;i<200;i++){const r={ID_Nicho:randomUUID(),Nome:'Nicho '+i+' '+('书'.repeat(80)),Descricao:'书'.repeat(1000),Imagem_Drive_ID:'',Cor_Destaque:'#205b43',Ordem_Exibicao:i,Ativo:true,Criado_Por:s.admin.userId,Criado_Em:new Date().toISOString()};table.appendRow(cols.map(k=>r[k]??''));}
+ const shared=await s.client.catalog('niches',s.admin.actor,{});assert.equal(shared.niches.length,200);assert.equal(shared.niches.at(-1).description.length,1000);const admin=await data(await s.nicheHttp('list'));assert.equal(admin.niches.length,200);assert.equal(admin.niches.at(-1).description,'书'.repeat(1000));
+});

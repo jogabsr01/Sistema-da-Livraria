@@ -2,7 +2,7 @@
 
 `nichos-dev.html` implementa Administração → Nichos: criar, renomear, descrever, escolher cor, imagem de fundo, ordem, ativar/desativar. ADMIN/SUPER_ADMIN precisam de sessão forte recente (até cinco minutos); a regra é validada também no Apps Script sob o lock. Atendentes leem nichos no catálogo/Caixa e podem associar livros aos ativos, sem gerir o cadastro.
 
-A Frente de Caixa mostra cards dos nichos ativos na ordem definida e filtra livros sem alterar o carrinho. Cada livro pode pertencer a até vinte nichos, escolhidos por seleção múltipla a partir do cadastro. Não há digitação livre. O catálogo e o Caixa atualizam metadados ao foco, visibilidade e a cada minuto quando visíveis; consultas em curso são limitadas. A leitura agrupa vínculos e versões em lote, sem uma consulta à planilha por card.
+A Frente de Caixa mostra cards dos nichos ativos na ordem definida e filtra livros sem alterar o carrinho. Cada livro pode pertencer a até vinte nichos, escolhidos por seleção múltipla a partir do cadastro. Não há digitação livre. O catálogo e o Caixa atualizam metadados ao foco, visibilidade e a cada minuto quando visíveis; consultas em curso são limitadas. A leitura agrupa vínculos e versões em lote, sem uma consulta à planilha por card. Respostas de metadados usam stream limitado a 1,5 MB para suportar todos os 200 registros com descrições Unicode sem truncamento.
 
 ## Desativação e histórico
 

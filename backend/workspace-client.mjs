@@ -23,9 +23,9 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         response = await fetchImpl(url.href, { method: 'GET', redirect: 'manual', signal });
       }
       if (!response.ok) throw new ApiError(502, 'UPSTREAM_UNAVAILABLE');
-      const limit = action === 'notifications.report' ? 4_000_000 : 180_000;
+      const limit = action === 'notifications.report' ? 4_000_000 : ['catalog.niches','niches.list'].includes(action)?1_500_000:180_000;
       let text;
-      if (action === 'notifications.report') {
+      if (limit>180_000) {
         const reader = response.body?.getReader(), decoder = new TextDecoder('utf-8', { fatal:true }); text = ''; let size = 0;
         if (reader) { while (true) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength;
           if (size > limit) { await reader.cancel(); throw new ApiError(502,'UPSTREAM_UNTRUSTED'); } text += decoder.decode(value,{stream:true}); } text += decoder.decode(); }

@@ -2,9 +2,11 @@
 
 Base DEV `db6c5005a2f44e017a8b732cdf9252000dd7030f`. [Contrato e limites](NICHOS_DEV.md).
 
-248 contratos backend aprovados em Node 24.19.0 e 22.23.4. Os cinco grupos novos de nichos foram reexecutados nas duas versões após o ajuste final de auditoria e conferência de vínculo da imagem; catálogo/nichos também reexecutados após agrupar as leituras de metadados. Build, sintaxe JS/Python e diff check aprovados. Kit de instalação inclui `Niches.gs` e guia, sem configuração privada.
+249 contratos backend aprovados em Node 24.19.0 e 22.23.4. Os seis grupos novos de nichos foram reexecutados nas duas versões após o ajuste final de auditoria e conferência de vínculo da imagem; catálogo/nichos também reexecutados após agrupar as leituras de metadados. Build, sintaxe JS/Python e diff check aprovados. Kit de instalação inclui `Niches.gs` e guia, sem configuração privada.
 
 47 cenários browser afetados aprovados: nichos 5, catálogo 6, Caixa 10, estoque 5, notificações 7, clientes/CEP 8, operações 6. Screenshot `work/qa-niches/nichos-caixa-celular.png` inspecionada: cards, fundo, filtro, estoque zero sem venda e ausência de rolagem horizontal.
+
+A lista de 200 nichos com descrições Unicode completas também foi validada, com leitura por stream e limite de 1,5 MB nas respostas de metadados.
 
 ## Casos críticos
 
