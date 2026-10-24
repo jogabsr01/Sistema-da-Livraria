@@ -75,3 +75,7 @@ Após build, `npm run test:niches` cobre cinco cenários browser de gestão, ima
 ### Escalas e notificações pessoais
 
 Após build, `npm run test:schedules` cobre seis cenários Chromium: calendário semanal/mensal em celular e fuso do navegador diferente, acesso pessoal com passkey, notificações e leitura, rascunho/publicação/edição/cancelamento, resposta perdida com repetição exata, conflitos e atualização após outra aba. `schedules.test.mjs` cobre 13 grupos de autorização, cifra vinculada ao funcionário/data/horários, concorrência, capacidade de 500 registros Unicode e recuperação antes/depois das projeções, inclusive dois destinatários após reatribuição. Google é emulado; nenhuma mensagem externa é enviada. Ver [QA_ESCALAS.md](../docs/v17/QA_ESCALAS.md).
+
+### Consulta de auditoria e Excel
+
+Após build, `npm run test:audit` executa cinco cenários Chromium com download real de `.xlsx`, filtros/detalhes/celular, concorrência na paginação, resposta perdida e perda de papel. `audit.test.mjs` cobre filtros, esquema de divulgação, autorização, limites, histórico e repetição do comando; valida ZIP/CRC/XML/OOXML por Python, sem dependência de Excel ou biblioteca externa. Google é emulado; [QA_AUDITORIA.md](../docs/v17/QA_AUDITORIA.md).
