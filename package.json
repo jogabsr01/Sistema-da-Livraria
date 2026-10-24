@@ -26,7 +26,8 @@
     "test:cover-hardening": "python3 scripts/test-cover-hardening.py",
     "test:photo-isbn": "python3 scripts/test-photo-isbn.py",
     "test:profile": "python3 scripts/test-profile.py",
-    "test:email-change": "python3 scripts/test-email-change.py"
+    "test:email-change": "python3 scripts/test-email-change.py",
+    "test:niches": "python3 scripts/test-niches.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",
