@@ -33,6 +33,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);
+      if(action==='identity.security.record'){if(!data||data.recorded!==true)throw new ApiError(502,'UPSTREAM_UNTRUSTED');return {recorded:true};}
       if(action.startsWith('audit.'))return data;
       if(action.startsWith('schedules.'))return data;
       if(action.startsWith('niches.'))return data;
@@ -210,6 +211,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     takePasskey: payload => invoke('identity.passkey.take', null, payload),
     registerPasskey: payload => invoke('identity.passkey.register', null, payload),
     advancePasskeyCounter: payload => invoke('identity.passkey.counter', null, payload),
+    recordSecurityEvent: payload => invoke('identity.security.record',null,payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
     createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),
     consumeAuthChallenge: payload => invoke('identity.challenge.consume', null, payload),

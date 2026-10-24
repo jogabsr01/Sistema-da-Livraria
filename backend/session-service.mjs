@@ -71,8 +71,8 @@ export function createSessionService(settings, { client, now = () => Date.now() 
       return { user: { id: principal.id, role: principal.role, assurance: principal.assurance, expiresAt: principal.expiresAt }, csrfToken: csrf(rawToken) };
     },
     async logout(request) {
-      const { tokenHash } = await mutation(request);
-      await client.revokeSession(tokenHash);
+      requireSameOriginMutation(request,origin);checkHost(request);const rawToken=readSessionToken(request);requireCsrfToken(request,csrf(rawToken));
+      await client.revokeSession(tokens.hash(rawToken));
       return { revoked: true };
     },
     async revokeOthers(request) {

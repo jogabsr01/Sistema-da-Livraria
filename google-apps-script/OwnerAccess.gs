@@ -196,7 +196,7 @@ function accessRecoverIntents_(ss, c, now) {
 }
 function ownerAccessOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
-  recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);
+  recoverSecurityIntent_(c);recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);
   var p = request.payload, action = request.action, now = Date.now(), ss = authControlStore_(c);
   var schemas = {
     'identity.access.start': ['email', 'flowId', 'tokenHash', 'codeHash', 'code'],
@@ -239,7 +239,7 @@ function ownerAccessOperation_(request, c) {
       row.State = 'PIN'; row.Email_Code_Hash = '';
     }
     else if (row.Attempt_Count >= 5) row.State = 'REVOKED';
-    authControlSave_(current.table, row); return { verified: verified };
+    if(!verified&&row.Attempt_Count===5)securityProofBlock_(c,row,now);else authControlSave_(current.table, row); return { verified: verified };
   }
   accessFlowOwner_(c, row);
   if (action === 'identity.access.read') return { flowId: row.ID, subjectId: row.Subject_ID, authorizationVersion: row.Authorization_Version,

@@ -70,6 +70,7 @@ export function createOwnerAccessService(settings, { client }) {
       catch (error) { if (error?.code === 'WORKSPACE_ACCESS_REJECTED') return { stage: 'INITIAL' }; throw error; }
     },
     async execute(operation, input, token, ip) {
+     try {
       // Trusted platform address only, never body/forwarded HTTP headers.
       await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : 'flow:' + hash(token), originAddress: ip });
       if (operation === 'start'||operation==='recover') {
@@ -117,6 +118,10 @@ export function createOwnerAccessService(settings, { client }) {
         return { stage: 'COMPLETE', user: { role: principal.role, assurance: principal.assurance }, cookie: sessionCookie(rawToken) };
       }
       throw new ApiError(404, 'NOT_FOUND');
+     } catch(error) {
+      if(error instanceof ApiError&&error.status===401&&['ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED','WORKSPACE_CHALLENGE_REJECTED'].includes(error.code)){const code=operation==='login'?'CREDENTIALS_REJECTED':operation==='email'?'EMAIL_PROOF_REJECTED':['PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED'].includes(error.code)?'PASSKEY_REJECTED':'FLOW_REJECTED';await client.recordSecurityEvent({commandId:randomUUID(),phase:operation.toUpperCase(),code});}
+      throw error;
+     }
     },
   };
 }
