@@ -114,3 +114,7 @@ Atualizar o lote completo incluindo `Schedules.gs`, `SessionStore.gs` e `Notific
 ## Consulta da auditoria e Excel
 
 Atualizar o lote completo com `Audit.gs`. Flags `WORKSPACE_AUDIT_ENABLED` / `AUDIT_ENABLED` fechadas por padrão; requer catálogo, sessões e chaves pessoais existentes, sem nova aba/escopo/chave ou recurso. Não editar nem apagar linhas de Logs_Auditoria. Consulta e exportação exigem autenticação administrativa recente; exportação registra autorização antes da liberação. Ver [AUDITORIA_DEV.md](AUDITORIA_DEV.md). A instalação Google real permanece posterior às melhorias originais.
+
+## Eventos de acesso e alterações de livros
+
+Atualizar o lote completo com `SecurityAudit.gs` e os leitores de sessão/guardas/acesso/catálogo/auditoria. Sem nova aba, migração, chave ou flag. A propriedade privada `IDENTITY_SECURITY_PENDING` é gerida pelo código e não deve ser editada/apagada; não rotacionar a chave de assinatura com intenção pendente. Novos produtos usam `auditVersion:2` no journal; intenções legadas terminam com seu formato anterior. Ver [EVENTOS_AUDITORIA_DEV.md](EVENTOS_AUDITORIA_DEV.md). Nenhuma ativação privada foi feita; a configuração Google permanece posterior.

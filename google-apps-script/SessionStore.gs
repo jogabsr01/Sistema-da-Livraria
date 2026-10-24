@@ -23,7 +23,7 @@ function identityTime_(value) {
   return milliseconds;
 }
 function identitySession_(spreadsheet, tokenHash, now) {
-  recoverStaff_(baseSettings_());recoverProfiles_(baseSettings_());recoverRecoveryIntents_(baseSettings_());recoverEmailChanges_(baseSettings_());recoverNiches_(baseSettings_());recoverSchedules_(baseSettings_());
+  recoverSecurityIntent_(baseSettings_());recoverStaff_(baseSettings_());recoverProfiles_(baseSettings_());recoverRecoveryIntents_(baseSettings_());recoverEmailChanges_(baseSettings_());recoverNiches_(baseSettings_());recoverSchedules_(baseSettings_());
   var sessions = identityRows_(spreadsheet, 'Sessoes'), ids = new Set(), hashes = new Set();
   sessions.rows.forEach(function (row) {
     if (!identityUuid_(row.ID_Sessao) || !identityUuid_(row.ID_Usuario) || typeof row.Token_Hash !== 'string' ||
@@ -68,6 +68,7 @@ function identitySessionOperation_(request, c) {
   var payload = request.payload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length !== 1 ||
       typeof payload.tokenHash !== 'string' || !/^[a-f0-9]{64}$/.test(payload.tokenHash)) failure_('UNAUTHENTICATED');
+  if(request.action!=='identity.session.read')return securityRevoke_(request,c);
   var spreadsheet = storage_(c, false).spreadsheet;
   var now = Date.now(), resolved = identitySession_(spreadsheet, payload.tokenHash, now);
   var table = resolved.sessions;
@@ -79,13 +80,4 @@ function identitySessionOperation_(request, c) {
     }
     return resolved.principal;
   }
-  var targets = request.action === 'identity.session.revoke' ? [resolved.session] : table.rows.filter(function (row) {
-    return row.ID_Usuario === resolved.principal.id && row.ID_Sessao !== resolved.principal.sessionId;
-  });
-  targets.forEach(function (row) {
-    if (row.Revogado_Em !== '') return;
-    table.sheet.getRange(row.number, table.columns.indexOf('Revogado_Em') + 1, 1, 1).setValues([[new Date(now).toISOString()]]);
-    SpreadsheetApp.flush();
-  });
-  return { revoked: true };
 }

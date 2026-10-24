@@ -70,7 +70,7 @@ export function createGasEmulator(initialProperties = {}) {
     MailApp: { getRemainingDailyQuota: () => mailQuota, sendEmail: value => { if (mailFailure) throw Error('FAKE_MAIL_FAILURE'); outbox.push(value); mailQuota--; } },
   });
   context.Utilities.getUuid = randomUUID;
-  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'Stock.gs', 'Notifications.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs', 'OwnerAccess.gs', 'Recovery.gs', 'Profile.gs', 'EmailChange.gs','Niches.gs','Schedules.gs','Audit.gs', 'Staff.gs', 'Customers.gs', 'Operations.gs', 'Catalog.gs', 'CoverPhotos.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
+  for (const name of ['Schema.gs', 'Code.gs', 'Sales.gs', 'Stock.gs', 'Notifications.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs', 'OwnerAccess.gs', 'Recovery.gs', 'Profile.gs', 'EmailChange.gs','Niches.gs','Schedules.gs','Audit.gs','SecurityAudit.gs', 'Staff.gs', 'Customers.gs', 'Operations.gs', 'Catalog.gs', 'CoverPhotos.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
   return { context, props, resources, sheets, outbox,
     call(name, ...args) { return context[name](...args); },
     post(envelope) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(envelope) } }).text); },

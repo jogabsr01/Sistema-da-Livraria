@@ -29,7 +29,8 @@
     "test:email-change": "python3 scripts/test-email-change.py",
     "test:niches": "python3 scripts/test-niches.py",
     "test:schedules": "python3 scripts/test-schedules.py",
-    "test:audit": "python3 scripts/test-audit.py"
+    "test:audit": "python3 scripts/test-audit.py",
+    "test:security-audit": "python3 scripts/test-security-audit.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",

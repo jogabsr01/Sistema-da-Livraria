@@ -117,6 +117,7 @@ function catalogValidateSnapshot_(snapshot, columns, id) {
 function catalogIntent_(c, command, columns) {
   var before, after;
   try { before = JSON.parse(command.Before_JSON); after = JSON.parse(command.After_JSON); } catch (_) { catalogFail_('CATALOG_UNAVAILABLE'); }
+  if(Object.prototype.hasOwnProperty.call(after,'auditVersion')&&after.auditVersion!==2)catalogFail_('CATALOG_UNAVAILABLE');
   var desired = catalogValidateSnapshot_(after, columns, command.Product_ID);
   if (before !== null) catalogValidateSnapshot_(before, columns, command.Product_ID);
   if (desired.Versao_Registro !== command.Expected_Version + 1 || before === null && command.Expected_Version !== 0 || before && before.values[columns.indexOf('Versao_Registro')] !== command.Expected_Version) catalogFail_('CATALOG_UNAVAILABLE');
@@ -137,6 +138,10 @@ function catalogIntent_(c, command, columns) {
       !Object.prototype.hasOwnProperty.call(after,'photoHash') && desired.Capa_Drive_ID !== (before ? before.values[columns.indexOf('Capa_Drive_ID')] : '')) catalogFail_('CATALOG_UNAVAILABLE');
   return { before: before, after: after, desired: desired };
 }
+function catalogAuditSummary_(snapshot,columns,version){
+ if(!snapshot)return {version:version};var at=function(k){return snapshot.values[columns.indexOf(k)];};
+ return {version:version,isbn:at('ISBN'),internalCode:at('Codigo_Interno'),title:at('Titulo'),author:at('Autor'),publisher:at('Editora'),edition:at('Edicao'),supplier:at('Fornecedor'),priceCents:at('Preco_Venda'),minimumStock:at('Estoque_Minimo'),category:at('Categoria'),year:at('Ano_Publicacao'),pages:at('Paginas'),stock:at('Estoque_Atual'),active:at('Ativo'),nicheIds:snapshot.nicheIds,hasPhoto:!!at('Capa_Drive_ID'),hasExternalCover:!!at('Capa_URL_Externa')};
+}
 function catalogProject_(c, command) {
   var ss = storage_(c, false).spreadsheet, products = catalogProducts_(ss), links = catalogLinks_(ss);
   catalogReferences_(products, links, catalogNiches_(ss));
@@ -150,6 +155,7 @@ function catalogProject_(c, command) {
   var audit = identityRows_(ss, 'Logs_Auditoria'), logged = audit.rows.filter(function (row) { return row.ID_Log === command.Command_ID; });
   var log = { ID_Log: command.Command_ID, Data_Hora: command.Created_At, ID_Usuario: command.Actor_ID, Perfil: command.Actor_Role, Acao: before ? 'PRODUCT_UPDATE' : 'PRODUCT_CREATE', Entidade: 'Produtos', ID_Entidade: command.Product_ID,
     Antes: JSON.stringify({ version: command.Expected_Version }), Depois: JSON.stringify({ version: command.Expected_Version + 1 }), Resultado: 'SUCESSO', ID_Requisicao: command.Command_ID };
+  if(after.auditVersion===2){var oldSummary=catalogAuditSummary_(before,products.columns,command.Expected_Version),newSummary=catalogAuditSummary_(after,products.columns,command.Expected_Version+1),oldAt=function(k){return before?before.values[products.columns.indexOf(k)]:'';};newSummary.coverChanged=oldAt('Capa_Drive_ID')!==desired.Capa_Drive_ID||oldAt('Capa_URL_Externa')!==desired.Capa_URL_Externa;newSummary.synopsisChanged=oldAt('Sinopse')!==desired.Sinopse;log.Antes=JSON.stringify(oldSummary);log.Depois=JSON.stringify(newSummary);}
   if (logged.length > 1 || logged.length && !audit.columns.every(function (key) { return logged[0][key] === log[key]; }) || !logged.length && audit.rows.length >= 5000) catalogFail_('CATALOG_UNAVAILABLE');
   if (!actual || !same_(actual.values, after.values)) { if (found.length) desired.number = found[0].number; accessSaveMain_(products, desired); }
   // Each relation is its own recoverable row; other products are never cleared.
@@ -200,7 +206,7 @@ function catalogSave_(c, principal, p) {
   Object.keys(map).forEach(function (key) { row[key] = p.record[map[key]]; });
   row.ID_Produto = p.id; row.Versao_Registro = p.expectedVersion + 1; row.Atualizado_Em = now; row.Atualizado_Por = principal.id;
   if (!existing) { row.Estoque_Atual = 0; row.Criado_Em = now; row.Criado_Por = principal.id; }
-  var before = catalogSnapshot_(products, existing, links), after = { values: products.columns.map(function (key) { return row[key]; }), nicheIds: p.record.nicheIds };
+  var before = catalogSnapshot_(products, existing, links), after = { values: products.columns.map(function (key) { return row[key]; }), nicheIds: p.record.nicheIds,auditVersion:2 };
   if (hasPhoto) after.photoHash = canonical.photoHash;
   if (before) catalogValidateSnapshot_(before, products.columns, p.id);
   catalogValidateSnapshot_(after, products.columns, p.id);

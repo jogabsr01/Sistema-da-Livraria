@@ -113,6 +113,7 @@ function authAttempt_(ss, payload, now) {
   var retry = 0, plans = [ ['account:' + payload.accountKey, 5], ['origin:' + payload.originKey, 30] ].map(function (policy) {
     var matches = table.rows.filter(function (row) { return row.Key === policy[0]; });
     var row = matches.length ? matches[0] : { Key: policy[0], Window_Start: new Date(now).toISOString(), Attempt_Count: 0, Blocked_Until: '', Penalty_Level: 0, Updated_At: new Date(now).toISOString() };
+    var before=matches.length?table.columns.map(function(k){return row[k];}):null;
     var start = authControlTime_(row.Window_Start), updated = authControlTime_(row.Updated_At);
     var until = row.Blocked_Until === '' ? 0 : authControlTime_(row.Blocked_Until);
     if (start > now || updated > now || updated < start || !Number.isSafeInteger(row.Attempt_Count) || row.Attempt_Count < 0 || row.Attempt_Count > policy[1] + 1 ||
@@ -120,7 +121,7 @@ function authAttempt_(ss, payload, now) {
     if (until > now) retry = Math.max(retry, Math.ceil((until - now) / 1000));
     if (now - updated >= 86400000) row.Penalty_Level = 0;
     if ((until && until <= now) || now - start >= 900000) { row.Window_Start = new Date(now).toISOString(); row.Attempt_Count = 0; row.Blocked_Until = ''; }
-    return { row: row, maximum: policy[1] };
+    return { row: row, maximum: policy[1],before:before };
   });
   if (retry) return { allowed: false, retryAfterSeconds: retry };
   if (table.rows.length + plans.filter(function (plan) { return !plan.row.number; }).length > 3000) failure_('IDENTITY_UNAVAILABLE');
@@ -133,7 +134,7 @@ function authAttempt_(ss, payload, now) {
     }
   });
   // A partial write fails closed; retry can spend another attempt, never grant one.
-  plans.forEach(function (plan) { authControlSave_(table, plan.row); });
+  if(retry)securityBlock_(ss,plans,baseSettings_(),now,retry);else plans.forEach(function (plan) { authControlSave_(table, plan.row); });
   return { allowed: retry === 0, retryAfterSeconds: retry };
 }
 function authSubjectCurrent_(c, subjectId, version, purpose) {
@@ -193,6 +194,6 @@ function authChallengeOperation_(ss, c, action, payload, now) {
 function authControlOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
   if (!['identity.guard.attempt', 'identity.challenge.create', 'identity.challenge.consume'].includes(request.action)) failure_('FORBIDDEN');
-  var ss = authControlStore_(c), now = Date.now();
+  recoverSecurityIntent_(c);var ss = authControlStore_(c), now = Date.now();
   return request.action === 'identity.guard.attempt' ? authAttempt_(ss, request.payload, now) : authChallengeOperation_(ss, c, request.action, request.payload, now);
 }
