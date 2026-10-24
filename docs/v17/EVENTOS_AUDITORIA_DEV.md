@@ -22,7 +22,7 @@ Não são logados por este controlador pacotes malformados, CSRF/origem rejeitad
 
 ## Persistência e recuperação
 
-SecurityAudit.gs mantém, em Script Properties privadas, uma única intenção `IDENTITY_SECURITY_PENDING`, autenticada por HMAC com domínio próprio e chave de assinatura existente. Não há nova aba privada, migração, chave ou recurso. Essa propriedade é gerida pelo código, não é parâmetro de configuração manual.
+SecurityAudit.gs mantém, em Script Properties privadas, uma única intenção `IDENTITY_SECURITY_PENDING`, autenticada por HMAC vinculado ao ambiente e à instalação, com domínio próprio e chave de assinatura existente. Não há nova aba privada, migração, chave ou recurso. Essa propriedade é gerida pelo código, não é parâmetro de configuração manual.
 
 Para bloqueios de limite, a intenção precede a gravação dos dois contadores privados e da auditoria. Para bloqueio da prova, precede a revogação da prova e a auditoria. Para logout/revogação de outras sessões, precede as revogações e o evento. A recuperação confere estado anterior/posterior, conclui o que falta e só então limpa a intenção. Intenção alterada/corrompida falha de forma fechada. Os leitores de sessão e controladores de acesso recuperam antes de prosseguir, inclusive se a flag específica de guardas estiver desligada.
 
