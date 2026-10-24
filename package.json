@@ -24,7 +24,8 @@
     "test:diagnostics": "python3 scripts/test-prototype-diagnostics.py",
     "test:isbn": "python3 scripts/test-shared-isbn.py",
     "test:cover-hardening": "python3 scripts/test-cover-hardening.py",
-    "test:photo-isbn": "python3 scripts/test-photo-isbn.py"
+    "test:photo-isbn": "python3 scripts/test-photo-isbn.py",
+    "test:profile": "python3 scripts/test-profile.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",
