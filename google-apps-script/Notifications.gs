@@ -9,11 +9,12 @@ function notificationRows_(ss) {
   var table = identityRows_(ss, 'Notificacoes'), ids = new Set(), open = new Set();
   if (table.rows.length > 5000) failure_('NOTIFICATION_CAPACITY');
   table.rows.forEach(function (row) {
-    if (!saleUuid_(row.ID_Notificacao) || ids.has(row.ID_Notificacao) || !['STOCK_ZERO', 'STOCK_LOW'].includes(row.Tipo) || !['ALTA', 'MEDIA'].includes(row.Prioridade) ||
-        row.Entidade_Referencia !== 'Produtos' || !saleUuid_(row.ID_Referencia) || !['ABERTA', 'EM_ATENDIMENTO', 'RESOLVIDA'].includes(row.Status) || !notificationTime_(row.Criado_Em) ||
-        row.Status === 'RESOLVIDA' && (!notificationTime_(row.Resolvido_Em) || row.Resolvido_Por !== 'SYSTEM_STOCK') || row.Status !== 'RESOLVIDA' && (row.Resolvido_Em !== '' || row.Resolvido_Por !== '')) failure_('NOTIFICATIONS_UNAVAILABLE');
-    catalogText_(row.Titulo, 300, true); catalogText_(row.Mensagem, 300, true); ids.add(row.ID_Notificacao);
-    if (row.Status !== 'RESOLVIDA') { if (open.has(row.ID_Referencia)) failure_('NOTIFICATIONS_UNAVAILABLE'); open.add(row.ID_Referencia); }
+    var stock=['STOCK_ZERO','STOCK_LOW'].includes(row.Tipo),schedule=['SCHEDULE_PUBLISHED','SCHEDULE_CHANGED','SCHEDULE_CANCELLED'].includes(row.Tipo);
+    if(!saleUuid_(row.ID_Notificacao)||ids.has(row.ID_Notificacao)||!stock&&!schedule||!saleUuid_(row.ID_Referencia)||!notificationTime_(row.Criado_Em))failure_('NOTIFICATIONS_UNAVAILABLE');
+    if(stock&&(!['ALTA','MEDIA'].includes(row.Prioridade)||row.Entidade_Referencia!=='Produtos'||!['ABERTA','EM_ATENDIMENTO','RESOLVIDA'].includes(row.Status)||row.Status==='RESOLVIDA'&&(!notificationTime_(row.Resolvido_Em)||row.Resolvido_Por!=='SYSTEM_STOCK')||row.Status!=='RESOLVIDA'&&(row.Resolvido_Em!==''||row.Resolvido_Por!=='')))failure_('NOTIFICATIONS_UNAVAILABLE');
+    if(schedule&&(row.Prioridade!=='MEDIA'||row.Entidade_Referencia!=='Escalas'||row.Status!=='ABERTA'||row.Resolvido_Em!==''||row.Resolvido_Por!==''))failure_('NOTIFICATIONS_UNAVAILABLE');
+    catalogText_(row.Titulo,300,true);catalogText_(row.Mensagem,300,true);ids.add(row.ID_Notificacao);
+    if(stock&&row.Status!=='RESOLVIDA'){if(open.has(row.ID_Referencia))failure_('NOTIFICATIONS_UNAVAILABLE');open.add(row.ID_Referencia);}
   }); return table;
 }
 function notificationReads_(ss) {
@@ -43,7 +44,7 @@ function notificationStateCommands_(audit, notifications) {
 }
 function synchronizeStockNotifications_(ss) {
   if (!notificationEnabled_()) return;
-  var table = notificationRows_(ss), products = catalogProducts_(ss), audit = saleTable_(ss, 'Logs_Auditoria'), now = new Date().toISOString();
+  var allRows=notificationRows_(ss),table={sheet:allRows.sheet,columns:allRows.columns,rows:allRows.rows.filter(function(r){return r.Entidade_Referencia==='Produtos';})}, products = catalogProducts_(ss), audit = saleTable_(ss, 'Logs_Auditoria'), now = new Date().toISOString();
   if (products.rows.length > 5000 || audit.rows.length > 5000) failure_('NOTIFICATION_CAPACITY');
   var byProduct = {}, byId = {}, writes = [], logs = [];
   table.rows.forEach(function (row) { if (row.Status !== 'RESOLVIDA') byProduct[row.ID_Referencia] = row; byId[row.ID_Notificacao] = row; });
@@ -82,7 +83,7 @@ function synchronizeStockNotifications_(ss) {
   all.forEach(function (row) { if (row.Status !== 'RESOLVIDA' && states[row.ID_Notificacao] && row.Status !== states[row.ID_Notificacao]) { row.Status = states[row.ID_Notificacao]; if (writes.indexOf(row) < 0) writes.push(row); } });
   logs.forEach(function (log) { ensureSaleRow_(audit, ['ID_Log'], log, false); });
   var missing = logs.filter(function (log) { return !audit.rows.some(function (r) { return r[audit.columns.indexOf('ID_Log')] === log.ID_Log; }); }).length;
-  if (all.length > 5000 || audit.rows.length + missing > 5000) failure_('NOTIFICATION_CAPACITY');
+  if (all.length+allRows.rows.length-table.rows.length > 5000 || audit.rows.length + missing > 5000) failure_('NOTIFICATION_CAPACITY');
   writes.forEach(function (row) { notificationWrite_(table, row); });
   logs.forEach(function (log) { ensureSaleRow_(audit, ['ID_Log'], log, true); });
 }
@@ -125,7 +126,11 @@ function notificationOperation_(request, c) {
   var principal = identitySessionOperation_({ action: 'identity.session.read', payload: { tokenHash: request.actor.sessionTokenHash } }, c);
   recoverCatalog_(c); var ss = storage_(c, false).spreadsheet; recoverSales_(ss);
   var table = notificationRows_(ss), reads = notificationReads_(ss), p = request.payload, operation = request.action.slice('notifications.'.length);
-  if (operation === 'report') return stockReport_(request, ss, principal, table);
+  var bindings=scheduleNotificationBindings_(ss);
+  table.rows.forEach(function(n){if(n.Entidade_Referencia==='Escalas'){var binding=bindings.get(n.ID_Notificacao);if(!binding||binding.scheduleId!==n.ID_Referencia||binding.type!==n.Tipo)failure_('NOTIFICATIONS_UNAVAILABLE');}});
+  table={sheet:table.sheet,columns:table.columns,rows:table.rows.filter(function(n){return n.Entidade_Referencia==='Produtos'||bindings.get(n.ID_Notificacao).userId===principal.id;})};
+  var isRead=function(n){return reads.rows.some(function(r){return r.ID_Notificacao===n.ID_Notificacao&&r.ID_Usuario===principal.id;});},pending=function(n){return n.Entidade_Referencia==='Escalas'?!isRead(n):n.Status!=='RESOLVIDA';};
+  if (operation === 'report') return stockReport_(request, ss, principal, {rows:table.rows.filter(function(n){return n.Entidade_Referencia==='Produtos';})});
   if (operation === 'read') {
     authControlExact_(p, ['id']); if (!saleUuid_(p.id) || !table.rows.some(function (row) { return row.ID_Notificacao === p.id; })) failure_('NOTIFICATION_NOT_FOUND');
     var prior = reads.rows.filter(function (row) { return row.ID_Notificacao === p.id && row.ID_Usuario === principal.id; });
@@ -136,7 +141,7 @@ function notificationOperation_(request, c) {
     if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role)) failure_('FORBIDDEN');
     authControlExact_(p, ['commandId', 'id', 'state']);
     if (!saleUuid_(p.commandId) || !saleUuid_(p.id) || !['ABERTA', 'EM_ATENDIMENTO'].includes(p.state)) failure_('INVALID_NOTIFICATION');
-    var target = table.rows.filter(function (row) { return row.ID_Notificacao === p.id; })[0]; if (!target) failure_('NOTIFICATION_NOT_FOUND');
+    var target = table.rows.filter(function (row) { return row.ID_Notificacao === p.id; })[0]; if (!target||target.Entidade_Referencia!=='Produtos') failure_('NOTIFICATION_NOT_FOUND');
     var audit = saleTable_(ss, 'Logs_Auditoria'), old = saleObjects_(audit).filter(function (row) { return row.ID_Log === p.commandId; });
     var after = JSON.stringify({ id: p.id, state: p.state });
     if (old.length) { if (old.length !== 1 || old[0].Acao !== 'STOCK_ALERT_STATE' || old[0].ID_Usuario !== principal.id || old[0].Depois !== after) failure_('NOTIFICATION_CONFLICT'); return { accepted: true }; }
@@ -147,14 +152,14 @@ function notificationOperation_(request, c) {
     synchronizeStockNotifications_(ss); return { accepted: true };
   }
   if (operation === 'summary') {
-    authControlExact_(p, []); var active = table.rows.filter(function (row) { return row.Status !== 'RESOLVIDA'; });
+    authControlExact_(p, []); var active = table.rows.filter(pending);
     return { total: active.length, unread: active.filter(function (row) { return !reads.rows.some(function (r) { return r.ID_Notificacao === row.ID_Notificacao && r.ID_Usuario === principal.id; }); }).length };
   }
   if (operation !== 'list') failure_('FORBIDDEN'); authControlExact_(p, ['offset', 'history']);
   if (!Number.isSafeInteger(p.offset) || p.offset < 0 || p.offset > 5000 || typeof p.history !== 'boolean') failure_('INVALID_NOTIFICATION');
-  var products = catalogProducts_(ss).rows, filtered = table.rows.filter(function (row) { return p.history || row.Status !== 'RESOLVIDA'; });
+  var products = catalogProducts_(ss).rows, filtered = table.rows.filter(function (row) { return p.history || pending(row); });
   filtered.sort(function (a, b) { return Number(a.Status === 'RESOLVIDA') - Number(b.Status === 'RESOLVIDA') || Number(b.Prioridade === 'ALTA') - Number(a.Prioridade === 'ALTA') || a.Criado_Em.localeCompare(b.Criado_Em) || a.ID_Notificacao.localeCompare(b.ID_Notificacao); });
   var page = filtered.slice(p.offset, p.offset + 25);
-  return { items: page.map(function (row) { return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], reads.rows.some(function (r) { return r.ID_Notificacao === row.ID_Notificacao && r.ID_Usuario === principal.id; })); }),
+  return { items: page.map(function (row) { if(row.Entidade_Referencia==='Escalas'){var b=bindings.get(row.ID_Notificacao);return {recipientId:b.userId,id:row.ID_Notificacao,scheduleId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row),date:b.date,start:b.start,end:b.end};}return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], isRead(row)); }),
     total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
 }

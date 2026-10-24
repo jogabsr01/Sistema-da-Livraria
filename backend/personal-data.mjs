@@ -12,7 +12,7 @@ export function loadPersonalDataSettings(env = process.env) {
 export function createPersonalDataVault(settings) {
   const {config,dataKey,indexKey}=settings;
   if (!catalogUuid(config?.installationId) || !['dev','prod'].includes(config.environment) || ![dataKey,indexKey].every(key=>Buffer.isBuffer(key)&&key.length===32) || dataKey.equals(indexKey)) unavailable();
-  const aad=(entity,id)=>{ if (!['users','customers'].includes(entity)||!catalogUuid(id)) unavailable(); return Buffer.from(JSON.stringify(['personal.v1',config.environment,config.installationId,entity,id])); };
+  const aad=(entity,id)=>{ if (!['users','customers','schedules'].includes(entity)||!catalogUuid(id)) unavailable(); return Buffer.from(JSON.stringify(['personal.v1',config.environment,config.installationId,entity,id])); };
   return {
     fingerprint(value) {return createHmac('sha256',indexKey).update(JSON.stringify(['command.v1',config.environment,config.installationId,value])).digest('hex');},
     index(kind,value) { if (!['email','cpf','customer.cpf'].includes(kind)||typeof value!=='string'||!value||value.length>254) unavailable();return createHmac('sha256',indexKey).update(JSON.stringify(['index.v1',config.environment,config.installationId,kind,value])).digest('hex'); },
