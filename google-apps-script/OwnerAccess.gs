@@ -48,7 +48,7 @@ function prepareDevelopmentOwnerAccess() {
 function accessOwner_(c, email) {
   var props = PropertiesService.getScriptProperties(), id = props.getProperty('IDENTITY_OWNER_USER_ID');
   if (!identityUuid_(id) || props.getProperty('IDENTITY_OWNER_EMAIL_BINDING') !== digest_(accessEmail_(c.owner))) failure_('IDENTITY_UNAVAILABLE');
-  if (email !== undefined && !constantEqual_(digest_(accessEmail_(email)), digest_(accessEmail_(c.owner)))) return null;
+  if (email !== undefined && !constantEqual_(digest_(accessEmail_(email)), digest_(ownerLoginEmail_(c)))) return null;
   var ss = storage_(c, false).spreadsheet, users = identityRows_(ss, 'Usuarios');
   var rows = users.rows.filter(function (row) { return row.ID_Usuario === id; });
   var epochs = identityRows_(ss, 'Configuracoes').rows.filter(function (row) { return row.Chave === 'identity.version.' + id; });
@@ -122,7 +122,7 @@ function accessStart_(ss, c, p, now, recovery) {
   if (owner) {
     try {
       if (MailApp.getRemainingDailyQuota() < 1) throw new Error('MAIL_QUOTA');
-      MailApp.sendEmail({ to: c.owner, subject:recovery?'Livraria IPB DEV — recuperar PIN':'Livraria IPB DEV — confirmar primeiro acesso',
+      MailApp.sendEmail({ to: ownerLoginEmail_(c), subject:recovery?'Livraria IPB DEV — recuperar PIN':'Livraria IPB DEV — confirmar primeiro acesso',
         body:(recovery?'Foi solicitada a recuperação do PIN da conta proprietária no ambiente DEV.':'Foi solicitado o primeiro acesso da conta proprietária no ambiente DEV.')+'\n\nCódigo de uso único (válido por 10 minutos):\n' + p.code +
           '\n\nDigite esse código somente em:\nhttps://dev--merry-chimera-49a1f3.netlify.app/acesso-dev.html\n\nSe não solicitou, ignore este e-mail. Não compartilhe o código.' });
     } catch (_) {
@@ -196,7 +196,7 @@ function accessRecoverIntents_(ss, c, now) {
 }
 function ownerAccessOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
-  recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);
+  recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);
   var p = request.payload, action = request.action, now = Date.now(), ss = authControlStore_(c);
   var schemas = {
     'identity.access.start': ['email', 'flowId', 'tokenHash', 'codeHash', 'code'],

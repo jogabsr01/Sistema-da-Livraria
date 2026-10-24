@@ -37,9 +37,10 @@ function profileProject_(ss,v){
 function recoverProfiles_(c){var ss=storage_(c,false).spreadsheet,pending=profileCommands_(ss).filter(function(v){return v.state==='PENDING';});if(pending.length>1)profileFail_('PROFILE_UNAVAILABLE');pending.forEach(function(v){profileProject_(ss,v);});}
 function profileOperation_(request,c){
  recoverProfiles_(c);if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var ss=storage_(c,false).spreadsheet,principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,found=profileUser_(ss,principal.id),user=found.row,owner=user.ID_Usuario===PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID'),p=request.payload;
+ if(request.action.indexOf('profile.email')===0)return emailChangeOperation_(request,c,principal);
  if(request.action==='profile.get'){
   authControlExact_(p,[]);var extra=owner?staffConfig_(ss,'profile.owner.'+user.ID_Usuario).row:null;
-  return {id:user.ID_Usuario,role:user.Perfil,owner:owner,contact:owner?extra?extra.Valor:'':user.Nome,email:owner?c.owner:'',revision:staffRevision_(ss,user.ID_Usuario),lastAccess:user.Ultimo_Acesso,hasPhoto:user.Foto_Perfil_Drive_ID!==''};
+  return {id:user.ID_Usuario,role:user.Perfil,owner:owner,contact:owner?extra?extra.Valor:'':user.Nome,email:owner?ownerLoginEmail_(c):'',revision:staffRevision_(ss,user.ID_Usuario),lastAccess:user.Ultimo_Acesso,hasPhoto:user.Foto_Perfil_Drive_ID!==''};
  }
  if(request.action==='profile.photo'){authControlExact_(p,[]);if(!user.Foto_Perfil_Drive_ID)profileFail_('PROFILE_NOT_FOUND');var photo=profilePhotoFile_(c,user.Foto_Perfil_Drive_ID,user.ID_Usuario,null,false);return {bytes:photo.bytes,sha256:photo.sha256};}
  if(request.action!=='profile.save')failure_('FORBIDDEN');if(!['passkey','mfa'].includes(principal.assurance)||Date.now()-principal.authenticatedAt>300000)failure_('FORBIDDEN');

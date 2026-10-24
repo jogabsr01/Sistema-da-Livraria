@@ -93,10 +93,12 @@
     if (!response.ok) throw new Error('LOGOUT_FAILED'); sessionCsrf = ''; show('INITIAL'); message('Você saiu da conta verificada.');
     const state = await api('state'); csrfToken = state.csrfToken;
   }));
+  function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
+  window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{requestedView(await api('state'));});});
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {
     const state = await api('state');
-    if(['#entrar','#recuperar-pin'].includes(location.hash)){show('INITIAL');if(location.hash==='#recuperar-pin'&&state.recoveryEnabled)$('recovery-form').hidden=false;message('Confirme sua identidade para continuar.');return;}
+    if(requestedView(state))return;
     if (!await current()) { show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage); message('Acesso verificado da instalação DEV.'); }
   });
 })();

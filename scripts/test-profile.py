@@ -14,7 +14,7 @@ class Profile(qa.Catalog):
         super().setUp();self.lose_profile=False;self.commands=[]
     def relay(self,route):
         path=urlsplit(route.request.url).path
-        if path in ['/meu-perfil-dev.html','/meu-perfil-dev.js','/meu-perfil-dev.css','/account-menu.js','/account-menu.css','/equipe-dev.css']:
+        if path in ['/meu-perfil-dev.html','/meu-perfil-dev.js','/meu-perfil-dev.css','/account-menu.js','/email-change-dev.js','/account-menu.css','/equipe-dev.css']:
             headers={}
             for rule in tomllib.loads((qa.ROOT/'netlify.toml').read_text()).get('headers',[]):
                 if rule['for']==path:headers.update(rule['values'])

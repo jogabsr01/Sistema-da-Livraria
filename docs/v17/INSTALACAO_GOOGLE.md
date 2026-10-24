@@ -98,3 +98,7 @@ Atualizar o lote completo, incluindo `Operations.gs`, antes de usar o novo `Sale
 ## Atualização de perfil e recuperação de PIN
 
 Atualizar o lote inteiro, incluindo `Profile.gs` e `Recovery.gs`; as chamadas de sessão recuperam intenções pendentes desses módulos. Sem novas abas ou escopos. `WORKSPACE_PROFILE_ENABLED` / `PROFILE_ENABLED` e `WORKSPACE_RECOVERY_ENABLED` / `RECOVERY_ENABLED` são independentes, desligadas por padrão. Reutilizar a pasta privada `PROFILES_FOLDER_ID` marcada no provisionamento original e as chaves de dados pessoais existentes. Não recriar planilhas, pasta ou chaves. Ver [PERFIL_RECUPERACAO_DEV.md](PERFIL_RECUPERACAO_DEV.md). Este incremento não ativa Google nem altera propriedades reais.
+
+## Atualização de e-mail verificado
+
+Atualizar também `EmailChange.gs` junto ao lote completo. Flags `WORKSPACE_EMAIL_CHANGE_ENABLED` / `EMAIL_CHANGE_ENABLED` fechadas por padrão; requer perfil/sessões e autenticação forte existente. Não alterar `OWNER_EMAIL` ou `IDENTITY_OWNER_EMAIL_BINDING` para trocar o login. A nova propriedade privada `IDENTITY_OWNER_LOGIN_EMAIL` é gerida pelo fluxo verificado. Não apagar `IDENTITY_EMAIL_PENDING` nem journals privados de confirmação. Sem nova aba, migração ou escopo. Ver [EMAIL_VERIFICADO_DEV.md](EMAIL_VERIFICADO_DEV.md). Instalação real Google permanece posterior.
