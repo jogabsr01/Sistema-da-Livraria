@@ -16,8 +16,7 @@ O v17 ainda não está concluído. Código integrado, testes locais, publicaçã
 | PR #24 | Perfil próprio, telefone, avatar privado, menu da conta e recuperação de PIN por e-mail + passkey existente; projeções recuperáveis e revogação das sessões antigas. [Contrato e limites](PERFIL_RECUPERACAO_DEV.md). |
 | PR #25 | Alteração autônoma com passkey recente e código no novo endereço, revogação de outras sessões, proteção contra conflito e recuperação de falhas. Login do proprietário separado da conta Google. [Contrato](EMAIL_VERIFICADO_DEV.md) e [QA](QA_EMAIL_VERIFICADO.md). |
 | PR #26 | Gestão administrativa completa, fundo privado, cor/ordem, múltiplos nichos por livro, cards/filtros no Caixa e desativação preservando vínculos e edição. [Contrato](NICHOS_DEV.md) e [QA](QA_NICHOS.md). |
-
-| Escalas (lote validado para DEV) | Calendário mensal/semanal, gestão administrativa, acesso somente à própria escala publicada, conflitos, histórico e notificações pessoais recuperáveis. [Contrato](ESCALAS_DEV.md) e [QA](QA_ESCALAS.md). |
+| Escalas | Calendário mensal/semanal, gestão administrativa, acesso somente à própria escala publicada, conflitos, histórico e notificações pessoais recuperáveis. [Contrato](ESCALAS_DEV.md) e [QA](QA_ESCALAS.md). |
 
 Referência DEV antes deste lote: `7f23383144d3bef8cf3c60bf799e4bf1c1eda4a2`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
 
@@ -26,7 +25,7 @@ Referência DEV antes deste lote: `7f23383144d3bef8cf3c60bf799e4bf1c1eda4a2`. Ma
 | Área | Ainda necessário |
 | --- | --- |
 | Identidade | Recuperação quando todas as passkeys forem perdidas, gestão/rotação das demais credenciais, proteção de tráfego e homologação com aparelhos reais. Perfil/telefone/avatar e recuperação de PIN com uma passkey existente estão nos PRs anteriores; alteração verificada de e-mail no PR #25. Nome/CPF de funcionários seguem administrativos. |
-| Gestão | Concluir publicação DEV deste lote de escalas; demais notificações administrativas e de sincronização continuam pendentes. |
+| Gestão | Demais notificações administrativas e de sincronização. Escalas e seus avisos pessoais estão implementados neste lote. |
 | Inteligência | Consulta administrativa da auditoria com filtros/exportação, relatórios comerciais integrados, perfil de compra e recomendações consultivas, mensagens preparadas conforme preferência/consentimento. |
 | Operação e persistência | Revisão de reconciliação entre aparelhos, tratamento offline, documentos adicionais, retenção/compactação, backup/restauração e testes de recuperação reais. |
 | Homologação posterior | Instalação privada do lote completo, IAM e quotas Google, MailApp/Drive reais, múltiplos aparelhos/usuários, aceite integrado e provisionamento PROD somente após homologação. |
@@ -45,4 +44,4 @@ Concluir as pendências originais incrementalmente: dados de identidade/credenci
 
 ## Validação deste incremento
 
-Resultados deste lote registrados em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). build, sintaxe e diff check. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.
+Resultados deste lote registrados em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.

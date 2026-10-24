@@ -1,6 +1,6 @@
 # Escalas e notificações pessoais — DEV
 
-`escalas-dev.html` oferece calendário mensal (até 42 dias), semanal e detalhes em celular. Datas e horários seguem America/Sao_Paulo, independentemente do fuso do navegador. Administradores consultam todos os funcionários e filtram por pessoa; atendentes consultam somente as próprias escalas publicadas e cancelamentos que já tiveram publicação. Rascunhos, inclusive cancelados sem publicação, não aparecem ao atendente. O menu da conta oferece “Minha escala” quando a funcionalidade está habilitada.
+`escalas-dev.html` oferece calendário mensal (até 42 dias), semanal e detalhes em celular. Datas e horários seguem America/Sao_Paulo, independentemente do fuso do navegador. Administradores consultam todos os funcionários; atendentes consultam somente as próprias escalas publicadas e cancelamentos que já tiveram publicação. Rascunhos, inclusive cancelados sem publicação, não aparecem ao atendente. O menu da conta oferece “Minha escala” quando a funcionalidade está habilitada.
 
 ## Gestão e regras
 
@@ -26,6 +26,6 @@ Mesmo administradores recebem somente suas notificações pessoais de escala; po
 
 ## Limites e ativação posterior
 
-Consultas cobrem até 42 dias e 500 escalas completas; acima disso o servidor pede reduzir o período/filtro, sem truncar resultados. Transporte por stream limitado a 4 MB, nomes em lote e observações Unicode completas. Até 500 funcionários ativos na seleção, 5.000 escalas no total e 1.000 comandos de escala. Limites compartilhados de 5.000 linhas em Configuracoes, Logs_Auditoria e Notificacoes também se aplicam. Ao atingir capacidade, novas alterações falham antes da intenção, preservando histórico; retenção/compactação permanece pendente.
+Consultas cobrem até 42 dias e 500 escalas completas; acima disso a consulta falha explicitamente para permitir reduzir o período (a API também aceita filtro por funcionário), sem truncar resultados. Transporte por stream limitado a 4 MB, nomes em lote e observações Unicode completas. Até 500 funcionários ativos na seleção, 5.000 escalas no total e 1.000 comandos de escala. Limites compartilhados de 5.000 linhas em Configuracoes, Logs_Auditoria e Notificacoes também se aplicam. Ao atingir capacidade, novas alterações falham antes da intenção, preservando histórico; retenção/compactação permanece pendente.
 
 Flags `WORKSPACE_SCHEDULES_ENABLED` / `SCHEDULES_ENABLED` fechadas por padrão. Requer catálogo, notificações, sessões e chaves pessoais existentes; não rotacionar chaves com dados gravados. Atualizar o lote completo incluindo Schedules.gs, SessionStore.gs e Notifications.gs. Desligar flags impede acesso novo, mas não elimina a recuperação necessária nem desfaz registros. A instalação Google real foi reservada pelo proprietário para depois das melhorias originais. Este lote não altera flags, propriedades, IAM ou produção. Evidências em [QA_ESCALAS.md](QA_ESCALAS.md); pendências em [STATUS_V17.md](STATUS_V17.md).
