@@ -63,3 +63,7 @@ Após build, `npm run test:notifications` executa sete cenários de alertas/leit
 ### Perfil e recuperação de PIN
 
 Após build, `npm run test:profile` cobre cinco cenários Chromium, incluindo assinatura WebAuthn real com autenticador virtual, PIN novo/antigo, sessão revogada, avatar em celular e repetição após resposta perdida. `profile.test.mjs` e `recovery.test.mjs` exercitam autorização, cifra, Drive privado, concorrência e falhas antes/depois das projeções. Provas de armazenamento dos contratos Node são fixtures descartáveis; não substituem assinaturas. Google/MailApp/Drive emulados; ver [QA_PERFIL_RECUPERACAO.md](../docs/v17/QA_PERFIL_RECUPERACAO.md).
+
+### Alteração verificada de e-mail
+
+Após build, `npm run test:email-change` cobre cinco cenários browser: novo endereço com a mesma passkey e recuperação para ele, resposta perdida na emissão/confirmação, recarga/cancelamento, edição concorrente e flags fechadas. `email-change.test.mjs` cobre nove grupos de autorização, quota, endereço único, ponteiro e falhas antes/depois das projeções para proprietário/funcionário. Tudo usa MailApp/Google emulados e contatos fictícios; browser valida assinatura WebAuthn com autenticador virtual. Ver [QA_EMAIL_VERIFICADO.md](../docs/v17/QA_EMAIL_VERIFICADO.md).

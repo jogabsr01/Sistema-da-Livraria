@@ -43,3 +43,7 @@ Não há vendas remotas para restaurar na Fase A. Para a Fase B, testar restaura
 Backups precisam de uma identidade/grupo de recuperação com permissão mínima e controle de acesso distinto dos operadores. Não tornar a pasta pública. Drive Trash e versionamento não são uma política completa de backup.
 
 Periodicidade, retenção e metas RPO/RTO devem ser aprovadas conforme o volume e a política da livraria, incluindo eliminação legítima de PII também em backups. Não foi criado um job de exclusão ou retenção automática nesta fase. Antes de produção, medir uma restauração real e registrar o resultado; os testes locais não a substituem.
+
+## Propriedades privadas e confirmação de e-mail
+
+O incremento de [e-mail verificado](EMAIL_VERIFICADO_DEV.md) depende de propriedades privadas (`IDENTITY_OWNER_LOGIN_EMAIL`, `IDENTITY_EMAIL_CHANGE_<id>` e `IDENTITY_EMAIL_PENDING`), além das planilhas comum/de controle. Restaurar apenas a planilha não restaura um ponto consistente de identidade. O procedimento de backup/restauração real ainda precisa abranger essas propriedades com proteção equivalente às credenciais, preservar intenção/ponteiro coerentes e testar retomada em instalação descartável antes de qualquer ativação. Não exportar propriedades no chat, repositório, kit público ou CSV administrativo. Não remover uma intenção pendente para liberar acesso.

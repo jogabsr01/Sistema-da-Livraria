@@ -25,3 +25,7 @@ Este lote não implementa recuperação do proprietário sem nenhuma passkey nem
 Flags Netlify DEV: `WORKSPACE_PROFILE_ENABLED`, `WORKSPACE_RECOVERY_ENABLED`. Flags Apps Script: `PROFILE_ENABLED`, `RECOVERY_ENABLED`. Todas fechadas por padrão. Requerem identidade/sessões e, para recuperação, acesso/guardas/passkeys; acesso de funcionários requer ainda o módulo de equipe. Perfil usa as chaves de dados pessoais existentes e `PROFILES_FOLDER_ID` privado com marcador original. Sem escopo ou aba novos; propósitos da tabela privada `_Identity_Flows` passam a admitir RECOVER. Não rotacionar chaves nem reinicializar recursos existentes.
 
 Publicação de código em DEV não configura propriedades, Google, MailApp ou Drive reais. Esses testes usam emulação e contatos fictícios. Home dos perfis e configuração Google real continuam na etapa posterior solicitada.
+
+## Evolução posterior: e-mail verificado
+
+As limitações sobre e-mail acima descrevem o PR #24. O incremento seguinte adiciona a [alteração verificada de e-mail](EMAIL_VERIFICADO_DEV.md), com flags independentes; a perda de todas as passkeys continua pendente.
