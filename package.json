@@ -31,7 +31,8 @@
     "test:schedules": "python3 scripts/test-schedules.py",
     "test:audit": "python3 scripts/test-audit.py",
     "test:security-audit": "python3 scripts/test-security-audit.py",
-    "test:reports": "python3 scripts/test-reports.py"
+    "test:reports": "python3 scripts/test-reports.py",
+    "test:customer-insights": "python3 scripts/test-customer-insights.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",

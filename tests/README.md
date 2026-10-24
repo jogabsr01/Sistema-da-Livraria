@@ -87,3 +87,5 @@ Após build, `npm run test:security-audit` cobre seis cenários Chromium de nega
 ### Relatórios comerciais
 
 Após build, `npm run test:reports` cobre sete cenários Chromium com dados de venda reais sobre emulação descartável: totais/estorno/estoque/movimentação, CPF/cidade, papel, alteração da fonte, repetição após resposta perdida e download XLSX. `reports.test.mjs` cobre 13 grupos financeiros/de autorização/capacidade e OOXML/CRC/Unicode/fórmulas, inclusive 5.000 livros e overflow. [QA_RELATORIOS_COMERCIAIS.md](../docs/v17/QA_RELATORIOS_COMERCIAIS.md).
+
+Perfil de compra: `node --test tests/backend/customer-insights.test.mjs` e `npm run test:customer-insights`. Dez grupos de integridade/privacidade/consentimento/capacidade e sete cenários browser com WebAuthn real de autenticador virtual e Google emulado. Sem envio de mensagens ou provedor externo. Contratos e limites em `docs/v17/PERFIL_COMPRA_DEV.md`.

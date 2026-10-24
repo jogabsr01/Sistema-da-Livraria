@@ -122,3 +122,7 @@ Atualizar o lote completo com `SecurityAudit.gs` e os leitores de sessão/guarda
 ## Relatórios comerciais
 
 Atualizar o lote completo com `Reports.gs`. Flags `WORKSPACE_REPORTS_ENABLED` / `REPORTS_ENABLED` fechadas por padrão; requer catálogo/sessões e chaves pessoais existentes, sem nova aba/escopo/chave ou recurso. Consulta e exportação são administrativas com autenticação recente; CPF usa POST/índice privado e não aparece no Excel. Consultar resultados antes de exportar, com a mesma fonte/prova ainda válida. [RELATORIOS_COMERCIAIS_DEV.md](RELATORIOS_COMERCIAIS_DEV.md). Configuração Google real permanece posterior, conforme solicitado.
+
+## Perfil de compra e mensagens manuais
+
+Atualizar o lote completo com `CustomerInsights.gs` e `Reports.gs`, sem nova aba, escopo, journal, chave ou recurso. Novas flags `WORKSPACE_CUSTOMER_INSIGHTS_ENABLED` / `CUSTOMER_INSIGHTS_ENABLED`, fechadas por padrão; dependem de CUSTOMERS/REPORTS/CATALOG/IDENTITY_SESSIONS e chaves pessoais existentes. Requer administrador recente, consulta antes de preparar e consentimento/preferência WhatsApp registrados. Não envia mensagens. Preservar intenções privadas existentes; não apagar logs para liberar capacidade. [PERFIL_COMPRA_DEV.md](PERFIL_COMPRA_DEV.md). Instalação Google real permanece posterior às melhorias originais.
