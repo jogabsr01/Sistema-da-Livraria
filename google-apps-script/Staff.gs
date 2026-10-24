@@ -87,7 +87,7 @@ function staffOperation_(request,c) {
   if(request.action!=='staff.save')failure_('FORBIDDEN');
   authControlExact_(p,['commandId','id','expectedRevision','reason','role','status','fingerprint','contact','emailIndex','cpfIndex','emailCheck']);
   if(!identityUuid_(p.commandId)||!identityUuid_(p.id)||!Number.isSafeInteger(p.expectedRevision)||p.expectedRevision<0||p.expectedRevision>1000000||!['ATENDENTE','ADMIN'].includes(p.role)||!['ATIVO','INATIVO'].includes(p.status)||!staffSealed_(p.contact)||!staffSealed_(p.reason)||![p.fingerprint,p.emailIndex,p.cpfIndex,p.emailCheck].every(accessHash_))staffFail_();
-  if(p.emailCheck===digest_(accessEmail_(c.owner)))staffFail_('STAFF_DUPLICATE');
+  if([digest_(accessEmail_(c.owner)),digest_(ownerLoginEmail_(c))].includes(p.emailCheck))staffFail_('STAFF_DUPLICATE');
   var prior=staffJournal_(ss).filter(function(v){return v.commandId===p.commandId;});
   if(prior.length){var v=prior[0];if(v.fingerprint!==p.fingerprint||v.actor!==principal.id||v.id!==p.id)staffFail_('STAFF_CONFLICT');return {id:v.id,revision:v.revision,reenrollmentRequired:v.reenrollmentRequired};}
   var found=users.rows.filter(function(r){return r.ID_Usuario===p.id;}),old=found[0];
@@ -109,7 +109,7 @@ function staffOperation_(request,c) {
   return {id:p.id,revision:v.revision,reenrollmentRequired:reset};
 }
 function staffAccessOperation_(request,c) {
-  recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);var p=request.payload,ss=authControlStore_(c),main=storage_(c,false).spreadsheet,now=Date.now();
+  recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);var p=request.payload,ss=authControlStore_(c),main=storage_(c,false).spreadsheet,now=Date.now();
   if(request.action==='identity.staffAccess.lookup'){
     authControlExact_(p,['emailIndex','cpfIndex']);if(p.emailIndex!==''&&!accessHash_(p.emailIndex)||p.cpfIndex!==''&&!accessHash_(p.cpfIndex)||!p.emailIndex&&!p.cpfIndex)accessReject_();
     var matches=staffUsers_(main).rows.filter(function(r){return p.emailIndex&&r.Email_Indice===p.emailIndex||p.cpfIndex&&r.CPF_Indice===p.cpfIndex;});
@@ -121,7 +121,7 @@ function staffAccessOperation_(request,c) {
   if(['identity.staffAccess.start','identity.staffAccess.recover'].includes(request.action)){
     var recovery=request.action==='identity.staffAccess.recover',purpose=recovery?'RECOVER':'ACTIVATE';if(recovery&&!recoveryEnabled_())failure_('IDENTITY_UNAVAILABLE');
     authControlExact_(p,['subjectId','contactHash','delivery','flowId','tokenHash','codeHash','code']);
-    if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!passkeyText_(p.code,43,43))accessReject_();if(accessEmail_(p.delivery)===accessEmail_(c.owner))accessReject_();
+    if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!passkeyText_(p.code,43,43))accessReject_();if([accessEmail_(c.owner),ownerLoginEmail_(c)].includes(accessEmail_(p.delivery)))accessReject_();
     var subject=staffSubject_(c,p.subjectId),table=accessFlows_(ss);
     if(!subject||subject.row.Primeiro_Acesso_Concluido!==recovery||digest_(subject.row.Nome)!==p.contactHash)subject=null;
     if(subject&&table.rows.some(function(r){return r.Subject_ID===subject.row.ID_Usuario&&now-authControlTime_(r.Created_At)<60000;}))subject=null;

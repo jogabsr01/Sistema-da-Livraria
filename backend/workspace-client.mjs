@@ -182,7 +182,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
     }
   }
   return { schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
-    profile:(operation,actor,payload)=>{if(!['get','save','photo'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
+    profile:(operation,actor,payload)=>{if(!['get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
     operations:(operation,actor,payload)=>{if(!['list','get','adjust','reverse'].includes(operation))throw new ApiError(400,'INVALID_OPERATION');return invoke('operations.'+operation,actor,payload);},
     customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
     staff:(operation,actor,payload)=> { if(!['list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
