@@ -48,3 +48,9 @@ Detalhes e limites da parte de identidade: [SESSOES_E_PERMISSOES.md](SESSOES_E_P
 ## Passkeys internas
 
 `identity.passkey.list/begin/take/register/counter` têm trava DEV independente e não são expostas como rotas HTTP do navegador. Verificação WebAuthn, persistência, testes e pendências em [PASSKEYS.md](PASSKEYS.md).
+
+## Auditoria administrativa DEV
+
+`GET /api/v1/audit/list`: parâmetros `from`/`to` UTC canônicos, `employeeId`, `operation`, `productId`, `saleId`, `result`, `offset` e `snapshot`. Filtros opcionais usam string vazia, período máximo de 366 dias. Página de 25; offset maior que zero exige snapshot. Resposta protegida com campos operacionais autorizados e metadados de responsáveis, sem contatos/cifra.
+
+`POST /api/v1/audit/export`: `{commandId, filters, snapshot}`, com origem exata/CSRF e autenticação administrativa recente. Registra autorização e retorna OOXML `.xlsx` binário, até 500 eventos e 30 mil campos, com no-store. Mudança da origem exige nova consulta; repetição do mesmo comando/autor/carga recupera o resultado original. Nenhuma rota de alteração/exclusão de auditoria. Flags próprias fechadas por padrão. [Contrato completo](AUDITORIA_DEV.md).

@@ -110,3 +110,7 @@ Atualizar o lote inteiro com `Niches.gs`. Flags `WORKSPACE_NICHES_ENABLED` / `NI
 ## Escalas e notificações pessoais
 
 Atualizar o lote completo incluindo `Schedules.gs`, `SessionStore.gs` e `Notifications.gs`. Flags `WORKSPACE_SCHEDULES_ENABLED` / `SCHEDULES_ENABLED` fechadas por padrão; requer catálogo, notificações, sessões e chaves de dados pessoais existentes. Sem nova aba, escopo ou chave Google. Não editar diretamente `Escalas.Observacoes` nem apagar intenções, revisões ou destinatários em Configuracoes. Datas são gravadas como texto canônico. Ver [ESCALAS_DEV.md](ESCALAS_DEV.md). Instalação real Google continua reservada para depois das melhorias originais.
+
+## Consulta da auditoria e Excel
+
+Atualizar o lote completo com `Audit.gs`. Flags `WORKSPACE_AUDIT_ENABLED` / `AUDIT_ENABLED` fechadas por padrão; requer catálogo, sessões e chaves pessoais existentes, sem nova aba/escopo/chave ou recurso. Não editar nem apagar linhas de Logs_Auditoria. Consulta e exportação exigem autenticação administrativa recente; exportação registra autorização antes da liberação. Ver [AUDITORIA_DEV.md](AUDITORIA_DEV.md). A instalação Google real permanece posterior às melhorias originais.

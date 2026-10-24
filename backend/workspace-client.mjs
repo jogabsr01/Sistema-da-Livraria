@@ -23,7 +23,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         response = await fetchImpl(url.href, { method: 'GET', redirect: 'manual', signal });
       }
       if (!response.ok) throw new ApiError(502, 'UPSTREAM_UNAVAILABLE');
-      const limit = ['notifications.report','schedules.list','schedules.people'].includes(action) ? 4_000_000 : ['catalog.niches','niches.list'].includes(action)?1_500_000:180_000;
+      const limit = ['audit.list','audit.export','notifications.report','schedules.list','schedules.people'].includes(action) ? 4_000_000 : ['catalog.niches','niches.list'].includes(action)?1_500_000:180_000;
       let text;
       if (limit>180_000) {
         const reader = response.body?.getReader(), decoder = new TextDecoder('utf-8', { fatal:true }); text = ''; let size = 0;
@@ -33,6 +33,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);
+      if(action.startsWith('audit.'))return data;
       if(action.startsWith('schedules.'))return data;
       if(action.startsWith('niches.'))return data;
       if(action.startsWith('profile.'))return data; // Self-service DTO/bytes validated before response.
@@ -184,7 +185,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       throw new ApiError(502, signal.aborted ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE');
     }
   }
-  return { schedules:(op,actor,payload)=>{if(!['list','get','people','save','cancel'].includes(op))throw new ApiError(400,'INVALID_SCHEDULE');return invoke('schedules.'+op,actor,payload);},niches:(op,actor,payload)=>{if(!['list','save','image'].includes(op))throw new ApiError(400,'INVALID_NICHE');return invoke('niches.'+op,actor,payload);},schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+  return { audit:(op,actor,payload)=>{if(!['list','export'].includes(op))throw new ApiError(400,'INVALID_AUDIT');return invoke('audit.'+op,actor,payload);},schedules:(op,actor,payload)=>{if(!['list','get','people','save','cancel'].includes(op))throw new ApiError(400,'INVALID_SCHEDULE');return invoke('schedules.'+op,actor,payload);},niches:(op,actor,payload)=>{if(!['list','save','image'].includes(op))throw new ApiError(400,'INVALID_NICHE');return invoke('niches.'+op,actor,payload);},schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
     profile:(operation,actor,payload)=>{if(!['get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
     operations:(operation,actor,payload)=>{if(!['list','get','adjust','reverse'].includes(operation))throw new ApiError(400,'INVALID_OPERATION');return invoke('operations.'+operation,actor,payload);},
     customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
