@@ -106,3 +106,7 @@ Atualizar também `EmailChange.gs` junto ao lote completo. Flags `WORKSPACE_EMAI
 ## Atualização de nichos
 
 Atualizar o lote inteiro com `Niches.gs`. Flags `WORKSPACE_NICHES_ENABLED` / `NICHES_ENABLED` fechadas por padrão, catálogo/sessões existentes e pasta privada `COVERS_FOLDER_ID` original. Sem nova aba, escopo, chave ou reprovisionamento. Journal/revisões na planilha comum e imagens com marcador específico na pasta de capas. Não apagar intenções para contornar falhas. Ver [NICHOS_DEV.md](NICHOS_DEV.md); configuração Google real permanece posterior.
+
+## Escalas e notificações pessoais
+
+Atualizar o lote completo incluindo `Schedules.gs`, `SessionStore.gs` e `Notifications.gs`. Flags `WORKSPACE_SCHEDULES_ENABLED` / `SCHEDULES_ENABLED` fechadas por padrão; requer catálogo, notificações, sessões e chaves de dados pessoais existentes. Sem nova aba, escopo ou chave Google. Não editar diretamente `Escalas.Observacoes` nem apagar intenções, revisões ou destinatários em Configuracoes. Datas são gravadas como texto canônico. Ver [ESCALAS_DEV.md](ESCALAS_DEV.md). Instalação real Google continua reservada para depois das melhorias originais.

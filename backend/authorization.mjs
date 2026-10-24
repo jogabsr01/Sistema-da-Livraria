@@ -12,11 +12,11 @@ const attendant = new Set([
 ]);
 const admin = new Set([
   ...attendant, 'reports.read', 'audit.read', 'niches.write', 'schedule.write',
-  'stock.adjust', 'sales.reverse', 'users.attendant.manage', 'products.delete', 'notifications.manage',
+  'stock.adjust', 'sales.reverse', 'users.attendant.manage', 'products.delete', 'notifications.manage', 'schedule.all.read',
 ]);
 const superAdmin = new Set([...admin, 'users.admin.manage', 'config.manage']);
 const recent = new Set([
-  'niches.write', 'reports.read', 'audit.read', 'stock.adjust', 'sales.reverse', 'users.attendant.manage',
+  'schedule.write', 'niches.write', 'reports.read', 'audit.read', 'stock.adjust', 'sales.reverse', 'users.attendant.manage',
   'users.admin.manage', 'config.manage', 'profile.self.write',
 ]);
 const selfOperations = new Set([

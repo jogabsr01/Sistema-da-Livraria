@@ -64,7 +64,7 @@ class Stock(qa.Checkout):
         self.page.once('dialog',lambda dialog:dialog.accept());self.page.get_by_role('button',name='Excluir livro',exact=True).click()
         expect(self.page.locator('.book')).to_have_count(0);self.assertEqual(self.local('/test/state')['products'],1)
         self.page.locator('#inactive').check();self.page.get_by_role('button',name='Pesquisar',exact=True).click();expect(self.page.locator('.book')).to_contain_text('Inativo')
-        self.page.get_by_role('button',name='Detalhes e edição',exact=True).click();self.page.locator('#active').check();self.save();expect(self.page.locator('.book')).not_to_contain_text('Inativo')
+        self.page.get_by_role('button',name='Detalhes e edição',exact=True).click();expect(self.page.locator('#editor')).to_be_visible();expect(self.page.locator('#active')).not_to_be_checked();self.page.locator('#active').check();expect(self.page.locator('#active')).to_be_checked();self.save();expect(self.page.locator('.book')).not_to_contain_text('Inativo')
         self.assertEqual(self.errors,[])
 
     def test_stock_zero_book_and_excess_quantity_cannot_advance_checkout(self):

@@ -10,5 +10,5 @@
       document.querySelectorAll('[data-notification-count]').forEach(el => {el.textContent=data.unread ? '('+data.unread+')':'';});
     } catch {} finally { busy=false; if (again) {again=false;refresh();} }
   }
-  refresh(); window.addEventListener('focus',refresh); window.addEventListener('online',refresh);window.addEventListener('livraria:stock-changed',refresh);setInterval(refresh,60000);
+  refresh(); window.addEventListener('focus',refresh); window.addEventListener('online',refresh);window.addEventListener('livraria:stock-changed',refresh);window.addEventListener('livraria:schedule-changed',refresh);window.addEventListener('livraria:notifications-changed',refresh);setInterval(refresh,60000);
 })();
