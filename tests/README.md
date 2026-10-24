@@ -67,3 +67,7 @@ Após build, `npm run test:profile` cobre cinco cenários Chromium, incluindo as
 ### Alteração verificada de e-mail
 
 Após build, `npm run test:email-change` cobre cinco cenários browser: novo endereço com a mesma passkey e recuperação para ele, resposta perdida na emissão/confirmação, recarga/cancelamento, edição concorrente e flags fechadas. `email-change.test.mjs` cobre nove grupos de autorização, quota, endereço único, ponteiro e falhas antes/depois das projeções para proprietário/funcionário. Tudo usa MailApp/Google emulados e contatos fictícios; browser valida assinatura WebAuthn com autenticador virtual. Ver [QA_EMAIL_VERIFICADO.md](../docs/v17/QA_EMAIL_VERIFICADO.md).
+
+### Nichos administrativos
+
+Após build, `npm run test:niches` cobre cinco cenários browser de gestão, imagem, cards/filtros no Caixa, seleção múltipla, vínculo desativado editável, foco em outro tab, resposta perdida e permissões. `niches.test.mjs` cobre seis grupos de contrato com falhas em cada projeção, versões, unicidade e proxy privado. O teste antigo de catálogo agora recusa associação nova a nicho inativo e o novo contrato confirma preservação da associação existente. Google/Drive emulados; [QA_NICHOS.md](../docs/v17/QA_NICHOS.md).

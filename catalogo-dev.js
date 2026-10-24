@@ -33,8 +33,9 @@
     img.addEventListener('error', () => { fallback.textContent = preview ? 'A imagem não carregou. Confira o link da capa.' : '📖'; parent.replaceChildren(fallback); }, { once:true }); parent.append(img);
   }
   async function list() {
+    const ticket=++listSequence;
     const params = new URLSearchParams({ q:$('query').value, offset:String(offset), niche:$('niche-filter').value, inactive:String($('inactive').checked) });
-    const data = await api('list', null, '?' + params); nextOffset = data.nextOffset; $('books').replaceChildren();
+    const data = await api('list', null, '?' + params);if(ticket!==listSequence)return; nextOffset = data.nextOffset; $('books').replaceChildren();
     data.products.forEach(book => {
       const article = document.createElement('article'); article.className = 'book';
       const image = document.createElement('span'); cover(book.photoUrl || book.coverUrl, image); const content = document.createElement('div');
@@ -60,10 +61,12 @@
     $('count').textContent = data.total ? `${data.total} livro(s) encontrado(s). Página ${Math.floor(offset / 10) + 1}.` : 'Nenhum livro encontrado.';
     $('previous').hidden = offset === 0; $('next').hidden = nextOffset === null; message('Catálogo atualizado com os dados do servidor.');
   }
+  let nicheLoading=false,listSequence=0;
+  async function refreshNiches(){if(nicheLoading)return;nicheLoading=true;try{const data=await api('niches'),selected=$('niche-filter').value;niches=data.niches.sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));$('niche-filter').replaceChildren(new Option('Todos os nichos',''));for(const n of niches.filter(n=>n.active))$('niche-filter').append(new Option(n.name,n.id));$('niche-filter').value=niches.some(n=>n.active&&n.id===selected)?selected:'';if($('editor').open&&!command)choices([...document.querySelectorAll('#niche-choices input:checked')].map(n=>n.value));}finally{nicheLoading=false;}}
   function choices(selected) {
-    $('niche-choices').replaceChildren(); niches.filter(n => n.active).forEach(niche => {
+    $('niche-choices').replaceChildren(); niches.filter(n => n.active||editing?.nicheIds.includes(n.id)).forEach(niche => {
       const label = document.createElement('label'); label.className = 'check'; const input = document.createElement('input'); input.type = 'checkbox'; input.value = niche.id; input.checked = selected.includes(niche.id);
-      label.append(input, document.createTextNode(niche.name)); $('niche-choices').append(label);
+      label.append(input, document.createTextNode(niche.name+(niche.active?'':' (desativado)'))); $('niche-choices').append(label);
     });
   }
   async function openBook(id) {
@@ -260,9 +263,11 @@
   $('search-form').addEventListener('submit', event => { event.preventDefault(); offset = 0; run(list); });
   $('refresh').addEventListener('click', () => run(list)); $('next').addEventListener('click', () => { offset = nextOffset; run(list); }); $('previous').addEventListener('click', () => { offset = Math.max(0,offset-10); run(list); });
   if (location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app' || location.protocol !== 'https:') { message('Este catálogo está disponível exclusivamente no endereço DEV da livraria.'); return; }
+  async function syncNiches(){if(!csrf||busy||command||document.hidden)return;try{await refreshNiches();if(!$('editor').open)await list();}catch{message('Não foi possível atualizar os nichos. Confira a conexão.');}}
+  window.addEventListener('focus',syncNiches);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNiches();});setInterval(syncNiches,60000);
   run(async () => {
     const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); if (!response.ok) { message('Entre na conta verificada para usar o catálogo.'); return; }
-    const { data } = await response.json(); csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); stockStorageKey = 'catalog.stock.pending.' + data.user.id;
+    const { data } = await response.json(); csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role);$('niche-admin-link').hidden=!canDelete; stockStorageKey = 'catalog.stock.pending.' + data.user.id;
     const stored = sessionStorage.getItem(stockStorageKey);
     if (stored) {
       const value = JSON.parse(stored), uuid = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);

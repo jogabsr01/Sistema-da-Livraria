@@ -102,3 +102,7 @@ Atualizar o lote inteiro, incluindo `Profile.gs` e `Recovery.gs`; as chamadas de
 ## Atualização de e-mail verificado
 
 Atualizar também `EmailChange.gs` junto ao lote completo. Flags `WORKSPACE_EMAIL_CHANGE_ENABLED` / `EMAIL_CHANGE_ENABLED` fechadas por padrão; requer perfil/sessões e autenticação forte existente. Não alterar `OWNER_EMAIL` ou `IDENTITY_OWNER_EMAIL_BINDING` para trocar o login. A nova propriedade privada `IDENTITY_OWNER_LOGIN_EMAIL` é gerida pelo fluxo verificado. Não apagar `IDENTITY_EMAIL_PENDING` nem journals privados de confirmação. Sem nova aba, migração ou escopo. Ver [EMAIL_VERIFICADO_DEV.md](EMAIL_VERIFICADO_DEV.md). Instalação real Google permanece posterior.
+
+## Atualização de nichos
+
+Atualizar o lote inteiro com `Niches.gs`. Flags `WORKSPACE_NICHES_ENABLED` / `NICHES_ENABLED` fechadas por padrão, catálogo/sessões existentes e pasta privada `COVERS_FOLDER_ID` original. Sem nova aba, escopo, chave ou reprovisionamento. Journal/revisões na planilha comum e imagens com marcador específico na pasta de capas. Não apagar intenções para contornar falhas. Ver [NICHOS_DEV.md](NICHOS_DEV.md); configuração Google real permanece posterior.

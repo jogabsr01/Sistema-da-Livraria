@@ -73,7 +73,7 @@ test('unknown or inactive niche, stale version and stock/sale journal conflicts 
   await assert.rejects(s.client.catalog('save',a.actor,s.command({record:{nicheIds:[randomUUID()]}})),{code:'WORKSPACE_CATALOG_INVALID'});
   await s.client.catalog('save',a.actor,c);
   const niches=s.main.getSheetByName('Nichos');niches.rows[1][niches.rows[0].indexOf('Ativo')]=false;
-  await assert.rejects(s.client.catalog('save',a.actor,s.command({id:c.id,expectedVersion:1})),{code:'WORKSPACE_CATALOG_INVALID'});niches.rows[1][niches.rows[0].indexOf('Ativo')]=true;
+  await assert.rejects(s.client.catalog('save',a.actor,s.command()),{code:'WORKSPACE_CATALOG_INVALID'});niches.rows[1][niches.rows[0].indexOf('Ativo')]=true;
   const journal=s.main.getSheetByName('_Eventos_Dominio'),data={Tipo:'SALE_COMMITTED',Conteudo_JSON:JSON.stringify({lines:[{productId:c.id}]})}; journal.appendRow(journal.rows[0].map(key=>data[key]??''));
   await assert.rejects(s.client.catalog('save',a.actor,s.command({id:c.id,expectedVersion:1})),{code:'WORKSPACE_JOURNAL_INVALID'}); assert.equal(s.journal.getLastRow(),2);
 });

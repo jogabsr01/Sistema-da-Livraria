@@ -81,11 +81,14 @@
     document.querySelectorAll('[data-add]').forEach(button => { const p = records.get(button.dataset.add); button.disabled = locked() || !p?.active || p.stock < 1; });
     return total;
   }
+  let activeNiche='';
+  async function loadCashNiches(){const d=await api('/api/v1/catalog/niches'),host=$('cash-niches');host.hidden=d.nichesEnabled!==true;if(host.hidden){activeNiche='';return;}const list=d.niches.filter(n=>n.active).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));if(activeNiche&&!list.some(n=>n.id===activeNiche)){activeNiche='';offset=0;}host.replaceChildren();for(const n of [{id:'',name:'Todos os livros',description:'Explore o catálogo completo',color:'#205b43'},...list]){const b=document.createElement('button');b.type='button';b.className='cash-niche';b.setAttribute('aria-pressed',String(activeNiche===n.id));b.style.borderColor=n.color;if(n.imageUrl){const img=document.createElement('img');img.src=n.imageUrl;img.alt='';img.loading='lazy';img.addEventListener('error',()=>img.remove(),{once:true});b.append(img);}const label=document.createElement('strong');label.textContent=n.name;const desc=document.createElement('span');desc.textContent=n.description;b.append(label,desc);b.addEventListener('click',()=>{if(refreshing)return;activeNiche=n.id;offset=0;refresh();});host.append(b);}}
   async function refresh() {
     if (refreshing || document.hidden || !csrf) return;
     refreshing = true;
     try {
-      const query = new URLSearchParams({ q:$('query').value.trim(), offset:String(offset) });
+      await loadCashNiches();
+      const query = new URLSearchParams({ q:$('query').value.trim(), offset:String(offset),niche:activeNiche });
       const data = await api('/api/v1/catalog/list?' + query);
       $('books').replaceChildren(); nextOffset = data.nextOffset;
       for (const product of data.products) {
@@ -166,6 +169,7 @@
   $('next').addEventListener('click', () => { if (!refreshing && nextOffset !== null) { offset = nextOffset; refresh(); } });
   window.addEventListener('focus', refresh); window.addEventListener('online', refresh);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  setInterval(()=>{if(!document.hidden)refresh();},60000);
   async function start() {
     if (location.origin !== ORIGIN) { $('status').textContent = 'Esta tela funciona exclusivamente no endereço DEV autorizado.'; return; }
     try {
