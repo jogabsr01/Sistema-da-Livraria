@@ -3,12 +3,14 @@
   const DEV = 'dev--merry-chimera-49a1f3.netlify.app';
   const $ = id => document.getElementById(id);
   const message = text => { $('status').textContent = text; };
-  let csrfToken = '', busy = false, sessionCsrf = '', pendingResponse = null;
+  let csrfToken = '', busy = false, sessionCsrf = '', pendingResponse = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
   const panels = ['initial', 'email-form', 'pin-form', 'passkey', 'retry', 'complete'];
   function show(stage) {
     const panel = { INITIAL: 'initial', EMAIL: 'email-form', PIN: 'pin-form', PASSKEY: 'passkey', COMMITTING: 'retry', COMPLETE: 'complete' }[stage];
     panels.forEach(id => { $(id).hidden = id !== panel; });
     if(stage!=='COMPLETE')$('identity-result').textContent='';
+    $('rescue-choice').hidden=stage!=='PIN'||!recoveryFlow||!emergencyEnabled;
+    if(stage==='PIN'&&replacementReady){$('use-rescue').checked=true;$('rescue-inputs').hidden=false;$('rescue-status').textContent='Código já validado nesta tentativa. Defina seu PIN novo.';}
     $('restart').hidden = !panel || ['initial', 'complete'].includes(panel);
   }
   function describe(error) {
@@ -25,6 +27,7 @@
     const result = await response.json();
     if (!response.ok) { const error = new Error('ACCESS_FAILED'); error.code = result.error?.code; throw error; }
     if (result.data.csrfToken) csrfToken = result.data.csrfToken;
+    if(operation==='recover'){recoveryFlow=true;replacementReady=false;$('use-rescue').checked=false;$('rescue-status').textContent='';$('rescue-inputs').hidden=true;}if(operation==='start'||operation==='login'){recoveryFlow=false;replacementReady=false;}if(result.data.purpose)recoveryFlow=result.data.purpose==='RECOVER';if(result.data.replacementAllowed!==undefined)replacementReady=result.data.replacementAllowed===true;if(result.data.emergencyRecoveryEnabled!==undefined)emergencyEnabled=result.data.emergencyRecoveryEnabled;
     if(result.data.recoveryEnabled!==undefined)$('recovery-choice').hidden=!result.data.recoveryEnabled;
     return result.data;
   }
@@ -35,7 +38,7 @@
     finally { busy = false; document.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
   }
   function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); run(action); }); }
-  function clearSecrets() { ['login-pin', 'new-pin', 'confirm-pin', 'email-code'].forEach(id => { $(id).value = ''; }); }
+  function clearSecrets() { ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
   const decode = value => Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), char => char.charCodeAt(0));
   const encode = value => btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   function serialize(credential) {
@@ -70,7 +73,10 @@
   submit('email-form', async () => {
     const data = await api('email', { code: $('email-code').value.trim() }); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina seu PIN novo.');
   });
+  $('use-rescue').addEventListener('change',()=>{$('rescue-inputs').hidden=!$('use-rescue').checked;});
+  $('rescue-confirm').addEventListener('click',()=>run(async()=>{try{await api('rescue',{recoveryCode:$('rescue-code').value});$('rescue-status').textContent='Código confirmado. Defina um PIN novo e cadastre uma passkey nova.';}finally{$('rescue-code').value='';}}));
   submit('pin-form', async () => {
+    if(recoveryFlow&&emergencyEnabled&&$('use-rescue').checked&&!replacementReady){message('Valide o código de recuperação antes de continuar.');return;}
     if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.'); return; }
     try { const data = await api('pin', { pin: $('new-pin').value }); show(data.stage); message('Continue com a passkey para proteger sua conta.'); }
     finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
@@ -94,6 +100,7 @@
     const state = await api('state'); csrfToken = state.csrfToken;
   }));
   function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
+  window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;});
   window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{requestedView(await api('state'));});});
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {
