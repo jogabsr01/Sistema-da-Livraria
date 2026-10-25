@@ -16,15 +16,26 @@ qa = importlib.util.module_from_spec(spec); spec.loader.exec_module(qa)
 class Checkout(qa.Catalog):
     def setUp(self):
         super().setUp(); self.lose_checkout_response = False; self.offline_checkout = False; self.last_command = None
+        self.checkout_requests = 0; self.fail_stock = False; self.hold_stock = False; self.held_stock = None; self.deny_session = False; self.fail_detail = False
 
     def relay(self, route):
         request = route.request; path = urlsplit(request.url).path
+        if path == '/api/v1/catalog/get' and self.fail_detail: route.abort(); return
+        if path == '/api/v1/session' and self.deny_session:
+            route.fulfill(status=401, content_type='application/json', body=json.dumps({'error':{'code':'UNAUTHENTICATED'}})); return
+        if path == '/api/v1/catalog/list':
+            if self.fail_stock: route.abort(); return
+            if self.hold_stock:
+                headers = {k:v for k,v in request.all_headers().items() if k not in ['host','content-length']}
+                result = self.local(path+'?'+urlsplit(request.url).query, headers=headers, method=request.method)
+                self.held_stock = (route, result); return
         if path in ['/caixa-dev.html', '/caixa-dev.js', '/caixa-dev.css']:
             headers = {}
             for rule in tomllib.loads((qa.ROOT / 'netlify.toml').read_text()).get('headers', []):
                 if rule['for'] == path: headers.update(rule['values'])
             route.fulfill(status=200, content_type={'.html':'text/html', '.js':'application/javascript', '.css':'text/css'}[Path(path).suffix], headers=headers, body=(qa.ROOT / 'dist' / path[1:]).read_bytes()); return
         if path == '/api/v1/checkout':
+            self.checkout_requests += 1
             self.last_command = json.loads(request.post_data)
             if self.offline_checkout: route.abort(); return
             headers = {k:v for k,v in request.all_headers().items() if k not in ['host','content-length']}
@@ -42,6 +53,132 @@ class Checkout(qa.Catalog):
 
     def confirm(self):
         self.page.locator('#confirm').click(); expect(self.page.locator('#receipt')).to_be_visible()
+
+    def network(self, connected):
+        # Explicit browser signal fixture; route aborts separately exercise real
+        # fetch failures even when navigator.onLine remains true.
+        self.page.evaluate('''connected => {
+          Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>connected});
+          window.dispatchEvent(new Event(connected?'online':'offline'));
+        }''', connected)
+
+    def test_checkout_offline_signal_blocks_send_and_reconnect_requires_complete_read(self):
+        self.checkout(); self.add(); self.network(False)
+        expect(self.page.locator('#connection-title')).to_have_text('Sem conexão')
+        expect(self.page.locator('#confirm')).to_be_disabled()
+        self.page.locator('#payment-form').dispatch_event('submit')
+        self.assertEqual(self.checkout_requests, 0); self.assertEqual(self.page.evaluate('Object.keys(sessionStorage)'), [])
+        self.fail_stock=True; self.network(True)
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','stale')
+        expect(self.page.locator('#confirm')).to_be_disabled()
+        expect(self.page.locator('.cart-line')).to_have_count(1)
+        self.fail_stock=False; self.page.locator('#refresh').click()
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','ready'); self.confirm()
+        self.assertEqual(self.checkout_requests, 1)
+
+    def test_checkout_reconnection_never_replays_uncertain_sale_automatically(self):
+        self.checkout(); self.add(); self.lose_checkout_response=True; self.page.locator('#confirm').click()
+        expect(self.page.locator('#sale-status')).to_contain_text('Não foi possível confirmar o resultado')
+        original=self.last_command.copy(); stored=self.page.evaluate('sessionStorage.getItem(Object.keys(sessionStorage)[0])')
+        self.network(False); expect(self.page.locator('#confirm')).to_be_disabled()
+        self.network(True); expect(self.page.locator('#connection')).to_have_attribute('data-state','ready')
+        self.assertEqual(self.checkout_requests,1); self.assertEqual(self.page.evaluate('sessionStorage.getItem(Object.keys(sessionStorage)[0])'),stored)
+        expect(self.page.locator('#connection-detail')).to_contain_text('não reenvia')
+        self.confirm(); self.assertEqual(self.last_command,original)
+        self.assertEqual(self.local('/test/checkout-state'),{'sales':1,'stock':1,'journals':1})
+
+    def test_checkout_pending_can_be_checked_even_if_stock_query_fails(self):
+        self.checkout(); self.add(); self.lose_checkout_response=True; self.page.locator('#confirm').click()
+        expect(self.page.locator('#sale-status')).to_contain_text('Não foi possível confirmar o resultado')
+        self.fail_stock=True; self.page.locator('#refresh').click()
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','stale')
+        expect(self.page.locator('#confirm')).to_be_enabled(); self.confirm()
+        self.assertEqual(self.local('/test/checkout-state')['sales'],1)
+
+    def test_checkout_late_response_cannot_unlock_after_disconnect(self):
+        self.checkout(); self.add(); self.hold_stock=True; self.page.locator('#refresh').click()
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','checking')
+        self.page.wait_for_function("document.querySelector('#status').textContent.length>0")
+        # Pump the browser until the intentionally held route is reached.
+        for _ in range(100):
+            if self.held_stock: break
+            self.page.wait_for_timeout(10)
+        self.assertIsNotNone(self.held_stock)
+        self.network(False); self.network(True)
+        self.fail_stock=True; self.hold_stock=False
+        route,result=self.held_stock; route.fulfill(status=result['status'],headers=result['headers'],body=result['body'])
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','stale')
+        expect(self.page.locator('#confirm')).to_be_disabled(); self.assertEqual(self.checkout_requests,0)
+
+    def test_checkout_return_from_offline_respects_price_changed_elsewhere(self):
+        self.checkout(); self.add(); self.network(False)
+        # Explicit fixture changes the shared price while this page is offline.
+        self.local('/test/checkout-price',{})
+        self.network(True); expect(self.page.locator('#connection')).to_have_attribute('data-state','ready')
+        expect(self.page.locator('#total')).to_contain_text('45,00'); self.confirm()
+        self.assertEqual(self.last_command['expectedTotalCents'],4500)
+
+    def test_checkout_reconnect_denied_session_preserves_pending_without_send(self):
+        self.checkout(); self.add(); self.offline_checkout=True; self.page.locator('#confirm').click()
+        expect(self.page.locator('#sale-status')).to_contain_text('Não foi possível confirmar o resultado')
+        stored=self.page.evaluate('sessionStorage.getItem(Object.keys(sessionStorage)[0])')
+        self.network(False); self.deny_session=True; self.offline_checkout=False; self.network(True)
+        expect(self.page.locator('#status')).to_contain_text('Entre na conta verificada')
+        self.page.locator('#confirm').click()
+        expect(self.page.locator('#sale-status')).to_contain_text('Entre na conta verificada')
+        self.assertEqual(self.checkout_requests,1); self.assertEqual(self.page.evaluate('sessionStorage.getItem(Object.keys(sessionStorage)[0])'),stored)
+
+    def test_checkout_mobile_stale_stock_expires_and_banner_fits(self):
+        # Install before navigation so every application timer uses this clock.
+        self.page.clock.install(); self.checkout(); self.add(); self.fail_stock=True
+        self.page.clock.fast_forward(91000)
+        expect(self.page.locator('#confirm')).to_be_disabled()
+        expect(self.page.locator('#connection')).not_to_have_attribute('data-state','ready')
+        self.network(False)
+        self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth<=window.innerWidth'))
+        self.page.screenshot(path=str(qa.ARTIFACTS/'caixa-sem-conexao.png'),full_page=True)
+        self.assertEqual(self.errors,[])
+
+    def test_checkout_partial_refresh_of_cart_outside_page_stays_blocked(self):
+        self.checkout(); self.add(); self.fail_detail=True
+        self.page.locator('#query').fill('Livro sem estoque'); self.page.locator('#search-form').dispatch_event('submit')
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','stale')
+        expect(self.page.locator('#confirm')).to_be_disabled()
+        self.fail_detail=False; self.page.locator('#refresh').click()
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','ready')
+        expect(self.page.locator('.book')).to_have_count(1); self.confirm()
+
+    def test_checkout_reconnect_reads_zero_stock_from_another_authorized_operation(self):
+        self.checkout(); self.add(); self.local('/test/enable-operations',{}); self.network(False)
+        # Real authorized admin operation in the disposable installation,
+        # representing another terminal (not an unchecked stock fixture).
+        result=self.page.evaluate('''async () => {
+          const session=(await (await fetch('/api/v1/session')).json()).data;
+          const id=document.querySelector('[data-add]').dataset.add;
+          const p=(await (await fetch('/api/v1/catalog/get?id='+id)).json()).data.product;
+          const r=await fetch('/api/v1/operations/adjust',{method:'POST',headers:{'content-type':'application/json','x-csrf-token':session.csrfToken},
+            body:JSON.stringify({commandId:crypto.randomUUID(),id,expectedVersion:p.version,newStock:0,reason:'Conferência em outro terminal de teste'})});
+          return r.status;
+        }''')
+        self.assertEqual(result,200); self.network(True)
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','ready')
+        expect(self.page.locator('.cart-line')).to_contain_text('Sem estoque')
+        expect(self.page.locator('#confirm')).to_be_disabled(); self.assertEqual(self.checkout_requests,0)
+
+    def test_checkout_open_offline_recovers_access_on_reconnection(self):
+        self.activate(); self.local('/test/seed-checkout',{})
+        self.page.add_init_script("Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false})")
+        self.page.goto(qa.ORIGIN+'/caixa-dev.html')
+        expect(self.page.locator('#status')).to_contain_text('Sem conexão')
+        expect(self.page.locator('#checkout')).to_be_hidden(); self.network(True)
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','ready')
+        expect(self.page.locator('.book')).to_have_count(2); self.assertEqual(self.checkout_requests,0)
+
+    def test_checkout_restored_page_rechecks_before_accepting_new_sale(self):
+        self.checkout(); self.add(); self.fail_stock=True
+        self.page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}))")
+        expect(self.page.locator('#connection')).to_have_attribute('data-state','stale')
+        expect(self.page.locator('#confirm')).to_be_disabled(); self.assertEqual(self.checkout_requests,0)
 
     def test_checkout_anonymous_payment_methods_reset_customer_and_cart(self):
         for method in ['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO']:
