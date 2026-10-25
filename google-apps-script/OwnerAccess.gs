@@ -196,7 +196,7 @@ function accessRecoverIntents_(ss, c, now) {
 }
 function ownerAccessOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
-  recoverSecurityIntent_(c);recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);
+  recoverKeyManagement_(c);recoverSecurityIntent_(c);recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);
   var p = request.payload, action = request.action, now = Date.now(), ss = authControlStore_(c);
   var schemas = {
     'identity.access.start': ['email', 'flowId', 'tokenHash', 'codeHash', 'code'],

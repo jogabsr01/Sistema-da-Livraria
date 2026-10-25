@@ -23,7 +23,7 @@ function identityTime_(value) {
   return milliseconds;
 }
 function identitySession_(spreadsheet, tokenHash, now) {
-  recoverSecurityIntent_(baseSettings_());recoverStaff_(baseSettings_());recoverProfiles_(baseSettings_());recoverRecoveryIntents_(baseSettings_());recoverEmailChanges_(baseSettings_());recoverNiches_(baseSettings_());recoverSchedules_(baseSettings_());
+  recoverKeyManagement_(baseSettings_());recoverSecurityIntent_(baseSettings_());recoverStaff_(baseSettings_());recoverProfiles_(baseSettings_());recoverRecoveryIntents_(baseSettings_());recoverEmailChanges_(baseSettings_());recoverNiches_(baseSettings_());recoverSchedules_(baseSettings_());
   var sessions = identityRows_(spreadsheet, 'Sessoes'), ids = new Set(), hashes = new Set();
   sessions.rows.forEach(function (row) {
     if (!identityUuid_(row.ID_Sessao) || !identityUuid_(row.ID_Usuario) || typeof row.Token_Hash !== 'string' ||

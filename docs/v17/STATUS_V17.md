@@ -20,15 +20,16 @@ O v17 ainda não está concluído. Código integrado, testes locais, publicaçã
 | PR #28 | Filtros administrativos, detalhes protegidos e exportação Excel real com autorização registrada e repetição sem duplicação. [Contrato](AUDITORIA_DEV.md) e [QA](QA_AUDITORIA.md). |
 | PR #29 | Negativas anônimas, bloqueios temporários/provas, logout e revogação recuperáveis; novos logs de metadados/preço/ativação/nichos antes/depois, com compatibilidade de registros antigos. [Contrato](EVENTOS_AUDITORIA_DEV.md) e [QA](QA_EVENTOS_AUDITORIA.md). |
 | PR #30 | Vendas/estornos, estoque atual e movimentações com filtros combinados, indicadores/rankings e Excel autorizado após consulta. [Contrato](RELATORIOS_COMERCIAIS_DEV.md) e [QA](QA_RELATORIOS_COMERCIAIS.md). |
-| Perfil de compra | Histórico individual, frequência/ticket/nichos/faixa habitual, sugestões explicáveis em estoque e preparação manual condicionada a consentimento/preferência WhatsApp. [Contrato](PERFIL_COMPRA_DEV.md) e [QA](QA_PERFIL_COMPRA.md). |
+| PR #31 | Histórico individual, frequência/ticket/nichos/faixa habitual, sugestões explicáveis em estoque e preparação manual condicionada a consentimento/preferência WhatsApp. [Contrato](PERFIL_COMPRA_DEV.md) e [QA](QA_PERFIL_COMPRA.md). |
+| Gestão de passkeys | Cadastro de chave adicional com prova existente, remoção por outra chave, última chave protegida, outras sessões revogadas e intenção HMAC recuperável. [Contrato](GESTAO_PASSKEYS_DEV.md) e [QA](QA_GESTAO_PASSKEYS.md). |
 
-Referência DEV antes deste lote: `f12142dcd412012bd156c73d4d600257a60ab43f`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
+Referência DEV antes deste lote: `fcea90a31ea1ab96b699747f91a5a58597508027`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
 
 ## Pendências originais
 
 | Área | Ainda necessário |
 | --- | --- |
-| Identidade | Recuperação quando todas as passkeys forem perdidas, gestão/rotação das demais credenciais, proteção de tráfego e homologação com aparelhos reais. Perfil/telefone/avatar e recuperação de PIN com uma passkey existente estão nos PRs anteriores; alteração verificada de e-mail no PR #25. Nome/CPF de funcionários seguem administrativos. |
+| Identidade | Recuperação quando todas as passkeys forem perdidas, rotação planejada das chaves da instalação, proteção de tráfego e homologação com aparelhos reais. Gestão própria de passkeys adicionais/remoção está neste incremento. Perfil/telefone/avatar e recuperação de PIN com uma passkey existente estão nos PRs anteriores; alteração verificada de e-mail no PR #25. Nome/CPF de funcionários seguem administrativos. |
 | Gestão | Demais notificações administrativas e de sincronização. Escalas e seus avisos pessoais foram implementados no PR #27. |
 | Inteligência | Lote de perfil, sugestões e preparação manual implementado; homologação com dados reais e aceite dos critérios consultivos permanecem para a etapa Google. |
 | Operação e persistência | Revisão de reconciliação entre aparelhos, tratamento offline, documentos adicionais, retenção/compactação, backup/restauração e testes de recuperação reais. |
@@ -48,4 +49,4 @@ Concluir as pendências originais incrementalmente: dados de identidade/credenci
 
 ## Validação deste incremento
 
-Resultados deste lote registrados em [QA_PERFIL_COMPRA.md](QA_PERFIL_COMPRA.md); relatórios anteriores em [QA_RELATORIOS_COMERCIAIS.md](QA_RELATORIOS_COMERCIAIS.md); eventos anteriores em [QA_EVENTOS_AUDITORIA.md](QA_EVENTOS_AUDITORIA.md); consulta anterior em [QA_AUDITORIA.md](QA_AUDITORIA.md); escalas anteriores em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.
+Resultados deste lote registrados em [QA_GESTAO_PASSKEYS.md](QA_GESTAO_PASSKEYS.md); perfil de compra anterior em [QA_PERFIL_COMPRA.md](QA_PERFIL_COMPRA.md); relatórios anteriores em [QA_RELATORIOS_COMERCIAIS.md](QA_RELATORIOS_COMERCIAIS.md); eventos anteriores em [QA_EVENTOS_AUDITORIA.md](QA_EVENTOS_AUDITORIA.md); consulta anterior em [QA_AUDITORIA.md](QA_AUDITORIA.md); escalas anteriores em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.

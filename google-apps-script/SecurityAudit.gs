@@ -22,7 +22,7 @@ function recoverSecurityIntent_(c){
  }
  securityAppend_(main,v.log);props.setProperty('IDENTITY_SECURITY_PENDING','');
 }
-function securitySettle_(c){recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);recoverNiches_(c);recoverSchedules_(c);var props=PropertiesService.getScriptProperties();if(props.getProperty('CATALOG_JOURNAL_ID')){recoverCatalog_(c);recoverSales_(storage_(c,false).spreadsheet);}if(props.getProperty('IDENTITY_CONTROL_SPREADSHEET_ID'))accessRecoverIntents_(authControlStore_(c),c,Date.now());}
+function securitySettle_(c){recoverKeyManagement_(c);recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);recoverNiches_(c);recoverSchedules_(c);var props=PropertiesService.getScriptProperties();if(props.getProperty('CATALOG_JOURNAL_ID')){recoverCatalog_(c);recoverSales_(storage_(c,false).spreadsheet);}if(props.getProperty('IDENTITY_CONTROL_SPREADSHEET_ID'))accessRecoverIntents_(authControlStore_(c),c,Date.now());}
 function securityProofBlock_(c,row,now){securitySettle_(c);var id=securityId_(c,'PROOF_BLOCK',row.ID),log=securityLog_(id,new Date(now).toISOString(),'SYSTEM_AUTH','SYSTEM','IDENTITY_PROOF_BLOCKED',{phase:'EMAIL',code:'EMAIL_PROOF_LIMIT'});securityBegin_(c,{kind:'PROOF',plan:{flowId:row.ID},log:log});}
 function securityBlock_(privateStore,plans,c,now,retry){
  securitySettle_(c);
