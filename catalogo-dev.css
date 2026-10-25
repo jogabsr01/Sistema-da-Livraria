@@ -17,3 +17,4 @@ dialog { width:min(720px,calc(100% - 24px)); max-height:calc(100dvh - 24px); pad
 @media(max-width:500px) { .columns { grid-template-columns:1fr; gap:0; } body { padding:12px; } dialog { padding:18px; } .toolbar button { flex:1; } }
 
 #camera-video { display:block; width:100%; max-height:320px; background:#162d25; object-fit:contain; border-radius:8px; }
+.catalog-connection{padding:14px 18px;border:1px solid #b7791f;border-left:5px solid #b7791f;border-radius:10px;background:#fffbeb;color:#663c0c;overflow-wrap:anywhere}.catalog-connection[data-state="ready"]{border-color:#28734f;background:#edf7ef;color:#17472e}.catalog-connection[data-state="offline"]{border-color:#a33c32;background:#fff2ef;color:#7b2e26}

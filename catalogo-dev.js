@@ -4,8 +4,54 @@
   let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false, lookupGeneration = 0, lookupController = null, photosEnabled = false, pendingPhoto, photoPreview = '', cameraStream = null, cameraGeneration = 0;
   const pendingImages = new Set();
   let canDelete = false, stockTarget = null, pendingStock = null, stockStorageKey = '', archiveCommand = null;
+  let userId = '', ready = false, checkedAt = 0, connectionVersion = 0, reconnectQueued = false, reconciling = false, freshnessTimer, dirty = false, initialized = false, archiveUncertain = false;
+  const online = () => navigator.onLine !== false;
+  const fresh = () => ready && online() && performance.now() - checkedAt < 90000;
+  function controls() {
+    const uncertain = !!command?.pending, other = uncertain || !!archiveCommand;
+    const state = !online() ? 'offline' : fresh() ? 'ready' : reconciling ? 'checking' : 'stale';
+    const text = !online() ? 'Sem conexão. O formulário permanece nesta aba; nenhuma gravação será enviada.'
+      : other || pendingStock ? 'Há um pedido aguardando confirmação. Confira o mesmo pedido antes de iniciar outro; reconectar não o reenvia.'
+      : fresh() ? 'Catálogo conferido. Os dados serão validados novamente pelo servidor ao salvar.'
+      : 'Confira a conexão e o catálogo antes de gravar. Seus campos não serão substituídos pela atualização.';
+    document.querySelectorAll('[data-catalog-network]').forEach(el => { el.dataset.state = state; el.textContent = text; });
+    document.querySelectorAll('button').forEach(button => { button.disabled = busy; });
+    $('new').disabled = busy || !fresh() || other || !!pendingStock;
+    document.querySelectorAll('.book button').forEach(button => { button.disabled = busy || !fresh() || other || !!pendingStock; if (button.dataset.catalogDelete) button.hidden = !canDelete; });
+    for (const id of ['refresh','previous','next','resume-stock','resume-archive']) $(id).disabled = busy || !online();
+    document.querySelectorAll('[data-catalog-refresh],#search-form button').forEach(button => { button.disabled = busy || !online(); });
+    $('resume-archive').hidden = !archiveCommand;
+    $('save').disabled = busy || !online() || !uncertain && !fresh() || !!archiveCommand || !!pendingStock;
+    $('save').textContent = uncertain ? 'Verificar cadastro / tentar novamente' : 'Salvar livro';
+    $('close').disabled = busy || uncertain;
+    $('reload-book').disabled = busy || uncertain || !fresh();
+    document.querySelectorAll('#book-form input,#book-form select,#book-form textarea').forEach(input => { input.disabled = busy && !reconciling || uncertain; });
+    $('active').disabled = busy && !reconciling || uncertain || !canDelete;
+    for (const id of ['isbn-lookup','gallery-open','camera-open','camera-capture','photo-remove']) $(id).disabled = busy || uncertain || id === 'isbn-lookup' && !fresh();
+    $('stock-save').disabled = busy || !online() || !pendingStock && !fresh() || other;
+    $('stock-quantity').disabled = busy || !!pendingStock; $('stock-reason').disabled = busy || !!pendingStock;
+  }
+  function invalidate() { connectionVersion++; ready = false; clearTimeout(freshnessTimer); controls(); }
+  async function requestData(path, body) {
+    if (!online()) throw Object.assign(Error('OFFLINE'), {code:'OFFLINE'});
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(),25000);
+    try {
+      const response = await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal,
+        headers:body?{'content-type':'application/json','x-csrf-token':csrf}:{},body:body?JSON.stringify(body):undefined});
+      const value = await response.json();
+      if (!response.ok) throw Object.assign(Error('CATALOG_FAILED'),{status:response.status,code:value.error?.code});
+      return value.data;
+    } catch(error) { if (!error.status || error.status===401 || error.status===403) invalidate(); throw error; }
+    finally { clearTimeout(timeout); }
+  }
+  async function sameAccount() {
+    const data = await requestData('/api/v1/session');
+    if (data.user.id !== userId) { invalidate(); throw Object.assign(Error('ACCOUNT_CHANGED'),{status:401,code:'UNAUTHENTICATED'}); }
+    csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); $('niche-admin-link').hidden = !canDelete;
+  }
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   function explain(error) {
+    if (error.code === 'OFFLINE') return 'Sem conexão. Mantenha a aba aberta e confira a conexão antes de tentar novamente.';
     if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
     if (error.code === 'UNAUTHENTICATED') return 'Entre na conta verificada para usar o catálogo.';
     if (error.code?.includes('CONFLICT')) return 'Outro acesso alterou este livro. Carregue a versão mais recente antes de salvar de novo.';
@@ -17,14 +63,14 @@
     return 'Não foi possível confirmar o resultado. Confira a conexão e tente novamente; o mesmo pedido não será duplicado.';
   }
   async function api(operation, body, query = '') {
-    const response = await fetch('/api/v1/catalog/' + operation + query, { method:body ? 'POST':'GET', credentials:'same-origin', cache:'no-store',
-      headers:body ? { 'content-type':'application/json','x-csrf-token':csrf }: {}, body:body ? JSON.stringify(body):undefined });
-    const result = await response.json(); if (!response.ok) { const error = Error('CATALOG_FAILED'); error.code = result.error?.code; throw error; } return result.data;
+    if (body) await sameAccount();
+    try { return await requestData('/api/v1/catalog/' + operation + query,body); }
+    catch(error) { if(body && error.status===403) reconnectQueued = true; throw error; }
   }
   async function run(action, form = false) {
-    if (busy) return; busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    if (busy) return; busy = true; controls();
     try { await action(); } catch (error) { const text = explain(error); if (form) { $('form-status').textContent = text; $('reload-book').hidden = !editing || !error.code?.includes('CONFLICT'); } else message(text); }
-    finally { busy = false; document.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
+    finally { busy = false; controls(); if (reconnectQueued) { reconnectQueued = false; reconnect(); } }
   }
   function cover(url, parent, preview = false) {
     parent.replaceChildren(); const fallback = document.createElement('span'); fallback.className = 'fallback'; fallback.textContent = preview ? 'Capa não informada' : '📖';
@@ -33,9 +79,9 @@
     img.addEventListener('error', () => { fallback.textContent = preview ? 'A imagem não carregou. Confira o link da capa.' : '📖'; parent.replaceChildren(fallback); }, { once:true }); parent.append(img);
   }
   async function list() {
-    const ticket=++listSequence;
+    const ticket=++listSequence, version=connectionVersion;
     const params = new URLSearchParams({ q:$('query').value, offset:String(offset), niche:$('niche-filter').value, inactive:String($('inactive').checked) });
-    const data = await api('list', null, '?' + params);if(ticket!==listSequence)return; nextOffset = data.nextOffset; $('books').replaceChildren();
+    const data = await api('list', null, '?' + params);if(ticket!==listSequence || version!==connectionVersion || !online())return false; nextOffset = data.nextOffset; $('books').replaceChildren();
     data.products.forEach(book => {
       const article = document.createElement('article'); article.className = 'book';
       const image = document.createElement('span'); cover(book.photoUrl || book.coverUrl, image); const content = document.createElement('div');
@@ -49,17 +95,18 @@
         stock.addEventListener('click', () => run(() => openStock(book.id))); content.append(stock);
         if (canDelete) {
           const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'secondary'; remove.textContent = 'Excluir livro';
-          remove.addEventListener('click', () => run(async () => {
+          remove.dataset.catalogDelete='true'; remove.addEventListener('click', () => run(async () => {
+            if (!fresh() || command?.pending || pendingStock || archiveCommand) return;
             if (!confirm('Excluir “' + book.title + '” do catálogo ativo? O cadastro e seu histórico serão preservados.')) return;
-            if (!archiveCommand || archiveCommand.id !== book.id || archiveCommand.expectedVersion !== book.version) archiveCommand = { commandId:crypto.randomUUID(),id:book.id,expectedVersion:book.version };
-            await api('remove', archiveCommand); window.dispatchEvent(new Event('livraria:stock-changed')); archiveCommand = null; await list(); message('Livro excluído do catálogo ativo. Cadastro e histórico preservados.');
+            if (!archiveCommand || archiveCommand.id !== book.id || archiveCommand.expectedVersion !== book.version) { archiveCommand = { commandId:crypto.randomUUID(),id:book.id,expectedVersion:book.version }; archiveUncertain = false; }
+            await finishArchive();
           })); content.append(remove);
         }
       }
       article.append(image, content); $('books').append(article);
     });
     $('count').textContent = data.total ? `${data.total} livro(s) encontrado(s). Página ${Math.floor(offset / 10) + 1}.` : 'Nenhum livro encontrado.';
-    $('previous').hidden = offset === 0; $('next').hidden = nextOffset === null; message('Catálogo atualizado com os dados do servidor.');
+    $('previous').hidden = offset === 0; $('next').hidden = nextOffset === null; message('Catálogo atualizado com os dados do servidor.'); return true;
   }
   let nicheLoading=false,listSequence=0;
   async function refreshNiches(){if(nicheLoading)return;nicheLoading=true;try{const data=await api('niches'),selected=$('niche-filter').value;niches=data.niches.sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));$('niche-filter').replaceChildren(new Option('Todos os nichos',''));for(const n of niches.filter(n=>n.active))$('niche-filter').append(new Option(n.name,n.id));$('niche-filter').value=niches.some(n=>n.active&&n.id===selected)?selected:'';if($('editor').open&&!command)choices([...document.querySelectorAll('#niche-choices input:checked')].map(n=>n.value));}finally{nicheLoading=false;}}
@@ -70,6 +117,7 @@
     });
   }
   async function openBook(id) {
+    if (!fresh() || command?.pending || pendingStock || archiveCommand) return;
     cancelLookup(); cleanupPhoto();
     editing = id ? (await api('get', null, '?id=' + encodeURIComponent(id))).product : null; command = null;
     draftId = editing?.id || crypto.randomUUID();
@@ -82,9 +130,25 @@
     $('stock-info').textContent = editing ? `Estoque atual: ${editing.stock}. ${editing.stock === 0 ? 'Sem estoque: o livro continua editável. ' : ''}Para repor, use Adicionar unidades no catálogo.` : 'Estoque inicial: 0. Após salvar, use Adicionar unidades para registrar uma entrada.';
     choices(editing?.nicheIds || (niches.filter(n => n.active).length === 1 ? [niches.find(n => n.active).id] : [])); cover(editing?.photoUrl || $('cover').value, $('cover-preview'), true);
     if (!$('editor').open) $('editor').showModal();
+    dirty = false;
   }
+  async function finishArchive() {
+    if (!archiveCommand || !online()) return;
+    try { await api('remove',archiveCommand); }
+    catch(error) {
+      if (!archiveUncertain && ['INVALID_PRODUCT','WORKSPACE_CATALOG_CONFLICT','FORBIDDEN','WORKSPACE_FORBIDDEN'].includes(error.code)) archiveCommand=null;
+      else archiveUncertain=true;
+      throw error;
+    }
+    window.dispatchEvent(new Event('livraria:stock-changed')); archiveCommand = null; archiveUncertain = false;
+    try { await list(); message('Livro excluído do catálogo ativo. Cadastro e histórico preservados.'); }
+    catch { message('Exclusão confirmada. Confira a conexão para atualizar a lista.'); }
+  }
+  $('resume-archive').addEventListener('click',() => run(finishArchive));
   $('book-form').addEventListener('submit', event => { event.preventDefault(); run(async () => {
-    cancelLookup();
+    if (!online() || !command?.pending && !fresh() || pendingStock || archiveCommand) return;
+    cancelLookup(); stopCamera();
+    if (!command?.pending) {
     const price = $('price').value.trim(); if (!/^\d{1,7}(?:[,.]\d{1,2})?$/.test(price)) { $('form-status').textContent = 'Informe o preço como 12,90, sem separador de milhares.'; return; }
     const [units, fractional = ''] = price.split(/[,.]/), priceCents = Number(units) * 100 + Number(fractional.padEnd(2,'0'));
     const fields = { isbn:$('isbn').value, internalCode:$('isbn').value.trim() ? '' : editing?.internalCode || '', title:$('title').value, author:$('author').value,
@@ -92,8 +156,18 @@
       coverUrl:$('cover').value,year:Number($('year').value),pages:Number($('pages').value),synopsis:$('synopsis').value,
       nicheIds:[...document.querySelectorAll('#niche-choices input:checked')].map(input => input.value),active:$('active').checked };
     const signature = JSON.stringify({fields,photo:pendingPhoto}); if (!command || command.signature !== signature) command = { signature, id:crypto.randomUUID() };
+    command.payload = { commandId:command.id,id:draftId,expectedVersion:editing?.version || 0,record:fields,...(pendingPhoto === undefined ? {}:{photo:pendingPhoto}) };
+    command.pending = true;
+    }
     $('form-status').textContent = 'Salvando e aguardando a confirmação…';
-    await api('save', { commandId:command.id,id:draftId,expectedVersion:editing?.version || 0,record:fields,...(pendingPhoto === undefined ? {}:{photo:pendingPhoto}) });
+    const uncertain = command.uncertain === true;
+    try { await api('save', command.payload); }
+    catch(error) {
+      const rejected = ['INVALID_PRODUCT','INVALID_COVER_PHOTO','COVER_PHOTO_TOO_LARGE','WORKSPACE_CATALOG_INVALID','WORKSPACE_CATALOG_DUPLICATE','WORKSPACE_CATALOG_CONFLICT','FORBIDDEN','WORKSPACE_FORBIDDEN'].includes(error.code);
+      if (rejected && !uncertain) command = null; else command.uncertain = true;
+      throw error;
+    }
+    command = null; dirty = false; reconnectQueued = true;
     window.dispatchEvent(new Event('livraria:stock-changed'));
     $('editor').close();
     try { await list(); message('Livro salvo com confirmação do servidor.'); }
@@ -101,6 +175,7 @@
   }, true); });
   $('new').addEventListener('click', () => run(() => openBook(null))); $('close').addEventListener('click', () => $('editor').close());
   async function openStock(id) {
+    if (!online() || command?.pending || archiveCommand) return;
     if (pendingStock && pendingStock.id !== id) { message('Verifique a entrada pendente antes de iniciar outra.'); return; }
     stockTarget = (await api('get', null, '?id=' + encodeURIComponent(id))).product;
     $('stock-product').textContent = stockTarget.title + ' · Estoque atual: ' + stockTarget.stock;
@@ -114,6 +189,7 @@
   $('stock-editor').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
   $('resume-stock').addEventListener('click', () => { if (pendingStock) run(() => openStock(pendingStock.id)); });
   $('stock-form').addEventListener('submit', event => { event.preventDefault(); run(async () => {
+    if (!online() || !pendingStock && !fresh() || command?.pending || archiveCommand) return;
     if (!stockTarget) return;
     if (!pendingStock) {
       const quantity = Number($('stock-quantity').value);
@@ -125,8 +201,6 @@
     $('stock-quantity').disabled = true; $('stock-reason').disabled = true;
     $('stock-save').textContent = 'Verificar entrada / tentar novamente'; $('stock-status').textContent = 'Registrando a entrada e conferindo o saldo…';
     try {
-      const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); const current = await response.json();
-      if (!response.ok || 'catalog.stock.pending.' + current.data?.user?.id !== stockStorageKey) throw Error('ACCOUNT_CHANGED'); csrf = current.data.csrfToken;
       const result = await api('receive', pendingStock);
       window.dispatchEvent(new Event('livraria:stock-changed'));
       try { sessionStorage.removeItem(stockStorageKey); } catch { $('stock-status').textContent = 'Entrada confirmada. Não foi possível limpar a referência local. Use Verificar entrada para recuperar este mesmo resultado antes de iniciar outra.'; return; }
@@ -141,8 +215,10 @@
     }
   }); });
   $('reload-book').addEventListener('click', () => run(() => openBook(editing.id), true));
-  $('editor').addEventListener('cancel', event => { if (busy) event.preventDefault(); });
-  $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();});
+  $('editor').addEventListener('cancel', event => { if (busy || command?.pending) event.preventDefault(); });
+  $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();dirty=false;});
+  $('book-form').addEventListener('input',()=>{dirty=true;});
+  window.addEventListener('beforeunload',event=>{if(dirty || command?.pending || pendingStock || archiveCommand || busy){event.preventDefault();event.returnValue='';}});
   window.addEventListener('pagehide',()=>{cancelLookup();cleanupPhoto();});
   $('isbn').addEventListener('input',() => { cancelLookup(); $('isbn-status').textContent = 'ISBN alterado. Consulte novamente ou preencha manualmente.'; });
   $('isbn').addEventListener('keydown',event => { if (event.key === 'Enter' && !$('isbn-tools').hidden) { event.preventDefault(); $('isbn-lookup').click(); } });
@@ -172,7 +248,7 @@
     if (!blob || blob.size > 60000) throw Error('LARGE_IMAGE');
     // Only an in-memory preview; the server validates and re-encodes once more.
     const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = ''; bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-    cancelLookup(); pendingPhoto = btoa(binary); releasePreview(); photoPreview = URL.createObjectURL(blob); $('cover').value = '';
+    cancelLookup(); dirty = true; pendingPhoto = btoa(binary); releasePreview(); photoPreview = URL.createObjectURL(blob); $('cover').value = '';
     cover(photoPreview,$('cover-preview'),true); $('photo-status').textContent = 'Foto pronta. Clique em Salvar livro para enviá-la.';
   }
   $('gallery-open').addEventListener('click', () => { cancelLookup(); stopCamera(); $('photo-file').click(); });
@@ -206,11 +282,11 @@
     try { await acceptPhoto($('camera-video')); stopCamera(); }
     catch { $('photo-status').textContent = 'A câmera ainda não está pronta. Aguarde a prévia ou escolha uma imagem da galeria.'; }
   },true));
-  $('photo-remove').addEventListener('click', () => { cancelLookup(); stopCamera(); releasePreview(); pendingPhoto = null; $('cover').value = ''; cover('',$('cover-preview'),true); $('photo-status').textContent = 'Capa removida deste cadastro. Salve para confirmar.'; });
+  $('photo-remove').addEventListener('click', () => { cancelLookup(); stopCamera(); releasePreview(); dirty = true; pendingPhoto = null; $('cover').value = ''; cover('',$('cover-preview'),true); $('photo-status').textContent = 'Capa removida deste cadastro. Salve para confirmar.'; });
   function cancelLookup() {
     lookupGeneration++; lookupController?.abort(); lookupController = null;
     [...pendingImages].forEach(cancel => cancel()); $('isbn-cancel').hidden = true;
-    $('isbn-lookup').disabled = busy;
+    $('isbn-lookup').disabled = busy || !!command?.pending || !fresh();
   }
   function testCover(candidate) {
     return new Promise(resolve => {
@@ -223,7 +299,7 @@
   }
   $('isbn-cancel').addEventListener('click', () => { cancelLookup(); $('isbn-status').textContent = 'Consulta cancelada. Você pode preencher e salvar manualmente.'; });
   $('isbn-lookup').addEventListener('click', async () => {
-    if (busy) return; cancelLookup(); const generation = lookupGeneration, raw = $('isbn').value;
+    if (busy || command?.pending || !fresh()) return; cancelLookup(); const generation = lookupGeneration, raw = $('isbn').value;
     if (!raw.trim()) { $('isbn-status').textContent = 'Informe um ISBN para consultar, ou continue o cadastro sem código.'; return; }
     const controller = new AbortController(); lookupController = controller; $('isbn-lookup').disabled = true; $('isbn-cancel').hidden = false;
     const mappings = {title:'title',author:'author',publisher:'publisher',edition:'edition',year:'year',pages:'pages',synopsis:'synopsis'};
@@ -240,7 +316,7 @@
       }
       const data = result.data;
       if (data.metadata) Object.entries(mappings).forEach(([id,key]) => {
-        if (!before[id].trim() && $(id).value === before[id] && data.metadata[key]) $(id).value = String(data.metadata[key]);
+        if (!before[id].trim() && $(id).value === before[id] && data.metadata[key]) { $(id).value = String(data.metadata[key]); dirty = true; }
       });
       const trace = data.sources.map(source => source.name + ': ' + ({found:'dados encontrados',not_found:'sem registro',timeout:'tempo esgotado',unavailable:'sem conexão',invalid_response:'resposta inválida',http_error:'HTTP '+source.httpStatus}[source.status] || 'indisponível')).join(' · ');
       let found = null, preserveCover = before.cover.trim() || (pendingPhoto === undefined ? editing?.hasPhoto : pendingPhoto !== null);
@@ -250,7 +326,7 @@
         const cached = await Promise.all(local.map(testCover)); if (!current()) return; found = cached.find(Boolean);
         if (!found) { const candidates = await Promise.all(data.covers.filter(item => !local.includes(item)).map(testCover)); if (!current()) return; found = candidates.find(Boolean); }
         if ($('cover').value !== before.cover || (pendingPhoto === undefined ? editing?.hasPhoto : pendingPhoto !== null)) { preserveCover = true; found = null; }
-        else if (found) { $('cover').value = found.url; found.image.alt = 'Capa do livro'; $('cover-preview').replaceChildren(found.image); }
+        else if (found) { dirty = true; $('cover').value = found.url; found.image.alt = 'Capa do livro'; $('cover-preview').replaceChildren(found.image); }
       }
       const summary = data.metadata ? 'Sugestões recebidas. Confira os dados e a edição antes de salvar.' : 'Nenhuma ficha exata foi encontrada. Preencha os dados manualmente.';
       $('isbn-status').textContent = summary + (preserveCover ? ' A capa existente foi preservada.' : found ? ' Capa carregada: '+found.source+'.' : ' Nenhuma capa disponível carregou; use câmera, galeria ou um link, ou continue sem capa.') + (data.cached ? ' Fontes em cache recente: ' : ' Consultas: ') + trace;
@@ -260,14 +336,20 @@
       if (generation === lookupGeneration) { lookupController = null; $('isbn-cancel').hidden = true; $('isbn-lookup').disabled = busy; }
     }
   });
-  $('search-form').addEventListener('submit', event => { event.preventDefault(); offset = 0; run(list); });
-  $('refresh').addEventListener('click', () => run(list)); $('next').addEventListener('click', () => { offset = nextOffset; run(list); }); $('previous').addEventListener('click', () => { offset = Math.max(0,offset-10); run(list); });
+  $('search-form').addEventListener('submit', event => { event.preventDefault(); offset = 0; reconnect(); });
+  $('refresh').addEventListener('click', reconnect); $('next').addEventListener('click', () => { offset = nextOffset; reconnect(); }); $('previous').addEventListener('click', () => { offset = Math.max(0,offset-10); reconnect(); });
+  document.querySelectorAll('[data-catalog-refresh]').forEach(button=>button.addEventListener('click',reconnect));
   if (location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app' || location.protocol !== 'https:') { message('Este catálogo está disponível exclusivamente no endereço DEV da livraria.'); return; }
-  async function syncNiches(){if(!csrf||busy||command||document.hidden)return;try{await refreshNiches();if(!$('editor').open)await list();}catch{message('Não foi possível atualizar os nichos. Confira a conexão.');}}
-  window.addEventListener('focus',syncNiches);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncNiches();});setInterval(syncNiches,60000);
-  run(async () => {
-    const response = await fetch('/api/v1/session', { credentials:'same-origin',cache:'no-store' }); if (!response.ok) { message('Entre na conta verificada para usar o catálogo.'); return; }
-    const { data } = await response.json(); csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role);$('niche-admin-link').hidden=!canDelete; stockStorageKey = 'catalog.stock.pending.' + data.user.id;
+  window.addEventListener('offline',()=>{invalidate();cancelLookup();});
+  window.addEventListener('online',()=>{invalidate();reconnect();});
+  window.addEventListener('focus',reconnect);
+  window.addEventListener('pageshow',event=>{if(event.persisted){invalidate();reconnect();}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidate();else reconnect();});
+  setInterval(reconnect,30000);
+  async function initialize() {
+    const data = await requestData('/api/v1/session');
+    if (userId && userId !== data.user.id) throw Object.assign(Error('ACCOUNT_CHANGED'),{code:'UNAUTHENTICATED',status:401});
+    userId = data.user.id; csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role);$('niche-admin-link').hidden=!canDelete; stockStorageKey = 'catalog.stock.pending.' + data.user.id;
     const stored = sessionStorage.getItem(stockStorageKey);
     if (stored) {
       const value = JSON.parse(stored), uuid = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
@@ -276,11 +358,29 @@
       pendingStock = value; $('resume-stock').hidden = false;
     }
     const capabilities = await api('niches'); $('isbn-tools').hidden = capabilities.lookupEnabled !== true; photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;
-    niches = capabilities.niches.sort((a,b) => a.order-b.order || a.name.localeCompare(b.name));
-    niches.filter(n => n.active).forEach(niche => { const option = document.createElement('option'); option.value = niche.id; option.textContent = niche.name; $('niche-filter').append(option); });
-    await list(); $('catalog').hidden = false;
-    const params = new URL(location.href).searchParams, focusId = params.get('livro'), stockId = params.get('entrada');
-    const validId = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
-    if (validId(stockId)) await openStock(stockId); else if (validId(focusId)) await openBook(focusId);
-  });
+  }
+  async function reconnect() {
+    if (!online() || document.hidden) { controls(); if (!initialized && !online()) message('Sem conexão. Mantenha esta aba aberta; o acesso será conferido ao reconectar.'); return; }
+    if (busy) { reconnectQueued = true; return; }
+    reconciling = true;
+    await run(async()=>{
+      reconciling = true; ready = false; clearTimeout(freshnessTimer); controls();
+      const version = connectionVersion, first = !initialized;
+      try {
+        if (first) await initialize(); else await sameAccount();
+        await refreshNiches();
+        if (await list() && version === connectionVersion && online() && !document.hidden) {
+          ready = true; checkedAt = performance.now();
+          freshnessTimer = setTimeout(()=>{ready=false;controls();},90000);
+          initialized = true; $('catalog').hidden = false;
+          if (first) {
+            const params = new URL(location.href).searchParams, focusId = params.get('livro'), stockId = params.get('entrada');
+            const validId = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
+            if (validId(stockId)) await openStock(stockId); else if (validId(focusId)) await openBook(focusId);
+          }
+        }
+      } finally { reconciling = false; }
+    });
+  }
+  reconnect();
 })();
