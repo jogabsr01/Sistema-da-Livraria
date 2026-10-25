@@ -138,7 +138,7 @@ function accessCommit_(ss, c, current, p, now) {
   if (!accessHash_(p.sessionTokenHash) || !['PASSKEY', 'COMMITTING', 'COMPLETE'].includes(row.State)) accessReject_();
   var ceremony = passkeyCeremonies_(ss).rows.filter(function (item) { return item.ID === row.Ceremony_ID; });
   if (ceremony.length !== 1 || ceremony[0].Subject_ID !== row.Subject_ID || ceremony[0].Authorization_Version !== row.Authorization_Version ||
-      ceremony[0].Purpose !== (row.Purpose === 'ACTIVATE' ? 'REGISTER' : 'AUTHENTICATE') || ceremony[0].Completed_At === '' || ceremony[0].Consumed_At === '') accessReject_();
+      ceremony[0].Purpose !== (row.Purpose === 'ACTIVATE'||emergencyFlow_(c,row) ? 'REGISTER' : 'AUTHENTICATE') || ceremony[0].Completed_At === '' || ceremony[0].Consumed_At === '') accessReject_();
   var key = passkeyCredentials_(ss).rows.filter(function (item) { return item.Credential_ID === ceremony[0].Credential_ID && item.Subject_ID === row.Subject_ID && item.Authorization_Version === row.Authorization_Version && item.Revoked_At === ''; });
   if (key.length !== 1 || row.Purpose === 'ACTIVATE' && key[0].Registration_Ceremony_ID !== row.Ceremony_ID) accessReject_();
   var pins = accessPins_(ss), pin = pins.rows.filter(function (item) { return item.Subject_ID === row.Subject_ID; });
@@ -196,10 +196,13 @@ function accessRecoverIntents_(ss, c, now) {
 }
 function ownerAccessOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
-  recoverKeyManagement_(c);recoverSecurityIntent_(c);recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);
+  recoverEmergencyRecovery_(c);recoverKeyManagement_(c);recoverSecurityIntent_(c);recoverStaff_(c);recoverProfiles_(c);recoverRecoveryIntents_(c);recoverEmailChanges_(c);
   var p = request.payload, action = request.action, now = Date.now(), ss = authControlStore_(c);
   var schemas = {
     'identity.access.start': ['email', 'flowId', 'tokenHash', 'codeHash', 'code'],
+    'identity.access.rescue':['tokenHash','codeHash'],
+    'identity.access.rescueBegin':['tokenHash','ceremonyId','challenge'],
+    'identity.access.rescueKey':['tokenHash','sessionTokenHash','ceremonyId','credentialId','publicKey','counter','transports'],
     'identity.access.recover':['email','flowId','tokenHash','codeHash','code'],
     'identity.access.lookup': ['email'],
     'identity.access.login': ['flowId', 'tokenHash', 'subjectId', 'authorizationVersion'],
@@ -236,14 +239,17 @@ function ownerAccessOperation_(request, c) {
       abandoned.rows.filter(function (key) { return row.Purpose==='ACTIVATE'&&key.Subject_ID === row.Subject_ID && key.Authorization_Version === row.Authorization_Version && key.Revoked_At === ''; }).forEach(function (key) {
         key.Revoked_At = new Date(now).toISOString(); authControlSave_(abandoned, key);
       });
-      row.State = 'PIN'; row.Email_Code_Hash = '';
+      row.State = 'PIN'; row.Email_Code_Hash = '';row.Attempt_Count=0;
     }
     else if (row.Attempt_Count >= 5) row.State = 'REVOKED';
     if(!verified&&row.Attempt_Count===5)securityProofBlock_(c,row,now);else authControlSave_(current.table, row); return { verified: verified };
   }
   accessFlowOwner_(c, row);
+  if(action==='identity.access.rescue')return emergencyAuthorize_(ss,c,current,p,now);
+  if(action==='identity.access.rescueBegin')return emergencyBegin_(ss,c,current,p,now);
+  if(action==='identity.access.rescueKey')return emergencyStartCommit_(ss,c,current,p,now);
   if (action === 'identity.access.read') return { flowId: row.ID, subjectId: row.Subject_ID, authorizationVersion: row.Authorization_Version,
-    purpose: row.Purpose, state: row.State, ceremonyId: row.Ceremony_ID, proofReady: row.Ceremony_ID !== '' && passkeyCeremonies_(ss).rows.some(function (item) { return item.ID === row.Ceremony_ID && item.Completed_At !== ''; }) };
+    purpose: row.Purpose, state: row.State,replacementAllowed:emergencyFlow_(c,row), ceremonyId: row.Ceremony_ID, proofReady: row.Ceremony_ID !== '' && passkeyCeremonies_(ss).rows.some(function (item) { return item.ID === row.Ceremony_ID && item.Completed_At !== ''; }) };
   if (action === 'identity.access.pin') {
     if (row.State !== 'PIN' || !['ACTIVATE','RECOVER'].includes(row.Purpose)) accessReject_();
     accessPinRecord_(p.record); row.Pin_JSON = p.record; row.State = 'PASSKEY'; authControlSave_(current.table, row); return { stored: true };
@@ -251,7 +257,7 @@ function ownerAccessOperation_(request, c) {
   if (action === 'identity.access.bind') {
     if (row.State !== 'PASSKEY' || !identityUuid_(p.ceremonyId) || current.table.rows.some(function (flow) { return flow.Ceremony_ID === p.ceremonyId; })) accessReject_();
     var ceremony = passkeyCeremonies_(ss).rows.filter(function (item) { return item.ID === p.ceremonyId && item.Subject_ID === row.Subject_ID && item.Authorization_Version === row.Authorization_Version && item.Completed_At === '' && item.Consumed_At === ''; });
-    if (ceremony.length !== 1 || ceremony[0].Purpose !== (row.Purpose === 'ACTIVATE' ? 'REGISTER' : 'AUTHENTICATE')) accessReject_();
+    if (ceremony.length !== 1 || ceremony[0].Purpose !== (row.Purpose === 'ACTIVATE'||emergencyFlow_(c,row) ? 'REGISTER' : 'AUTHENTICATE')) accessReject_();
     row.Ceremony_ID = p.ceremonyId; authControlSave_(current.table, row); return { stored: true };
   }
   if (action === 'identity.access.commit') return accessCommit_(ss, c, current, p, now);

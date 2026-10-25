@@ -12,6 +12,7 @@ function recoverySubject_(c,row){
  return subject;
 }
 function recoveryCommit_(ss,c,current,p,now,background){
+ if(emergencyFlow_(c,current.row))return emergencyRecoveryCommit_(ss,c,current,p,now,background);
  var row=current.row,subject=recoverySubject_(c,row),target=row.Authorization_Version+1;
  if(row.Purpose!=='RECOVER'||!['PASSKEY','COMMITTING','COMPLETE'].includes(row.State)||!accessHash_(p.sessionTokenHash))accessReject_();
  var ceremonies=passkeyCeremonies_(ss).rows.filter(function(r){return r.ID===row.Ceremony_ID;}),keys=passkeyCredentials_(ss),key;
