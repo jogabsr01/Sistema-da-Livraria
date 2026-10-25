@@ -7,10 +7,27 @@
   const methods = { PIX:'PIX', DINHEIRO:'Dinheiro', DEBITO:'Débito', CREDITO:'Crédito' };
   const records = new Map(), cart = new Map();
   let csrf = '', storageKey = '', pending = null, receipt = null, busy = false, refreshing = false, offset = 0, nextOffset = null;
+  let stockReady = false, checkedAt = 0, connectionVersion = 0, refreshAgain = false, started = false, starting = false, freshnessTimer;
+  const FRESH_FOR = 90000;
+  const online = () => navigator.onLine !== false;
+  const fresh = () => stockReady && online() && performance.now() - checkedAt < FRESH_FOR;
+  function connectionStatus() {
+    const state = !online() ? 'offline' : fresh() ? 'ready' : refreshing ? 'checking' : 'stale';
+    $('connection').dataset.state = state;
+    $('connection-title').textContent = {offline:'Sem conexão',ready:'Estoque conferido',checking:'Conferindo conexão e estoque',stale:'Estoque precisa ser conferido'}[state];
+    $('connection-detail').textContent = !online()
+      ? 'A confirmação está bloqueada. Mantenha esta aba aberta; uma venda pendente deve ser conferida ao reconectar.'
+      : pending ? 'Há uma venda aguardando confirmação. Use “Verificar resultado / tentar novamente”. A reconexão não reenvia a venda automaticamente.'
+      : fresh() ? 'Você pode continuar. Preços e quantidades serão validados novamente ao confirmar.'
+      : 'Aguarde a atualização ou use “Atualizar estoque”. Novas vendas ficam bloqueadas até a conferência completa.';
+  }
+  function invalidateStock() {
+    connectionVersion++; stockReady = false; clearTimeout(freshnessTimer); renderCart();
+  }
   let customersEnabled=false,selectedCustomer=null,candidateCustomer=null,editingCustomer=null,customerPending=null,customerBusy=false;
   const customerKeys=['name','cpf','email','phone','postalCode','street','number','complement','district','city','state','contactPreference','marketingConsent'];
   const identified=()=>pending?pending.customerId!==null:customersEnabled&&$('customer-identified').checked;
-  const locked = () => !!pending || busy || !!receipt || customerBusy || !!customerPending;
+  const locked = () => !fresh() || !!pending || busy || !!receipt || customerBusy || !!customerPending;
   function clearCustomer(){selectedCustomer=null;candidateCustomer=null;editingCustomer=null;customerPending=null;$('customer-search-form').reset();$('customer-form').reset();$('customer-match').hidden=true;$('customer-new').hidden=true;$('customer-selection').hidden=true;$('customer-selection').textContent='';$('customer-match-text').textContent='';$('customer-status').textContent='';$('customer-lookup').hidden=true;$('customer-anonymous').checked=true;$('customer-identified').checked=false;}
   function customerFailure(e){if(e.status===401)return 'Confirme novamente seu acesso antes de consultar dados de clientes.';if(e.code?.includes('DUPLICATE'))return 'Este CPF já está cadastrado. Cancele e busque o cadastro existente.';if(e.code?.includes('CONFLICT'))return 'O cadastro foi atualizado em outro atendimento. Busque o CPF novamente.';if(e.code?.includes('INVALID_CUSTOMER'))return 'Confira o CPF, o endereço e a preferência de contato. A autorização de mensagens exige um canal com contato válido.';return 'Não foi possível confirmar o resultado. Mantenha a tela aberta e tente novamente.';}
   function selectCustomer(c){selectedCustomer=c;$('customer-selection').textContent=c?'Cliente desta compra: '+c.name+' · CPF '+c.cpfMasked:'';$('customer-selection').hidden=!c;$('customer-use').hidden=!!c&&candidateCustomer?.id===c.id;renderCart();}
@@ -31,9 +48,10 @@
    try{const d=await api('/api/v1/customers/find',{cpf:$('customer-search-cpf').value});candidateCustomer=d.customer;if(d.customer){$('customer-match-text').textContent=d.customer.name+' · CPF '+d.customer.cpfMasked;$('customer-match').hidden=false;$('customer-use').hidden=false;$('customer-status').textContent='Confira a pessoa antes de usar o cadastro.';}else{$('customer-status').textContent='Nenhum cadastro encontrado. Cadastre o cliente ou conclua sem identificação.';$('customer-new').hidden=false;}}catch(error){$('customer-status').textContent=customerFailure(error);}finally{customerBusy=false;renderCart();}
   });
   $('customer-search-cpf').addEventListener('input',()=>{candidateCustomer=null;$('customer-match').hidden=true;$('customer-new').hidden=true;selectCustomer(null);});$('customer-use').addEventListener('click',()=>{if(!locked()&&candidateCustomer)selectCustomer(candidateCustomer);});$('customer-new').addEventListener('click',()=>openCustomer(null));$('customer-edit').addEventListener('click',()=>openCustomer(candidateCustomer));
-  window.addEventListener('beforeunload',e=>{if(customerPending){e.preventDefault();e.returnValue='';}});
+  window.addEventListener('beforeunload',e=>{if(customerPending || pending || busy){e.preventDefault();e.returnValue='';}});
   window.addEventListener('pagehide',clearCustomer);
   async function api(path, body) {
+    if (!online()) throw Object.assign(Error('OFFLINE'), { code:'OFFLINE' });
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 25000);
     try {
       const response = await fetch(path, { credentials:'same-origin', cache:'no-store', signal:controller.signal,
@@ -41,6 +59,9 @@
       const value = await response.json();
       if (!response.ok) throw Object.assign(Error('REQUEST_FAILED'), { code:value.error?.code, status:response.status });
       return value.data;
+    } catch (error) {
+      if (!error.status || error.status === 401 || error.status === 403) invalidateStock();
+      throw error;
     } finally { clearTimeout(timeout); }
   }
   function message(error) {
@@ -50,6 +71,7 @@
     return 'Não foi possível atualizar. Confira sua conexão e tente novamente.';
   }
   function renderCart() {
+    connectionStatus();
     $('cart-items').replaceChildren(); let total = 0;
     for (const [id, quantity] of cart) {
       const product = records.get(id), row = document.createElement('div'); row.className = 'cart-line';
@@ -76,7 +98,7 @@
     $('customer-options').disabled=locked();
     $('cart-title').textContent=identified()?'Compra identificada':'Compra sem cadastro';
     $('confirm').textContent = pending ? 'Verificar resultado / tentar novamente' : identified()?'Confirmar venda identificada':'Confirmar venda sem cadastro';
-    $('confirm').disabled = busy || customerBusy || !!customerPending || !!receipt || !cart.size || !pending&&identified()&&!selectedCustomer || !pending && (!Number.isSafeInteger(total) || [...cart].some(([id, quantity]) => { const p = records.get(id); return !p || !p.active || p.stock < quantity; }));
+    $('confirm').disabled = !online() || !pending && !fresh() || busy || customerBusy || !!customerPending || !!receipt || !cart.size || !pending&&identified()&&!selectedCustomer || !pending && (!Number.isSafeInteger(total) || [...cart].some(([id, quantity]) => { const p = records.get(id); return !p || !p.active || p.stock < quantity; }));
     $('new-sale').disabled = busy || !!pending;
     document.querySelectorAll('[data-add]').forEach(button => { const p = records.get(button.dataset.add); button.disabled = locked() || !p?.active || p.stock < 1; });
     return total;
@@ -84,12 +106,23 @@
   let activeNiche='';
   async function loadCashNiches(){const d=await api('/api/v1/catalog/niches'),host=$('cash-niches');host.hidden=d.nichesEnabled!==true;if(host.hidden){activeNiche='';return;}const list=d.niches.filter(n=>n.active).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));if(activeNiche&&!list.some(n=>n.id===activeNiche)){activeNiche='';offset=0;}host.replaceChildren();for(const n of [{id:'',name:'Todos os livros',description:'Explore o catálogo completo',color:'#205b43'},...list]){const b=document.createElement('button');b.type='button';b.className='cash-niche';b.setAttribute('aria-pressed',String(activeNiche===n.id));b.style.borderColor=n.color;if(n.imageUrl){const img=document.createElement('img');img.src=n.imageUrl;img.alt='';img.loading='lazy';img.addEventListener('error',()=>img.remove(),{once:true});b.append(img);}const label=document.createElement('strong');label.textContent=n.name;const desc=document.createElement('span');desc.textContent=n.description;b.append(label,desc);b.addEventListener('click',()=>{if(refreshing)return;activeNiche=n.id;offset=0;refresh();});host.append(b);}}
   async function refresh() {
-    if (refreshing || document.hidden || !csrf) return;
-    refreshing = true;
+    if (refreshing || document.hidden || !csrf || !online()) return;
+    refreshing = true; stockReady = false; clearTimeout(freshnessTimer); renderCart();
+    const version = connectionVersion;
     try {
+      const session = await api('/api/v1/session');
+      if ('checkout.pending.' + session.user.id !== storageKey) throw Object.assign(Error('ACCOUNT_CHANGED'), {status:401});
+      csrf = session.csrfToken;
       await loadCashNiches();
       const query = new URLSearchParams({ q:$('query').value.trim(), offset:String(offset),niche:activeNiche });
       const data = await api('/api/v1/catalog/list?' + query);
+      // Do not unlock from a partial page, or from a response that crossed a
+      // disconnect/reconnect. Selected books outside this page must also pass.
+      const selected = new Map();
+      for (const id of cart.keys()) if (!data.products.some(p => p.id === id)) {
+        const detail = await api('/api/v1/catalog/get?id=' + encodeURIComponent(id)); selected.set(id, detail.product);
+      }
+      if (version !== connectionVersion || !online()) return;
       $('books').replaceChildren(); nextOffset = data.nextOffset;
       for (const product of data.products) {
         records.set(product.id, product);
@@ -109,16 +142,17 @@
         });
         detail.append(title, info, add); article.append(detail); $('books').append(article);
       }
-      // Refresh selected products outside the current page too, before the next
-      // confirmation. A pending command keeps its original expected total.
-      for (const id of cart.keys()) if (!data.products.some(p => p.id === id)) {
-        const detail = await api('/api/v1/catalog/get?id=' + encodeURIComponent(id)); records.set(id, detail.product);
-      }
+      for (const [id, product] of selected) records.set(id, product);
+      stockReady = true; checkedAt = performance.now();
+      freshnessTimer = setTimeout(() => { stockReady = false; renderCart(); }, FRESH_FOR);
       $('count').textContent = data.total + ' livro(s) · Estoque conferido às ' + new Date().toLocaleTimeString('pt-BR', { timeZone:'America/Sao_Paulo' });
       $('previous').hidden = offset === 0; $('next').hidden = nextOffset === null;
       $('status').textContent = 'Estoque compartilhado atualizado.'; renderCart();
     } catch (error) { $('status').textContent = message(error); }
-    finally { refreshing = false; }
+    finally {
+      refreshing = false; renderCart();
+      if (refreshAgain) { refreshAgain = false; refresh(); }
+    }
   }
   function showReceipt(data) {
     window.dispatchEvent(new Event('livraria:stock-changed'));
@@ -129,7 +163,7 @@
     $('receipt').scrollIntoView({ block:'nearest' });
   }
   $('payment-form').addEventListener('submit', async event => {
-    event.preventDefault(); if (busy || receipt || !cart.size) return;
+    event.preventDefault(); if (!online() || busy || receipt || !cart.size || !pending && !fresh()) { renderCart(); return; }
     if (!pending) {
       const total = renderCart();
       if ($('confirm').disabled || !Number.isSafeInteger(total)) return;
@@ -167,11 +201,20 @@
   $('refresh').addEventListener('click', refresh);
   $('previous').addEventListener('click', () => { if (!refreshing) { offset = Math.max(0, offset - 10); refresh(); } });
   $('next').addEventListener('click', () => { if (!refreshing && nextOffset !== null) { offset = nextOffset; refresh(); } });
-  window.addEventListener('focus', refresh); window.addEventListener('online', refresh);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-  setInterval(()=>{if(!document.hidden)refresh();},60000);
+  window.addEventListener('focus', refresh);
+  window.addEventListener('offline', invalidateStock);
+  window.addEventListener('online', () => {
+    invalidateStock();
+    if (!started) { start(); return; }
+    if (refreshing) refreshAgain = true; else refresh();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) invalidateStock(); else refresh(); });
+  window.addEventListener('pageshow', event => { if (event.persisted) { invalidateStock(); refresh(); } });
   async function start() {
     if (location.origin !== ORIGIN) { $('status').textContent = 'Esta tela funciona exclusivamente no endereço DEV autorizado.'; return; }
+    if (starting || started) return;
+    starting = true;
+    const version = connectionVersion;
     try {
       const session = await api('/api/v1/session'); csrf = session.csrfToken; storageKey = 'checkout.pending.' + session.user.id;
       const capabilities = await api('/api/v1/catalog/niches');
@@ -189,8 +232,9 @@
         pending = value; for (const line of pending.items) cart.set(line.productId, line.quantity);
         $('payment').value = pending.paymentMethod; $('sale-status').textContent = 'Há uma compra aguardando confirmação. Verifique o resultado antes de iniciar outra.';
       }
-      $('checkout').hidden = false; renderCart(); await refresh(); setInterval(refresh, 30000);
-    } catch (error) { $('status').textContent = error.status ? message(error) : 'Não foi possível recuperar o Caixa com segurança neste navegador. Preserve a aba e confira o acesso antes de continuar.'; }
+      started = true; $('checkout').hidden = false; renderCart(); await refresh(); setInterval(refresh, 30000);
+    } catch (error) { $('status').textContent = error.code === 'OFFLINE' ? 'Sem conexão. Mantenha a aba aberta; o acesso será conferido ao reconectar.' : error.status ? message(error) : 'Não foi possível recuperar o Caixa com segurança neste navegador. Preserve a aba e confira o acesso antes de continuar.'; }
+    finally { starting = false; if (!started && online() && version !== connectionVersion) start(); }
   }
   start();
 })();

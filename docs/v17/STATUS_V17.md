@@ -1,4 +1,4 @@
-# Situação do PROMPT MASTER v17 — 24/10/2026 (São Paulo)
+# Situação do PROMPT MASTER v17 — 25/10/2026 (São Paulo)
 
 O v17 ainda não está concluído. Código integrado, testes locais, publicação DEV e homologação Google são evidências distintas. Home de entrada dos perfis e configuração real Google foram reservadas pelo proprietário para a etapa posterior às melhorias.
 
@@ -22,9 +22,10 @@ O v17 ainda não está concluído. Código integrado, testes locais, publicaçã
 | PR #30 | Vendas/estornos, estoque atual e movimentações com filtros combinados, indicadores/rankings e Excel autorizado após consulta. [Contrato](RELATORIOS_COMERCIAIS_DEV.md) e [QA](QA_RELATORIOS_COMERCIAIS.md). |
 | PR #31 | Histórico individual, frequência/ticket/nichos/faixa habitual, sugestões explicáveis em estoque e preparação manual condicionada a consentimento/preferência WhatsApp. [Contrato](PERFIL_COMPRA_DEV.md) e [QA](QA_PERFIL_COMPRA.md). |
 | PR #32 | Cadastro de chave adicional com prova existente, remoção por outra chave, última chave protegida, outras sessões revogadas e intenção HMAC recuperável. [Contrato](GESTAO_PASSKEYS_DEV.md) e [QA](QA_GESTAO_PASSKEYS.md). |
-| Recuperação emergencial | Códigos guardados previamente + e-mail cadastrado + PIN/passkey novos, revogação de chaves/sessões antigas e intenção HMAC recuperável. [Contrato](RECUPERACAO_EMERGENCIAL_DEV.md) e [QA](QA_RECUPERACAO_EMERGENCIAL.md). |
+| PR #33 | Códigos guardados previamente + e-mail cadastrado + PIN/passkey novos, revogação de chaves/sessões antigas e intenção HMAC recuperável. [Contrato](RECUPERACAO_EMERGENCIAL_DEV.md) e [QA](QA_RECUPERACAO_EMERGENCIAL.md). |
+| Reconexão do Caixa | Bloqueio sem conferência recente, atualização completa após reconectar, descarte de respostas anteriores à queda e preservação de venda pendente para conferência explícita. [Contrato](RECONEXAO_CAIXA_DEV.md) e [QA](QA_RECONEXAO_CAIXA.md). |
 
-Referência DEV antes deste lote: `0d7aeeb8d48fd0283343e88f325321c3ba72d840`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
+Referência DEV antes deste lote: `eab0dd3f5291630f43dd2b79e0077308cf6b3219`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma flag privada ou instalação Google real foi alterada neste incremento.
 
 ## Pendências originais
 
@@ -33,7 +34,7 @@ Referência DEV antes deste lote: `0d7aeeb8d48fd0283343e88f325321c3ba72d840`. Ma
 | Identidade | Verificação administrativa de identidade quando não houver códigos preparados ou acesso ao e-mail, rotação planejada das chaves da instalação, proteção de tráfego e homologação com aparelhos reais. Perda de todas as passkeys tem fluxo neste incremento quando existem códigos previamente guardados e e-mail acessível. Gestão de passkeys adicionais/remoção está no PR #32. Perfil/telefone/avatar e recuperação de PIN com uma passkey existente estão nos PRs anteriores; alteração verificada de e-mail no PR #25. Nome/CPF de funcionários seguem administrativos. |
 | Gestão | Demais notificações administrativas e de sincronização. Escalas e seus avisos pessoais foram implementados no PR #27. |
 | Inteligência | Lote de perfil, sugestões e preparação manual implementado; homologação com dados reais e aceite dos critérios consultivos permanecem para a etapa Google. |
-| Operação e persistência | Revisão de reconciliação entre aparelhos, tratamento offline, documentos adicionais, retenção/compactação, backup/restauração e testes de recuperação reais. |
+| Operação e persistência | Bloqueio e reconexão do Caixa implementados neste lote; revisão dos outros módulos e reconciliação entre aparelhos, documentos adicionais, retenção/compactação, backup/restauração e testes de recuperação reais ainda necessários. Não há venda offline. |
 | Homologação posterior | Instalação privada do lote completo, IAM e quotas Google, MailApp/Drive reais, múltiplos aparelhos/usuários, aceite integrado e provisionamento PROD somente após homologação. |
 
 Estorno integral está em código; devoluções/estornos parciais não estão implementados. Pedidos de compra com acompanhamento são sugestão adicional, não substituem as pendências originais. Nenhuma cobrança ou devolução bancária é executada pelo sistema atual.
@@ -50,4 +51,4 @@ Concluir as pendências originais incrementalmente: dados de identidade/credenci
 
 ## Validação deste incremento
 
-Resultados deste lote registrados em [QA_RECUPERACAO_EMERGENCIAL.md](QA_RECUPERACAO_EMERGENCIAL.md); gestão anterior em [QA_GESTAO_PASSKEYS.md](QA_GESTAO_PASSKEYS.md); perfil de compra anterior em [QA_PERFIL_COMPRA.md](QA_PERFIL_COMPRA.md); relatórios anteriores em [QA_RELATORIOS_COMERCIAIS.md](QA_RELATORIOS_COMERCIAIS.md); eventos anteriores em [QA_EVENTOS_AUDITORIA.md](QA_EVENTOS_AUDITORIA.md); consulta anterior em [QA_AUDITORIA.md](QA_AUDITORIA.md); escalas anteriores em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.
+Resultados deste lote em [QA_RECONEXAO_CAIXA.md](QA_RECONEXAO_CAIXA.md); recuperação anterior em [QA_RECUPERACAO_EMERGENCIAL.md](QA_RECUPERACAO_EMERGENCIAL.md); gestão anterior em [QA_GESTAO_PASSKEYS.md](QA_GESTAO_PASSKEYS.md); perfil de compra anterior em [QA_PERFIL_COMPRA.md](QA_PERFIL_COMPRA.md); relatórios anteriores em [QA_RELATORIOS_COMERCIAIS.md](QA_RELATORIOS_COMERCIAIS.md); eventos anteriores em [QA_EVENTOS_AUDITORIA.md](QA_EVENTOS_AUDITORIA.md); consulta anterior em [QA_AUDITORIA.md](QA_AUDITORIA.md); escalas anteriores em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.

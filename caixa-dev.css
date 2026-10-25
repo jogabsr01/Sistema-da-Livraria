@@ -1,4 +1,5 @@
 .cart { margin-top:24px; padding:20px; background:white; border:1px solid #d5e1d9; border-radius:14px; }
+.connection{margin:20px 0;padding:16px 20px;border:1px solid #b7791f;border-left:5px solid #b7791f;border-radius:12px;background:#fffbeb;color:#663c0c;overflow-wrap:anywhere}.connection p{margin:6px 0 0}.connection[data-state="ready"]{border-color:#28734f;background:#edf7ef;color:#17472e}.connection[data-state="offline"]{border-color:#a33c32;background:#fff2ef;color:#7b2e26}
 .cart-line { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 0; border-bottom:1px solid #d5e1d9; }
 .cart-line p { flex:1 1 180px; margin:0; }
 .cart-line label { margin:0; width:100px; }
