@@ -11,6 +11,9 @@
     <nav><a href="/catalogo-dev.html">Catálogo</a> · <a href="/caixa-dev.html">Caixa</a> · <a href="/acesso-dev.html">Minha conta</a> <a href="/escalas-dev.html">Escalas</a></nav>
   </header>
   <p id="status" role="status" aria-live="polite" class="no-print">Conferindo acesso…</p>
+  <aside id="notification-connection" class="notification-connection no-print" role="status" aria-live="polite">Conferindo conexão e alertas…</aside>
+  <button id="reconnect" type="button" class="secondary no-print">Conferir conexão e alertas</button>
+  <section id="pending-update" hidden class="notification-connection no-print"><h2>Atualização aguardando confirmação</h2><p id="pending-description"></p><button id="retry-update" type="button">Conferir atualização pendente</button></section>
   <section id="notifications" hidden class="no-print">
     <div class="toolbar"><h2>Alertas de estoque <span id="unread"></span></h2><button id="refresh" type="button">Atualizar</button></div>
     <p>Marcar como lida é pessoal. Em atendimento indica acompanhamento; o alerta só é encerrado quando o saldo é regularizado ou o livro desativado.</p>
