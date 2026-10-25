@@ -35,7 +35,7 @@
           <button>Receber código por e-mail</button>
         </form>
       </details>
-      <section id="recovery-choice" hidden><button id="recovery-open" type="button" class="secondary">Alterar ou recuperar meu PIN</button><form id="recovery-form" hidden><h2>Recuperar seu PIN</h2><p>Confirme o e-mail cadastrado e sua passkey existente. As sessões antigas serão encerradas ao concluir. Sem a passkey, solicite recuperação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" autocomplete="username" maxlength="254" required><button>Enviar código de recuperação</button></form></section>
+      <section id="recovery-choice" hidden><button id="recovery-open" type="button" class="secondary">Alterar ou recuperar meu PIN</button><form id="recovery-form" hidden><h2>Recuperar seu PIN</h2><p>Confirme o e-mail cadastrado e sua passkey existente. As sessões antigas serão encerradas ao concluir. Sem as passkeys, use um código de recuperação que tenha guardado. Sem esse código, solicite verificação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" autocomplete="username" maxlength="254" required><button>Enviar código de recuperação</button></form></section>
     </section>
     <form id="email-form" hidden>
       <h2>Confirme seu e-mail</h2>
@@ -47,7 +47,7 @@
     <form id="pin-form" hidden>
       <h2>Crie seu PIN</h2>
       <p>Escolha um PIN novo. Não reutilize um PIN enviado por mensagem.</p>
-      <label for="new-pin">PIN de 4 números</label>
+      <fieldset id="rescue-choice" hidden><legend>Perdeu todas as passkeys?</legend><label><input id="use-rescue" type="checkbox"> Usar um código de recuperação guardado</label><div id="rescue-inputs" hidden><label for="rescue-code">Código de recuperação</label><input id="rescue-code" type="password" autocomplete="off" maxlength="80" spellcheck="false"><button id="rescue-confirm" type="button">Validar código de recuperação</button><p id="rescue-status" role="status"></p></div></fieldset><label for="new-pin">PIN de 4 números</label>
       <input id="new-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required>
       <label for="confirm-pin">Repita o PIN</label>
       <input id="confirm-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required>

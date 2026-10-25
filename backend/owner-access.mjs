@@ -1,3 +1,4 @@
+import { emergencyCodeHash } from './emergency-codes.mjs';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { loadPersonalDataSettings, createPersonalDataVault } from './personal-data.mjs';
 import { normalizeCpf, normalizeStaffContact } from './staff-model.mjs';
@@ -29,7 +30,7 @@ export function loadOwnerAccessSettings(env = process.env) {
       [sessions.config.secret, env.WORKSPACE_SESSION_TOKEN_KEY, env.WORKSPACE_AUTH_GUARD_KEY].some(key => key?.toLowerCase() === pepper.toLowerCase()) ||
       sessions.tokenKey.equals(guards.guardKey)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
   const staffEnabled=env.WORKSPACE_STAFF_ENABLED==='true';
-  return { ...sessions, ...guards, pepper: Buffer.from(pepper, 'hex'),staffEnabled,recoveryEnabled:env.WORKSPACE_RECOVERY_ENABLED==='true',...(staffEnabled?loadPersonalDataSettings(env):{}) };
+  return { ...sessions, ...guards, pepper: Buffer.from(pepper, 'hex'),staffEnabled,emergencyRecoveryEnabled:env.WORKSPACE_EMERGENCY_RECOVERY_ENABLED==='true'&&env.WORKSPACE_RECOVERY_ENABLED==='true',recoveryEnabled:env.WORKSPACE_RECOVERY_ENABLED==='true',...(staffEnabled?loadPersonalDataSettings(env):{}) };
 }
 export function accessCookie(value) {
   if (!canonical(value)) rejected();
@@ -66,13 +67,15 @@ export function createOwnerAccessService(settings, { client }) {
   return {
     csrf,
     async state(token) {
-      try { return { stage: (await read(token)).state }; }
+      try { const f=await read(token);return {stage:f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
       catch (error) { if (error?.code === 'WORKSPACE_ACCESS_REJECTED') return { stage: 'INITIAL' }; throw error; }
     },
     async execute(operation, input, token, ip) {
      try {
       // Trusted platform address only, never body/forwarded HTTP headers.
-      await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : 'flow:' + hash(token), originAddress: ip });
+      let completedRetry=false;if(operation==='complete'){try{const previous=await read(token);completedRetry=previous.state==='COMPLETE'&&previous.proofReady;}catch{}}
+      // Releasing the same durable, cookie-bound grant is not another guess.
+      if(!completedRetry)await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
       if (operation === 'start'||operation==='recover') {
         if(operation==='recover'&&!settings.recoveryEnabled)throw new ApiError(503,'RECOVERY_NOT_ACTIVATED');
         const code = randomBytes(32).toString('base64url');
@@ -96,6 +99,7 @@ export function createOwnerAccessService(settings, { client }) {
         if (!verified) rejected(); return { stage: 'PIN' };
       }
       const flow = await read(token), subject = { subjectId: flow.subjectId, authorizationVersion: flow.authorizationVersion };
+      if(operation==='rescue'){if(!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');if(flow.purpose!=='RECOVER'||flow.state!=='PIN')rejected();const result=await client.access('rescue',{tokenHash:hash(token),codeHash:emergencyCodeHash(settings,flow.subjectId,input.recoveryCode)});if(!result.authorized)rejected();return {stage:'PIN',replacementAllowed:true};}
       if (operation === 'pin') {
         if (flow.state !== 'PIN') rejected();
         const record = await pins.hash(input.pin, flow.subjectId);
@@ -103,13 +107,19 @@ export function createOwnerAccessService(settings, { client }) {
       }
       if (operation === 'options') {
         if (flow.state !== 'PASSKEY') rejected();
-        const ceremony = await passkeys[flow.purpose === 'ACTIVATE' ? 'registrationOptions' : 'authenticationOptions'](subject);
+        if(flow.replacementAllowed&&!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');
+        const provider=flow.replacementAllowed?createPasskeyService(settings,{client:{...client,beginPasskey:({ceremonyId,challenge})=>client.access('rescueBegin',{tokenHash:hash(token),ceremonyId,challenge})}}):passkeys;
+        const ceremony = await provider[flow.purpose === 'ACTIVATE'||flow.replacementAllowed ? 'registrationOptions' : 'authenticationOptions'](subject);
         await client.access('bind', { tokenHash: hash(token), ceremonyId: ceremony.ceremonyId });
-        return { stage: 'PASSKEY', kind: flow.purpose === 'ACTIVATE' ? 'create' : 'get', options: ceremony.options };
+        return { stage: 'PASSKEY', kind: flow.purpose === 'ACTIVATE'||flow.replacementAllowed ? 'create' : 'get', options: ceremony.options };
       }
       if (operation === 'complete') {
         if (!['PASSKEY', 'COMMITTING', 'COMPLETE'].includes(flow.state) || !flow.ceremonyId) rejected();
-        if (flow.state === 'PASSKEY' && !flow.proofReady) await passkeys[flow.purpose === 'ACTIVATE' ? 'verifyRegistration' : 'verifyAuthentication']({ ...subject, ceremonyId: flow.ceremonyId }, input.response);
+        if (flow.state === 'PASSKEY' && !flow.proofReady){
+          if(flow.replacementAllowed&&!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');
+          const futureRaw=digest('access.session.v1',token,'base64url',tokenKey),provider=flow.replacementAllowed?createPasskeyService(settings,{client:{...client,registerPasskey:({ceremonyId,credentialId,publicKey,counter,transports})=>client.access('rescueKey',{tokenHash:hash(token),sessionTokenHash:tokens.hash(futureRaw),ceremonyId,credentialId,publicKey,counter,transports})}}):passkeys;
+          await provider[flow.purpose === 'ACTIVATE'||flow.replacementAllowed ? 'verifyRegistration' : 'verifyAuthentication']({ ...subject, ceremonyId: flow.ceremonyId }, input.response);
+        }
         // Deterministic only for this unguessable pre-auth cookie and deployment.
         // A lost acknowledgement retries the SAME session, never a second grant.
         const rawToken = digest('access.session.v1', token, 'base64url', tokenKey), tokenHash = tokens.hash(rawToken);
@@ -119,13 +129,13 @@ export function createOwnerAccessService(settings, { client }) {
       }
       throw new ApiError(404, 'NOT_FOUND');
      } catch(error) {
-      if(error instanceof ApiError&&error.status===401&&['ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED','WORKSPACE_CHALLENGE_REJECTED'].includes(error.code)){const code=operation==='login'?'CREDENTIALS_REJECTED':operation==='email'?'EMAIL_PROOF_REJECTED':['PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED'].includes(error.code)?'PASSKEY_REJECTED':'FLOW_REJECTED';await client.recordSecurityEvent({commandId:randomUUID(),phase:operation.toUpperCase(),code});}
+      if(error instanceof ApiError&&error.status===401&&['ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED','WORKSPACE_CHALLENGE_REJECTED'].includes(error.code)){const code=operation==='login'?'CREDENTIALS_REJECTED':operation==='email'?'EMAIL_PROOF_REJECTED':['PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED'].includes(error.code)?'PASSKEY_REJECTED':'FLOW_REJECTED';await client.recordSecurityEvent({commandId:randomUUID(),phase:operation==='rescue'?'RECOVER':operation.toUpperCase(),code});}
       throw error;
      }
     },
   };
 }
-const shapes = { recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
+const shapes = { rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
     const requestId = randomUUID();
@@ -142,7 +152,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
         let fresh = false;
         try { token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }
         const data = fresh ? { stage: 'INITIAL' } : await service.state(token);
-        const result = json({ data: { ...data,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId });
+        const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId });
         if (fresh) result.headers.set('set-cookie', accessCookie(token)); return result;
       }
       requireSameOriginMutation(request, ACCESS_ORIGIN); token = readCookie(request);
@@ -159,7 +169,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       // Rotate the flow bearer for every new request/login, after CSRF validation.
       if (['start', 'login','recover'].includes(operation)) token = randomBytes(32).toString('base64url');
       const output = await service.execute(operation, input, token, context.ip), { cookie, ...data } = output;
-      const result = json({ data: { ...data,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation) ? 202 : 200);
+      const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation) ? 202 : 200);
       if (cookie) {
         result.headers.append('set-cookie', cookie);
         result.headers.append('set-cookie', `${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);

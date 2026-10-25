@@ -121,12 +121,15 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         if (['identity.access.pin', 'identity.access.bind'].includes(action)) {
           if (data?.stored !== true) untrusted(); return { stored: true };
         }
+        if(action==='identity.access.rescue'){if(typeof data?.authorized!=='boolean')untrusted();return {authorized:data.authorized};}
+        if(action==='identity.access.rescueBegin'){if(data?.ceremonyId!==payload.ceremonyId)untrusted();return {ceremonyId:data.ceremonyId};}
+        if(action==='identity.access.rescueKey'){if(data?.stored!==true)untrusted();return {stored:true};}
         if (action === 'identity.access.read') {
           if (!uuid(data?.flowId) || !uuid(data.subjectId) || !Number.isSafeInteger(data.authorizationVersion) || data.authorizationVersion < 1 ||
               !['ACTIVATE', 'LOGIN','RECOVER'].includes(data.purpose) || !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE'].includes(data.state) ||
               data.ceremonyId !== '' && !uuid(data.ceremonyId) || typeof data.proofReady !== 'boolean') untrusted();
           return { flowId: data.flowId, subjectId: data.subjectId, authorizationVersion: data.authorizationVersion,
-            purpose: data.purpose, state: data.state, ceremonyId: data.ceremonyId, proofReady: data.proofReady };
+            purpose: data.purpose, state: data.state, ceremonyId: data.ceremonyId, proofReady: data.proofReady,replacementAllowed:data.replacementAllowed===true };
         }
         if (action === 'identity.access.commit') {
           if (!uuid(data?.id) || !uuid(data.sessionId) || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data.role) || data.assurance !== 'passkey' ||
@@ -188,7 +191,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       throw new ApiError(502, signal.aborted ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE');
     }
   }
-  return { keys:(op,actor,payload)=>{if(!['list','state','start','authorize','register','cancel'].includes(op))throw new ApiError(400,'INVALID_KEY_MANAGEMENT');return invoke('keys.'+op,actor,payload);},insights:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('insights.'+op,actor,payload);},reports:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('reports.'+op,actor,payload);},audit:(op,actor,payload)=>{if(!['list','export'].includes(op))throw new ApiError(400,'INVALID_AUDIT');return invoke('audit.'+op,actor,payload);},schedules:(op,actor,payload)=>{if(!['list','get','people','save','cancel'].includes(op))throw new ApiError(400,'INVALID_SCHEDULE');return invoke('schedules.'+op,actor,payload);},niches:(op,actor,payload)=>{if(!['list','save','image'].includes(op))throw new ApiError(400,'INVALID_NICHE');return invoke('niches.'+op,actor,payload);},schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
+  return { keys:(op,actor,payload)=>{if(!['list','state','start','authorize','register','cancel','codes'].includes(op))throw new ApiError(400,'INVALID_KEY_MANAGEMENT');return invoke('keys.'+op,actor,payload);},insights:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('insights.'+op,actor,payload);},reports:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('reports.'+op,actor,payload);},audit:(op,actor,payload)=>{if(!['list','export'].includes(op))throw new ApiError(400,'INVALID_AUDIT');return invoke('audit.'+op,actor,payload);},schedules:(op,actor,payload)=>{if(!['list','get','people','save','cancel'].includes(op))throw new ApiError(400,'INVALID_SCHEDULE');return invoke('schedules.'+op,actor,payload);},niches:(op,actor,payload)=>{if(!['list','save','image'].includes(op))throw new ApiError(400,'INVALID_NICHE');return invoke('niches.'+op,actor,payload);},schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
     profile:(operation,actor,payload)=>{if(!['get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
     operations:(operation,actor,payload)=>{if(!['list','get','adjust','reverse'].includes(operation))throw new ApiError(400,'INVALID_OPERATION');return invoke('operations.'+operation,actor,payload);},
     customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
@@ -205,7 +208,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {
-      if (!['start','recover', 'lookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      if (!['rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       return invoke('identity.access.' + operation, null, payload);
     },
     listPasskeys: payload => invoke('identity.passkey.list', null, payload),

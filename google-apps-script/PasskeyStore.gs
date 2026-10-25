@@ -47,7 +47,7 @@ function passkeyCurrentCeremony_(table, payload, now, consumed) {
 }
 function passkeyOperation_(request, c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
-  recoverKeyManagement_(c);
+  recoverEmergencyRecovery_(c);recoverKeyManagement_(c);
   var p = request.payload, action = request.action, now = Date.now();
   var schemas = {
     'identity.passkey.list': ['subjectId', 'authorizationVersion'],
