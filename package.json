@@ -37,7 +37,8 @@
     "test:emergency-recovery": "python3 scripts/test-emergency-recovery.py",
     "test:catalog-reconnection": "python3 scripts/test-catalog-reconnection.py",
     "test:operations-reconnection": "python3 scripts/test-operations-reconnection.py",
-    "test:notifications-reconnection": "python3 scripts/test-notifications-reconnection.py"
+    "test:notifications-reconnection": "python3 scripts/test-notifications-reconnection.py",
+    "test:reports-reconnection": "python3 scripts/test-reports-reconnection.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",
