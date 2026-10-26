@@ -42,7 +42,9 @@
     "test:audit-reconnection": "python3 scripts/test-audit-reconnection.py",
     "test:insights-reconnection": "python3 scripts/test-insights-reconnection.py",
     "test:schedules-reconnection": "python3 scripts/test-schedules-reconnection.py",
-    "test:niches-reconnection": "python3 scripts/test-niches-reconnection.py"
+    "test:niches-reconnection": "python3 scripts/test-niches-reconnection.py",
+    "test:staff-reconnection": "python3 scripts/test-staff-reconnection.py",
+    "test:customers-reconnection": "python3 scripts/test-customers-reconnection.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",

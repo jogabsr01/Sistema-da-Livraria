@@ -40,8 +40,9 @@
     </section>
   </section>
 </main>
+<aside id="customer-pending" class="connection" hidden><p>Há um cadastro aguardando confirmação. Mantenha esta aba aberta; reconectar não o reenvia.</p><button id="customer-resume" type="button">Conferir cadastro pendente</button></aside>
 <dialog id="customer-editor" aria-labelledby="customer-editor-title"><form id="customer-form"><h2 id="customer-editor-title">Cadastrar cliente</h2><p>Identificação para esta compra. Contatos e endereço são opcionais.</p>
-<fieldset id="customer-fields"><legend class="sr-only">Dados do cliente</legend>
+<p id="customer-connection" class="connection" role="status" aria-live="polite"></p><button id="customer-refresh" type="button" class="secondary">Conferir conexão sem fechar</button><fieldset id="customer-fields"><legend class="sr-only">Dados do cliente</legend>
 <label for="customer-name">Nome completo</label><input id="customer-name" maxlength="160" autocomplete="off" required>
 <label for="customer-cpf">CPF</label><input id="customer-cpf" inputmode="numeric" maxlength="20" autocomplete="off" required><small id="customer-cpf-hint"></small>
 <div class="customer-fields"><div><label for="customer-email">E-mail (opcional)</label><input id="customer-email" type="email" maxlength="254" autocomplete="off"></div><div><label for="customer-phone">Celular / WhatsApp (opcional)</label><input id="customer-phone" type="tel" maxlength="20" autocomplete="off"></div></div>
