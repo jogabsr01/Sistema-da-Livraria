@@ -11,6 +11,7 @@
 <div class="title-row"><div><h1>Uma equipe bem cuidada.</h1><p class="lead">Pessoas, responsabilidades e acesso seguro à livraria.</p></div><button id="new-user" hidden>＋ Cadastrar funcionário</button></div>
 <p id="status" role="status" aria-live="polite">Conferindo seu acesso…</p>
 <section id="access-help" hidden class="notice"><h2>Acesso administrativo</h2><p>Entre com PIN e passkey para gerenciar a equipe. Para operações sensíveis, confirme seu acesso novamente se já passaram cinco minutos.</p><a class="button" href="/acesso-dev.html">Confirmar meu acesso</a></section>
+<p id="staff-connection" class="staff-connection" data-staff-connection role="status" aria-live="polite"></p><button type="button" class="secondary" data-staff-refresh>Conferir conexão e equipe</button><aside id="pending-staff" class="staff-connection" hidden><p>Há um cadastro aguardando confirmação. Mantenha esta aba aberta.</p><button id="resume-staff" type="button">Conferir pedido pendente</button></aside>
 <section id="team" hidden aria-labelledby="team-title">
 <div class="section-bar"><div><h2 id="team-title">Pessoas da livraria</h2><p id="count"></p></div><button id="refresh" class="secondary">Atualizar lista</button></div>
 <div class="notice compact"><strong>Cada pessoa, seu próprio acesso.</strong> O funcionário confirma o e-mail cadastrado, escolhe seu PIN e registra uma passkey. Alterações de perfil, e-mail, CPF ou status exigem uma nova ativação.</div>
@@ -22,6 +23,7 @@
 <form id="staff-form">
 <div class="dialog-head"><div><p class="eyebrow">EQUIPE</p><h2 id="editor-title">Cadastrar funcionário</h2></div><button id="close-editor" type="button" class="icon secondary" aria-label="Fechar cadastro">×</button></div>
 <p id="edit-note">O acesso só será liberado após a confirmação da identidade.</p>
+<p class="staff-connection" data-staff-connection role="status" aria-live="polite"></p><button type="button" class="secondary" data-staff-refresh>Conferir conexão sem fechar</button><button id="reload-staff" type="button" class="secondary" hidden>Descartar rascunho e abrir versão atual</button>
 <fieldset id="staff-fields"><legend class="sr-only">Dados e acesso do funcionário</legend>
 <label for="staff-name">Nome completo</label><input id="staff-name" maxlength="160" autocomplete="name" required>
 <div class="fields"><div><label for="staff-cpf">CPF</label><input id="staff-cpf" inputmode="numeric" maxlength="20" autocomplete="off" required><small id="cpf-hint">Informe os 11 números.</small></div><div><label for="staff-phone">Celular / WhatsApp <small>(opcional)</small></label><input id="staff-phone" type="tel" maxlength="20" autocomplete="tel"></div></div>
