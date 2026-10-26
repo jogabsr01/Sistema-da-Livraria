@@ -1,5 +1,5 @@
 /* DEV stock alerts and replenishment reports. Caller holds ScriptLock. */
-function notificationEnabled_() { return PropertiesService.getScriptProperties().getProperty('NOTIFICATIONS_ENABLED') === 'true'; }
+function notificationEnabled_() { return scriptProperties_().getProperty('NOTIFICATIONS_ENABLED') === 'true'; }
 function notificationTime_(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
 function notificationId_(product) {
   var c = baseSettings_(), hash = digest_(JSON.stringify(['stock-alert.v1', c.installationId, product.ID_Produto, product.Versao_Registro]));
@@ -9,10 +9,11 @@ function notificationRows_(ss) {
   var table = identityRows_(ss, 'Notificacoes'), ids = new Set(), open = new Set();
   if (table.rows.length > 5000) failure_('NOTIFICATION_CAPACITY');
   table.rows.forEach(function (row) {
-    var stock=['STOCK_ZERO','STOCK_LOW'].includes(row.Tipo),schedule=['SCHEDULE_PUBLISHED','SCHEDULE_CHANGED','SCHEDULE_CANCELLED'].includes(row.Tipo);
-    if(!saleUuid_(row.ID_Notificacao)||ids.has(row.ID_Notificacao)||!stock&&!schedule||!saleUuid_(row.ID_Referencia)||!notificationTime_(row.Criado_Em))failure_('NOTIFICATIONS_UNAVAILABLE');
+    var maintenance=row.Tipo==='MAINTENANCE_COMPLETED',stock=['STOCK_ZERO','STOCK_LOW'].includes(row.Tipo),schedule=['SCHEDULE_PUBLISHED','SCHEDULE_CHANGED','SCHEDULE_CANCELLED'].includes(row.Tipo);
+    if(!saleUuid_(row.ID_Notificacao)||ids.has(row.ID_Notificacao)||!stock&&!schedule&&!maintenance||!saleUuid_(row.ID_Referencia)||!notificationTime_(row.Criado_Em))failure_('NOTIFICATIONS_UNAVAILABLE');
     if(stock&&(!['ALTA','MEDIA'].includes(row.Prioridade)||row.Entidade_Referencia!=='Produtos'||!['ABERTA','EM_ATENDIMENTO','RESOLVIDA'].includes(row.Status)||row.Status==='RESOLVIDA'&&(!notificationTime_(row.Resolvido_Em)||row.Resolvido_Por!=='SYSTEM_STOCK')||row.Status!=='RESOLVIDA'&&(row.Resolvido_Em!==''||row.Resolvido_Por!=='')))failure_('NOTIFICATIONS_UNAVAILABLE');
     if(schedule&&(row.Prioridade!=='MEDIA'||row.Entidade_Referencia!=='Escalas'||row.Status!=='ABERTA'||row.Resolvido_Em!==''||row.Resolvido_Por!==''))failure_('NOTIFICATIONS_UNAVAILABLE');
+    if(maintenance&&(row.Prioridade!=='MEDIA'||row.Entidade_Referencia!=='Configuracoes'||row.Status!=='ABERTA'||row.Resolvido_Em!==''||row.Resolvido_Por!==''))failure_('NOTIFICATIONS_UNAVAILABLE');
     catalogText_(row.Titulo,300,true);catalogText_(row.Mensagem,300,true);ids.add(row.ID_Notificacao);
     if(stock&&row.Status!=='RESOLVIDA'){if(open.has(row.ID_Referencia))failure_('NOTIFICATIONS_UNAVAILABLE');open.add(row.ID_Referencia);}
   }); return table;
@@ -128,8 +129,8 @@ function notificationOperation_(request, c) {
   var table = notificationRows_(ss), reads = notificationReads_(ss), p = request.payload, operation = request.action.slice('notifications.'.length);
   var bindings=scheduleNotificationBindings_(ss);
   table.rows.forEach(function(n){if(n.Entidade_Referencia==='Escalas'){var binding=bindings.get(n.ID_Notificacao);if(!binding||binding.scheduleId!==n.ID_Referencia||binding.type!==n.Tipo)failure_('NOTIFICATIONS_UNAVAILABLE');}});
-  table={sheet:table.sheet,columns:table.columns,rows:table.rows.filter(function(n){return n.Entidade_Referencia==='Produtos'||bindings.get(n.ID_Notificacao).userId===principal.id;})};
-  var isRead=function(n){return reads.rows.some(function(r){return r.ID_Notificacao===n.ID_Notificacao&&r.ID_Usuario===principal.id;});},pending=function(n){return n.Entidade_Referencia==='Escalas'?!isRead(n):n.Status!=='RESOLVIDA';};
+  table={sheet:table.sheet,columns:table.columns,rows:table.rows.filter(function(n){return n.Entidade_Referencia==='Produtos'||n.Entidade_Referencia==='Configuracoes'&&['ADMIN','SUPER_ADMIN'].includes(principal.role)||n.Entidade_Referencia==='Escalas'&&bindings.get(n.ID_Notificacao).userId===principal.id;})};
+  var isRead=function(n){return reads.rows.some(function(r){return r.ID_Notificacao===n.ID_Notificacao&&r.ID_Usuario===principal.id;});},pending=function(n){return n.Entidade_Referencia!=='Produtos'?!isRead(n):n.Status!=='RESOLVIDA';};
   if (operation === 'report') return stockReport_(request, ss, principal, {rows:table.rows.filter(function(n){return n.Entidade_Referencia==='Produtos';})});
   if (operation === 'read') {
     authControlExact_(p, ['id']); if (!saleUuid_(p.id) || !table.rows.some(function (row) { return row.ID_Notificacao === p.id; })) failure_('NOTIFICATION_NOT_FOUND');
@@ -160,6 +161,6 @@ function notificationOperation_(request, c) {
   var products = catalogProducts_(ss).rows, filtered = table.rows.filter(function (row) { return p.history || pending(row); });
   filtered.sort(function (a, b) { return Number(a.Status === 'RESOLVIDA') - Number(b.Status === 'RESOLVIDA') || Number(b.Prioridade === 'ALTA') - Number(a.Prioridade === 'ALTA') || a.Criado_Em.localeCompare(b.Criado_Em) || a.ID_Notificacao.localeCompare(b.ID_Notificacao); });
   var page = filtered.slice(p.offset, p.offset + 25);
-  return { items: page.map(function (row) { if(row.Entidade_Referencia==='Escalas'){var b=bindings.get(row.ID_Notificacao);return {recipientId:b.userId,id:row.ID_Notificacao,scheduleId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row),date:b.date,start:b.start,end:b.end};}return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], isRead(row)); }),
+  return { items: page.map(function (row) { if(row.Entidade_Referencia==='Configuracoes')return {id:row.ID_Notificacao,referenceId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row)};if(row.Entidade_Referencia==='Escalas'){var b=bindings.get(row.ID_Notificacao);return {recipientId:b.userId,id:row.ID_Notificacao,scheduleId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row),date:b.date,start:b.start,end:b.end};}return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], isRead(row)); }),
     total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
 }

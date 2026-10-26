@@ -44,10 +44,10 @@ function authControlInstalled_(ss) {
 function authControlStore_(c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
   storage_(c, false); // Validate public-data bindings as well as the private store.
-  var id = PropertiesService.getScriptProperties().getProperty('IDENTITY_CONTROL_SPREADSHEET_ID');
+  var id = scriptProperties_().getProperty('IDENTITY_CONTROL_SPREADSHEET_ID');
   if (!id) failure_('IDENTITY_UNAVAILABLE');
-  assertMarker_(DriveApp.getFileById(id), c, 'identity-controls');
-  var ss = SpreadsheetApp.openById(id);
+  assertMarker_(resourceFile_(id), c, 'identity-controls');
+  var ss = resourceSheet_(id);
   if (authControlInstalled_(ss) !== 3) failure_('IDENTITY_UNAVAILABLE');
   AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { authControlRows_(ss, table.name); });
   return ss;
@@ -56,15 +56,15 @@ function provisionDevelopmentAuthControls() {
   var c = baseSettings_(); requireOwnerDev_(c);
   return withLock_(function () {
     var store = storage_(c, true); assertSchema_(store.spreadsheet);
-    var props = PropertiesService.getScriptProperties(), id = props.getProperty('IDENTITY_CONTROL_SPREADSHEET_ID');
+    var props = scriptProperties_(), id = props.getProperty('IDENTITY_CONTROL_SPREADSHEET_ID');
     if (!id) {
       var created = SpreadsheetApp.create('Livraria DEV private controls ' + c.installationId);
-      var file = DriveApp.getFileById(created.getId()); file.setDescription(marker_(c, 'identity-controls'));
-      file.moveTo(DriveApp.getFolderById(c.driveRootId)); id = created.getId();
+      var file = resourceFile_(created.getId()); file.setDescription(marker_(c, 'identity-controls'));
+      file.moveTo(resourceFolder_(c.driveRootId)); id = created.getId();
       props.setProperty('IDENTITY_CONTROL_SPREADSHEET_ID', id);
     }
-    var resource = DriveApp.getFileById(id); assertMarker_(resource, c, 'identity-controls');
-    var ss = SpreadsheetApp.openById(id);
+    var resource = resourceFile_(id); assertMarker_(resource, c, 'identity-controls');
+    var ss = resourceSheet_(id);
     AUTH_CONTROL_SCHEMA.tables.forEach(function (table) {
       var sheet = ss.getSheetByName(table.name);
       if (sheet && sheet.getLastRow() && !same_(rowValues_(sheet), table.columns)) failure_('SCHEMA_CONFLICT');

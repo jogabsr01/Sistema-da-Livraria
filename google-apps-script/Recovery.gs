@@ -1,9 +1,9 @@
 /* PIN recovery: email possession AND an existing WebAuthn credential.
  * Durable COMMITTING intent precedes epoch/PIN/key/session projections. */
-function recoveryEnabled_(){return PropertiesService.getScriptProperties().getProperty('RECOVERY_ENABLED')==='true';}
+function recoveryEnabled_(){return scriptProperties_().getProperty('RECOVERY_ENABLED')==='true';}
 function recoverySubject_(c,row){
  var subject;
- if(row.Subject_ID===PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID'))subject=accessOwner_(c);
+ if(row.Subject_ID===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID'))subject=accessOwner_(c);
  else if(['COMMITTING','COMPLETE'].includes(row.State)){
   var main=storage_(c,false).spreadsheet,users=identityRows_(main,'Usuarios'),found=users.rows.filter(function(r){return r.ID_Usuario===row.Subject_ID;}),epoch=staffConfig_(main,'identity.version.'+row.Subject_ID).row;
   if(found.length===1&&found[0].Status==='ATIVO'&&['ADMIN','ATENDENTE'].includes(found[0].Perfil)&&epoch)subject={row:found[0],users:users,version:epoch.Valor};
@@ -48,7 +48,7 @@ function recoveryCommit_(ss,c,current,p,now,background){
  return background?null:identitySession_(main,p.sessionTokenHash,now).principal;
 }
 function recoverRecoveryIntents_(c){
- if(!PropertiesService.getScriptProperties().getProperty('IDENTITY_CONTROL_SPREADSHEET_ID'))return;
+ if(!scriptProperties_().getProperty('IDENTITY_CONTROL_SPREADSHEET_ID'))return;
  var ss=authControlStore_(c),pending=accessFlows_(ss).rows.filter(function(r){return r.Purpose==='RECOVER'&&r.State==='COMMITTING';}),subjects=new Set();
  pending.forEach(function(r){if(subjects.has(r.Subject_ID))failure_('IDENTITY_UNAVAILABLE');subjects.add(r.Subject_ID);recoveryCommit_(ss,c,{table:accessFlows_(ss),row:r},{sessionTokenHash:r.Session_Token_Hash},Date.now(),true);});
 }

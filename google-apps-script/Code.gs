@@ -13,7 +13,7 @@ function constantEqual_(a, b) {
 }
 function jsonOutput_(value) { return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON); }
 function baseSettings_() {
-  var p = PropertiesService.getScriptProperties().getProperties();
+  var p = scriptProperties_().getProperties();
   if (!['dev', 'prod'].includes(p.APP_ENV) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(p.INSTALLATION_ID || '') || !/^[a-f0-9]{64}$/i.test(p.SIGNING_SECRET || '') || !p.OWNER_EMAIL) failure_('CONFIGURATION_UNAVAILABLE');
   return { environment: p.APP_ENV, installationId: p.INSTALLATION_ID, secret: p.SIGNING_SECRET,
     owner: p.OWNER_EMAIL.toLowerCase(), spreadsheetId: p.SPREADSHEET_ID,
@@ -33,14 +33,14 @@ function assertMarker_(resource, c, kind) {
 }
 function storage_(c, withBackup) {
   if (!c.spreadsheetId || !c.driveRootId) failure_('BINDING_MISMATCH');
-  assertMarker_(DriveApp.getFileById(c.spreadsheetId), c, 'spreadsheet');
-  assertMarker_(DriveApp.getFolderById(c.driveRootId), c, 'root');
+  assertMarker_(resourceFile_(c.spreadsheetId), c, 'spreadsheet');
+  assertMarker_(resourceFolder_(c.driveRootId), c, 'root');
   var backup = null;
   if (withBackup) {
     if (!c.backupsId) failure_('BINDING_MISMATCH');
-    backup = DriveApp.getFolderById(c.backupsId); assertMarker_(backup, c, 'backups');
+    backup = resourceFolder_(c.backupsId); assertMarker_(backup, c, 'backups');
   }
-  return { spreadsheet: SpreadsheetApp.openById(c.spreadsheetId), backup: backup };
+  return { spreadsheet: resourceSheet_(c.spreadsheetId), backup: backup };
 }
 function withLock_(fn) {
   var lock = LockService.getScriptLock();
@@ -78,7 +78,7 @@ function migrate_(c) {
   if (installed > LIVRARIA_SCHEMA.version) failure_('SCHEMA_NEWER');
   if (installed === LIVRARIA_SCHEMA.version) { assertSchema_(ss); return { changed: false, schemaVersion: installed }; }
   // Validate every header BEFORE copying or mutating. Back up BEFORE the first write.
-  var backup = DriveApp.getFileById(c.spreadsheetId).makeCopy('Livraria DEV before schema v' + LIVRARIA_SCHEMA.version + ' ' + new Date().toISOString(), store.backup);
+  var backup = resourceFile_(c.spreadsheetId).makeCopy('Livraria DEV before schema v' + LIVRARIA_SCHEMA.version + ' ' + new Date().toISOString(), store.backup);
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
     var sheet = ss.getSheetByName(table.name) || ss.insertSheet(table.name);
     if (!sheet.getLastRow()) sheet.getRange(1, 1, 1, table.columns.length).setValues([table.columns]);
@@ -108,26 +108,26 @@ function inspectDevelopmentSchema() {
 function provisionDevelopment() {
   var c = baseSettings_(); requireOwnerDev_(c);
   return withLock_(function () {
-    var props = PropertiesService.getScriptProperties();
+    var props = scriptProperties_();
     var root;
-    if (c.driveRootId) { root = DriveApp.getFolderById(c.driveRootId); assertMarker_(root, c, 'root'); }
+    if (c.driveRootId) { root = resourceFolder_(c.driveRootId); assertMarker_(root, c, 'root'); }
     else {
       root = DriveApp.createFolder('Livraria DEV ' + c.installationId);
       root.setDescription(marker_(c, 'root')); c.driveRootId = root.getId(); props.setProperty('DRIVE_ROOT_ID', c.driveRootId);
     }
     assertMarker_(root, c, 'root');
     if (!c.spreadsheetId) {
-      var sheet = SpreadsheetApp.create('Livraria DEV ' + c.installationId), file = DriveApp.getFileById(sheet.getId());
+      var sheet = SpreadsheetApp.create('Livraria DEV ' + c.installationId), file = resourceFile_(sheet.getId());
       file.setDescription(marker_(c, 'spreadsheet')); file.moveTo(root);
       c.spreadsheetId = sheet.getId(); props.setProperty('SPREADSHEET_ID', c.spreadsheetId);
     }
     // Never relabel existing resources: mismatched markers refuse further writes.
-    assertMarker_(DriveApp.getFileById(c.spreadsheetId), c, 'spreadsheet');
+    assertMarker_(resourceFile_(c.spreadsheetId), c, 'spreadsheet');
     ['covers', 'profiles', 'documents', 'exports', 'backups'].forEach(function (kind) {
       var property = kind.toUpperCase() + '_FOLDER_ID';
       var existing = props.getProperty(property);
       if (kind === 'backups') property = 'BACKUPS_FOLDER_ID';
-      if (existing) assertMarker_(DriveApp.getFolderById(existing), c, kind);
+      if (existing) assertMarker_(resourceFolder_(existing), c, kind);
       else {
         var folder = root.createFolder(kind); folder.setDescription(marker_(c, kind));
         assertMarker_(folder, c, kind);
@@ -165,6 +165,7 @@ function registerNonce_(request, spreadsheet) {
 }
 function processRequest_(request, c) {
   return withLock_(function () {
+    if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('BUSY');
     var ss = storage_(c, false).spreadsheet; assertSchema_(ss);
     registerNonce_(request, ss);
     // Service readiness is not a user login: no roles, PII or table names.
@@ -173,66 +174,66 @@ function processRequest_(request, c) {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
     if (typeof request.action === 'string' && (request.action.indexOf('staff.') === 0 || request.action.indexOf('identity.staffAccess.') === 0)) {
-      var staffProps = PropertiesService.getScriptProperties();
+      var staffProps = scriptProperties_();
       if (c.environment !== 'dev' || !staffEnabled_() || ['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(key){return staffProps.getProperty(key)!=='true';})) failure_('STAFF_UNAVAILABLE');
       return request.action.indexOf('staff.') === 0 ? staffOperation_(request,c) : staffAccessOperation_(request,c);
     }
     if (typeof request.action === 'string' && request.action.indexOf('customers.') === 0) {
-      var customerProps=PropertiesService.getScriptProperties();
+      var customerProps=scriptProperties_();
       if(c.environment!=='dev'||['CUSTOMERS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return customerProps.getProperty(key)!=='true';})) failure_('CUSTOMERS_UNAVAILABLE');
       return customerOperation_(request,c);
     }
-    if(typeof request.action==='string'&&request.action.indexOf('insights.')===0){if(c.environment!=='dev'||['CUSTOMER_INSIGHTS_ENABLED','CUSTOMERS_ENABLED','REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return customerInsightsOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('reports.')===0){if(c.environment!=='dev'||['REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return reportsOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('audit.')===0){if(c.environment!=='dev'||['AUDIT_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('AUDIT_UNAVAILABLE');return auditOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('schedules.')===0){if(c.environment!=='dev'||['SCHEDULES_ENABLED','CATALOG_ENABLED','NOTIFICATIONS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('SCHEDULE_UNAVAILABLE');return schedulesOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('niches.')===0){if(c.environment!=='dev'||['NICHES_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('NICHES_UNAVAILABLE');return nichesOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('insights.')===0){if(c.environment!=='dev'||['CUSTOMER_INSIGHTS_ENABLED','CUSTOMERS_ENABLED','REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return customerInsightsOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('reports.')===0){if(c.environment!=='dev'||['REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return reportsOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('audit.')===0){if(c.environment!=='dev'||['AUDIT_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('AUDIT_UNAVAILABLE');return auditOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('schedules.')===0){if(c.environment!=='dev'||['SCHEDULES_ENABLED','CATALOG_ENABLED','NOTIFICATIONS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('SCHEDULE_UNAVAILABLE');return schedulesOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('niches.')===0){if(c.environment!=='dev'||['NICHES_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('NICHES_UNAVAILABLE');return nichesOperation_(request,c);}
     if(typeof request.action==='string'&&request.action.indexOf('profile.')===0){
-      if(c.environment!=='dev'||PropertiesService.getScriptProperties().getProperty('PROFILE_ENABLED')!=='true'||PropertiesService.getScriptProperties().getProperty('IDENTITY_SESSIONS_ENABLED')!=='true')failure_('PROFILE_UNAVAILABLE');
+      if(c.environment!=='dev'||scriptProperties_().getProperty('PROFILE_ENABLED')!=='true'||scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED')!=='true')failure_('PROFILE_UNAVAILABLE');
       return profileOperation_(request,c);
     }
     if(typeof request.action==='string'&&request.action.indexOf('operations.')===0){
-      var operationProps=PropertiesService.getScriptProperties();
+      var operationProps=scriptProperties_();
       if(c.environment!=='dev'||['OPERATIONS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return operationProps.getProperty(key)!=='true';}))failure_('OPERATIONS_UNAVAILABLE');
       return operationsOperation_(request,c);
     }
     if (['sales.checkout','sales.receipt'].includes(request.action)) {
-      var checkoutProps = PropertiesService.getScriptProperties();
+      var checkoutProps = scriptProperties_();
       if (c.environment !== 'dev' || ['CHECKOUT_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return checkoutProps.getProperty(key) !== 'true'; })) failure_('CHECKOUT_UNAVAILABLE');
       return checkoutOperation_(request, c);
     }
     if (typeof request.action === 'string' && request.action.indexOf('notifications.') === 0) {
-      var notificationProps = PropertiesService.getScriptProperties();
+      var notificationProps = scriptProperties_();
       if (c.environment !== 'dev' || ['NOTIFICATIONS_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return notificationProps.getProperty(key) !== 'true'; })) failure_('NOTIFICATIONS_UNAVAILABLE');
       return notificationOperation_(request, c);
     }
     if (['catalog.list', 'catalog.get', 'catalog.niches', 'catalog.save', 'catalog.cover', 'catalog.receive', 'catalog.remove'].includes(request.action)) {
-      var catalogProps = PropertiesService.getScriptProperties();
+      var catalogProps = scriptProperties_();
       if (c.environment !== 'dev' || catalogProps.getProperty('CATALOG_ENABLED') !== 'true' || catalogProps.getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('CATALOG_UNAVAILABLE');
       return catalogOperation_(request, c);
     }
-    if(typeof request.action==='string'&&request.action.indexOf('keys.')===0){if(c.environment!=='dev'||['KEY_MANAGEMENT_ENABLED','IDENTITY_PASSKEYS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('KEY_MANAGEMENT_UNAVAILABLE');return keyManagementOperation_(request,c);}
-    if(request.action==='identity.security.record'){if(c.environment!=='dev'||['IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return PropertiesService.getScriptProperties().getProperty(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');return securityRecord_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('keys.')===0){if(c.environment!=='dev'||['KEY_MANAGEMENT_ENABLED','IDENTITY_PASSKEYS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('KEY_MANAGEMENT_UNAVAILABLE');return keyManagementOperation_(request,c);}
+    if(request.action==='identity.security.record'){if(c.environment!=='dev'||['IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');return securityRecord_(request,c);}
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
-      var props = PropertiesService.getScriptProperties();
+      var props = scriptProperties_();
       if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
       return ownerAccessOperation_(request, c);
     }
     if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
-      if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return passkeyOperation_(request, c);
     }
     if (['identity.guard.attempt', 'identity.challenge.create', 'identity.challenge.consume'].includes(request.action)) {
-      if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return authControlOperation_(request, c);
     }
     if (['identity.session.read', 'identity.session.revoke', 'identity.session.revokeOthers'].includes(request.action)) {
-      if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return identitySessionOperation_(request, c);
     }
     var actor = request.actor;
     if (request.action !== 'system.schema') failure_('FORBIDDEN');
-    if (c.environment !== 'dev' || PropertiesService.getScriptProperties().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+    if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
     if (!actor || !/^[a-f0-9]{64}$/.test(actor.sessionTokenHash || '')) failure_('UNAUTHENTICATED');
     // Re-resolve INSIDE this operation's lock. A prior Node lookup cannot
     // authorize metadata after a concurrent logout, disable or epoch change.

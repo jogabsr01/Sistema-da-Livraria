@@ -47,7 +47,7 @@ function receiveStock_(request, c, principal, ss) {
 function inventoryChains_(ss, products, byId, transitions) {
   var floors = {}, latestMetadata = {}, chains = {};
   Object.keys(transitions).forEach(function (id) { floors[id] = Math.min.apply(null, transitions[id].map(function (point) { return point.version; })); });
-  if (Object.keys(floors).length && PropertiesService.getScriptProperties().getProperty('CATALOG_JOURNAL_ID')) {
+  if (Object.keys(floors).length && scriptProperties_().getProperty('CATALOG_JOURNAL_ID')) {
     var c = baseSettings_(), journal = catalogJournal_(c);
     journal.rows.forEach(function (row) {
       if (!Object.prototype.hasOwnProperty.call(floors, row.Product_ID) || row.Expected_Version < floors[row.Product_ID]) return;
