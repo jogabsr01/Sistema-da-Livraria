@@ -4,10 +4,10 @@ var CATALOG_COLUMNS = ['Command_ID', 'Actor_ID', 'Actor_Role', 'Product_ID', 'Ex
 function catalogFail_(code) { failure_(code || 'CATALOG_INVALID'); }
 function catalogJournalHash_(row) { return digest_(JSON.stringify(CATALOG_COLUMNS.filter(function (key) { return key !== 'Record_Hash'; }).map(function (key) { return row[key]; }))); }
 function catalogJournal_(c) {
-  var id = PropertiesService.getScriptProperties().getProperty('CATALOG_JOURNAL_ID');
+  var id = scriptProperties_().getProperty('CATALOG_JOURNAL_ID');
   if (!id) catalogFail_('CATALOG_UNAVAILABLE');
-  assertMarker_(DriveApp.getFileById(id), c, 'catalog-journal');
-  var sheet = SpreadsheetApp.openById(id).getSheetByName('_Product_Commands');
+  assertMarker_(resourceFile_(id), c, 'catalog-journal');
+  var sheet = resourceSheet_(id).getSheetByName('_Product_Commands');
   if (!sheet || !same_(rowValues_(sheet), CATALOG_COLUMNS) || sheet.getLastRow() > 1001) catalogFail_('CATALOG_UNAVAILABLE');
   var values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, CATALOG_COLUMNS.length).getValues();
   var ids = new Set();
@@ -25,16 +25,16 @@ function provisionDevelopmentCatalog() {
   var c = baseSettings_(); requireOwnerDev_(c);
   return withLock_(function () {
     var store = storage_(c, true); assertSchema_(store.spreadsheet);
-    var props = PropertiesService.getScriptProperties(), owner = props.getProperty('IDENTITY_OWNER_USER_ID');
+    var props = scriptProperties_(), owner = props.getProperty('IDENTITY_OWNER_USER_ID');
     if (!identityUuid_(owner)) failure_('IDENTITY_UNAVAILABLE');
     var id = props.getProperty('CATALOG_JOURNAL_ID');
     if (!id) {
-      var created = SpreadsheetApp.create('Livraria DEV catalog journal ' + c.installationId), file = DriveApp.getFileById(created.getId());
-      file.setDescription(marker_(c, 'catalog-journal')); file.moveTo(DriveApp.getFolderById(c.driveRootId));
+      var created = SpreadsheetApp.create('Livraria DEV catalog journal ' + c.installationId), file = resourceFile_(created.getId());
+      file.setDescription(marker_(c, 'catalog-journal')); file.moveTo(resourceFolder_(c.driveRootId));
       id = created.getId(); props.setProperty('CATALOG_JOURNAL_ID', id);
     }
-    var resource = DriveApp.getFileById(id); assertMarker_(resource, c, 'catalog-journal');
-    var journal = SpreadsheetApp.openById(id), sheet = journal.getSheetByName('_Product_Commands');
+    var resource = resourceFile_(id); assertMarker_(resource, c, 'catalog-journal');
+    var journal = resourceSheet_(id), sheet = journal.getSheetByName('_Product_Commands');
     if (sheet && sheet.getLastRow() && !same_(rowValues_(sheet), CATALOG_COLUMNS)) failure_('SCHEMA_CONFLICT');
     if (!sheet || !sheet.getLastRow()) {
       resource.makeCopy('DEV catalog before v1 ' + new Date().toISOString(), store.backup);

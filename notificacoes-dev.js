@@ -71,15 +71,15 @@
         const card = document.createElement('article'); card.className = 'book alert'; card.dataset.id = item.id;
         const title = document.createElement('h3'), info = document.createElement('p'), since = document.createElement('p'), tools = document.createElement('div'); tools.className = 'toolbar';
         title.textContent = item.title; info.textContent = (item.type === 'STOCK_ZERO' ? 'Sem estoque' : 'Abaixo do mínimo') + ' · Saldo atual: ' + item.stock + ' · Mínimo: ' + item.minimumStock + ' · ' + labels[item.state] + (item.read ? ' · Lida' : ' · Não lida');
-        const schedule=item.type.startsWith('SCHEDULE_');if(schedule)info.textContent=item.message+' · '+(item.read?'Lida':'Não lida');
+        const maintenance=item.type==='MAINTENANCE_COMPLETED',schedule=item.type.startsWith('SCHEDULE_');if(schedule||maintenance)info.textContent=item.message+' · '+(item.read?'Lida':'Não lida');
         since.textContent = 'Alerta desde ' + date(item.createdAt) + (item.resolvedAt ? ' · Resolvido em ' + date(item.resolvedAt) : '');
-        const link = document.createElement('a'); link.href = schedule?'/escalas-dev.html?data='+item.date+'&escala='+item.scheduleId:'/catalogo-dev.html?livro=' + item.productId; link.textContent = schedule?'Abrir minha escala':'Abrir livro'; tools.append(link);
-        if (!schedule&&item.state !== 'RESOLVIDA') { const receive = document.createElement('a'); receive.href = '/catalogo-dev.html?entrada=' + item.productId; receive.textContent = 'Adicionar unidades'; tools.append(receive); }
+        const link = document.createElement('a'); link.href = maintenance?'/auditoria-dev.html':schedule?'/escalas-dev.html?data='+item.date+'&escala='+item.scheduleId:'/catalogo-dev.html?livro=' + item.productId; link.textContent = maintenance?'Conferir auditoria':schedule?'Abrir minha escala':'Abrir livro'; tools.append(link);
+        if (!schedule&&!maintenance&&item.state !== 'RESOLVIDA') { const receive = document.createElement('a'); receive.href = '/catalogo-dev.html?entrada=' + item.productId; receive.textContent = 'Adicionar unidades'; tools.append(receive); }
         if (!item.read) {
           const read = document.createElement('button'); read.type = 'button'; read.className = 'secondary'; read.textContent = 'Marcar como lida'; read.disabled = busy;
           read.addEventListener('click', () => mutate('read',{id:item.id},item.title)); tools.append(read);
         }
-        if (!schedule&&admin && item.state !== 'RESOLVIDA') {
+        if (!schedule&&!maintenance&&admin && item.state !== 'RESOLVIDA') {
           const state = document.createElement('button'); state.type = 'button'; state.dataset.administrative='true';state.textContent = item.state === 'ABERTA' ? 'Marcar em atendimento' : 'Voltar para aberta'; state.disabled = busy;
           const command = {commandId:crypto.randomUUID(),id:item.id,state:item.state === 'ABERTA' ? 'EM_ATENDIMENTO' : 'ABERTA'};
           state.addEventListener('click', () => mutate('state',command,item.title)); tools.append(state);

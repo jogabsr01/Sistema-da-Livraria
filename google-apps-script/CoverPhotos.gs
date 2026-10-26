@@ -1,12 +1,12 @@
 /* Private Drive covers. Called only under the catalog's signed/session lock.
  * Browsers never choose Drive IDs or get public sharing URLs. */
-function coverPhotosEnabled_() { if (PropertiesService.getScriptProperties().getProperty('COVER_PHOTOS_ENABLED') !== 'true') failure_('COVER_PHOTOS_UNAVAILABLE'); }
+function coverPhotosEnabled_() { if (scriptProperties_().getProperty('COVER_PHOTOS_ENABLED') !== 'true') failure_('COVER_PHOTOS_UNAVAILABLE'); }
 function coverFolder_(c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
   storage_(c,false);
-  var id = PropertiesService.getScriptProperties().getProperty('COVERS_FOLDER_ID');
+  var id = scriptProperties_().getProperty('COVERS_FOLDER_ID');
   if (!id) failure_('COVER_PHOTOS_UNAVAILABLE');
-  var folder = DriveApp.getFolderById(id); assertMarker_(folder,c,'covers'); return folder;
+  var folder = resourceFolder_(id); assertMarker_(folder,c,'covers'); return folder;
 }
 function coverBytesHash_(bytes) { return hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,bytes)); }
 function coverDescriptor_(photo) {
@@ -19,7 +19,7 @@ function coverDescriptor_(photo) {
 }
 function coverFile_(c, id, productId, expectedHash, allowUnmarked, folder) {
   folder = folder || coverFolder_(c);
-  var file = DriveApp.getFileById(id), parents = file.getParents(), belongs = false;
+  var file = resourceFile_(id), parents = file.getParents(), belongs = false;
   while (parents.hasNext()) if (parents.next().getId() === folder.getId()) belongs = true;
   if (!belongs || file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getMimeType() !== 'image/jpeg' || file.getSize() > 49152 || file.getSize() < 4) failure_('BINDING_MISMATCH');
   var bytes = file.getBlob().getBytes(), hash = coverBytesHash_(bytes), marker;

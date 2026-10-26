@@ -1,5 +1,7 @@
 # Backup, migração, importação e recuperação
 
+As rotinas operacionais do v17 estão em [Manutenção e recuperação DEV](MANUTENCAO_RECUPERACAO_DEV.md), com [QA](QA_MANUTENCAO_RECUPERACAO.md). Incluem propriedades privadas e arquivos, restauração isolada, inspeção, reconciliação, compactação técnica e gatilho opcional. As seções Fase A abaixo registram a fundação e não significam que o incremento de manutenção já foi instalado em Google real.
+
 ## Implementado na Fase A
 
 `provisionDevelopment` e `migrateDevelopmentSchema` usam o lock do projeto. Antes de alterar qualquer cabeçalho, validam todos os cabeçalhos existentes. Divergências, recursos de outra instalação/ambiente, schema mais novo e fingerprint inconsistente recusam a operação. Não renomeiam uma aba existente para fingir compatibilidade.
@@ -46,4 +48,4 @@ Periodicidade, retenção e metas RPO/RTO devem ser aprovadas conforme o volume 
 
 ## Propriedades privadas e confirmação de e-mail
 
-O incremento de [e-mail verificado](EMAIL_VERIFICADO_DEV.md) depende de propriedades privadas (`IDENTITY_OWNER_LOGIN_EMAIL`, `IDENTITY_EMAIL_CHANGE_<id>` e `IDENTITY_EMAIL_PENDING`), além das planilhas comum/de controle. Restaurar apenas a planilha não restaura um ponto consistente de identidade. O procedimento de backup/restauração real ainda precisa abranger essas propriedades com proteção equivalente às credenciais, preservar intenção/ponteiro coerentes e testar retomada em instalação descartável antes de qualquer ativação. Não exportar propriedades no chat, repositório, kit público ou CSV administrativo. Não remover uma intenção pendente para liberar acesso.
+O incremento de [e-mail verificado](EMAIL_VERIFICADO_DEV.md) depende de propriedades privadas (`IDENTITY_OWNER_LOGIN_EMAIL`, `IDENTITY_EMAIL_CHANGE_<id>` e `IDENTITY_EMAIL_PENDING`), além das planilhas comum/de controle. Restaurar apenas a planilha não restaura um ponto consistente de identidade. O incremento de manutenção agora abrange essas propriedades no arquivo privado autenticado e testa sua retomada na cópia isolada. A homologação real ainda precisa conferir a proteção equivalente às credenciais, intenção/ponteiro coerentes e retomada em instalação descartável antes de ativação. Não exportar propriedades no chat, repositório, kit público ou CSV administrativo. Não remover uma intenção pendente para liberar acesso.

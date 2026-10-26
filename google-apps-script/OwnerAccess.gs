@@ -20,7 +20,7 @@ function prepareDevelopmentOwnerAccess() {
   return withLock_(function () {
     authControlStore_(c);
     var ss = storage_(c, true).spreadsheet; assertSchema_(ss);
-    var props = PropertiesService.getScriptProperties(), users = identityRows_(ss, 'Usuarios');
+    var props = scriptProperties_(), users = identityRows_(ss, 'Usuarios');
     var configs = identityRows_(ss, 'Configuracoes');
     var id = props.getProperty('IDENTITY_OWNER_USER_ID');
     var binding = digest_(accessEmail_(c.owner));
@@ -46,7 +46,7 @@ function prepareDevelopmentOwnerAccess() {
   });
 }
 function accessOwner_(c, email) {
-  var props = PropertiesService.getScriptProperties(), id = props.getProperty('IDENTITY_OWNER_USER_ID');
+  var props = scriptProperties_(), id = props.getProperty('IDENTITY_OWNER_USER_ID');
   if (!identityUuid_(id) || props.getProperty('IDENTITY_OWNER_EMAIL_BINDING') !== digest_(accessEmail_(c.owner))) failure_('IDENTITY_UNAVAILABLE');
   if (email !== undefined && !constantEqual_(digest_(accessEmail_(email)), digest_(ownerLoginEmail_(c)))) return null;
   var ss = storage_(c, false).spreadsheet, users = identityRows_(ss, 'Usuarios');
@@ -92,7 +92,7 @@ function accessCurrent_(ss, hash, now) {
 }
 function accessFlowOwner_(c, row) {
   if(row.Purpose==='RECOVER')return recoverySubject_(c,row);
-  var owner = row.Subject_ID === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
+  var owner = row.Subject_ID === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
   if (!owner || owner.row.ID_Usuario !== row.Subject_ID || owner.version !== row.Authorization_Version) accessReject_();
   if (row.Purpose === 'LOGIN' && owner.row.Primeiro_Acesso_Concluido !== true ||
       row.Purpose === 'ACTIVATE' && !['COMMITTING', 'COMPLETE'].includes(row.State) && owner.row.Primeiro_Acesso_Concluido !== false) accessReject_();
@@ -113,7 +113,7 @@ function accessStart_(ss, c, p, now, recovery) {
   var owner = accessOwner_(c, p.email), table = accessFlows_(ss);
   if(owner&&owner.row.Primeiro_Acesso_Concluido!==!!recovery)owner=null;
   // Throttle delivery as well as requests. Invalid accounts have the same response.
-  var prior = owner && table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === purpose; });
+  var prior = owner && table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === purpose && (purpose!=='ACTIVATE'||row.Authorization_Version===owner.version); });
   if (prior && prior.some(function (row) { return now - authControlTime_(row.Created_At) < 60000; })) owner = null;
   if (owner) table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === purpose && !['COMPLETE', 'COMMITTING', 'REVOKED'].includes(row.State); }).forEach(function (row) {
     row.State = 'REVOKED'; authControlSave_(table, row);
@@ -183,7 +183,7 @@ function accessRecoverIntents_(ss, c, now) {
   // Recovery replays only a durable, previously verified intent, never a PIN or
   // email supplied by this request. It never returns a cookie or raw token.
   accessFlows_(ss).rows.filter(function (row) { return row.State === 'COMMITTING'; }).forEach(function (row) {
-    var owner = row.Subject_ID === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
+    var owner = row.Subject_ID === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
     if (!owner || row.Subject_ID !== owner.row.ID_Usuario || row.Authorization_Version !== owner.version) return;
     try { accessCommit_(ss, c, { table: accessFlows_(ss), row: row }, { sessionTokenHash: row.Session_Token_Hash }, now); }
     catch (error) {
@@ -222,7 +222,7 @@ function ownerAccessOperation_(request, c) {
     return { account: { subjectId: owner.row.ID_Usuario, authorizationVersion: owner.version, record: accessPinRecord_(pin[0].Record_JSON) } };
   }
   if (action === 'identity.access.login') {
-    var owner = p.subjectId === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,p.subjectId);
+    var owner = p.subjectId === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,p.subjectId);
     if (!owner || !owner.row.Primeiro_Acesso_Concluido || owner.row.ID_Usuario !== p.subjectId || owner.version !== p.authorizationVersion) accessReject_();
     accessNewFlow_(accessFlows_(ss), p, owner, 'LOGIN', now); return { accepted: true };
   }

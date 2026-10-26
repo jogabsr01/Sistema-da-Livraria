@@ -1,6 +1,6 @@
 /* DEV staff management. Dispatcher owns ScriptLock. Contact data is AEAD-sealed
  * in Node; no plaintext personal fields, PINs or bearer tokens in this journal. */
-function staffEnabled_() { return PropertiesService.getScriptProperties().getProperty('STAFF_ENABLED') === 'true'; }
+function staffEnabled_() { return scriptProperties_().getProperty('STAFF_ENABLED') === 'true'; }
 function staffFail_(code) { failure_(code || 'INVALID_STAFF'); }
 function staffSealed_(value) { return typeof value === 'string' && value.length <= 16000 && /^pd1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$/.test(value); }
 function staffConfig_(ss, key) {
@@ -32,7 +32,7 @@ function staffDto_(ss, r) {
     revision:staffRevision_(ss,r.ID_Usuario), createdAt:r.Criado_Em, lastAccess:r.Ultimo_Acesso };
 }
 function staffSubject_(c, id) {
-  if (!staffEnabled_() || !identityUuid_(id) || id === PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID')) return null;
+  if (!staffEnabled_() || !identityUuid_(id) || id === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID')) return null;
   var ss=storage_(c,false).spreadsheet, users=staffUsers_(ss), found=users.rows.filter(function(r){return r.ID_Usuario===id;}), epoch=staffConfig_(ss,'identity.version.'+id).row;
   if(found.length!==1||!epoch||!Number.isSafeInteger(epoch.Valor)||epoch.Valor<1||found[0].Status!=='ATIVO'||!['ATENDENTE','ADMIN'].includes(found[0].Perfil))return null;
   return {row:found[0],users:users,version:epoch.Valor};

@@ -45,7 +45,7 @@ export function createNotificationHandler(dependencies = {}) {
             operation === 'state' && (!exact(['commandId','id','state']) || !catalogUuid(payload.commandId) || !catalogUuid(payload.id) || !['ABERTA','EM_ATENDIMENTO'].includes(payload.state)) ||
             operation === 'report' && (!exact(['scope','supplier','format']) || !['zero','low'].includes(payload.scope) || payload.supplier !== null && (typeof payload.supplier !== 'string' || payload.supplier.length > 160) || !['view','csv','print','copy'].includes(payload.format))) throw new ApiError(400, 'INVALID_NOTIFICATION');
       }
-      const data=await client.notifications(operation,{sessionTokenHash:principal.sessionTokenHash},payload);if(operation==='list')data.items=data.items.map(item=>{if(item.type.startsWith('SCHEDULE_')){if(item.recipientId!==principal.id)throw new ApiError(502,'UPSTREAM_UNTRUSTED');const {recipientId,...safe}=item;return safe;}return item;});return json({data,requestId});
+      const data=await client.notifications(operation,{sessionTokenHash:principal.sessionTokenHash},payload);if(operation==='list')data.items=data.items.map(item=>{if(item.type==='MAINTENANCE_COMPLETED'&&!['ADMIN','SUPER_ADMIN'].includes(principal.role))throw new ApiError(502,'UPSTREAM_UNTRUSTED');if(item.type.startsWith('SCHEDULE_')){if(item.recipientId!==principal.id)throw new ApiError(502,'UPSTREAM_UNTRUSTED');const {recipientId,...safe}=item;return safe;}return item;});return json({data,requestId});
     } catch (error) { return safeFailure(error, requestId); }
   };
 }

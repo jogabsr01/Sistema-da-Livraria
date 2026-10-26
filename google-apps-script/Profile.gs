@@ -2,9 +2,9 @@
  * Dispatcher owns ScriptLock; recovery of committed changes ignores UI flags. */
 function profileFail_(code){failure_(code||'INVALID_PROFILE');}
 function profileUser_(ss,id){var table=staffUsers_(ss),rows=table.rows.filter(function(r){return r.ID_Usuario===id;});if(rows.length!==1)profileFail_('PROFILE_UNAVAILABLE');return {table:table,row:rows[0]};}
-function profilePhotoFolder_(c){var id=PropertiesService.getScriptProperties().getProperty('PROFILES_FOLDER_ID');if(!id)profileFail_('PROFILE_UNAVAILABLE');var folder=DriveApp.getFolderById(id);assertMarker_(folder,c,'profiles');return folder;}
+function profilePhotoFolder_(c){var id=scriptProperties_().getProperty('PROFILES_FOLDER_ID');if(!id)profileFail_('PROFILE_UNAVAILABLE');var folder=resourceFolder_(id);assertMarker_(folder,c,'profiles');return folder;}
 function profilePhotoFile_(c,id,userId,expected,unmarked){
- var folder=profilePhotoFolder_(c),file=DriveApp.getFileById(id),parents=file.getParents(),belongs=false;
+ var folder=profilePhotoFolder_(c),file=resourceFile_(id),parents=file.getParents(),belongs=false;
  while(parents.hasNext())if(parents.next().getId()===folder.getId())belongs=true;
  if(!belongs||file.getSharingAccess()!==DriveApp.Access.PRIVATE||file.getMimeType()!=='image/jpeg'||file.getSize()>49152)failure_('BINDING_MISMATCH');
  var bytes=file.getBlob().getBytes(),hash=coverBytesHash_(bytes),m;try{m=JSON.parse(file.getDescription());}catch(_){m=null;}
@@ -36,7 +36,7 @@ function profileProject_(ss,v){
 }
 function recoverProfiles_(c){var ss=storage_(c,false).spreadsheet,pending=profileCommands_(ss).filter(function(v){return v.state==='PENDING';});if(pending.length>1)profileFail_('PROFILE_UNAVAILABLE');pending.forEach(function(v){profileProject_(ss,v);});}
 function profileOperation_(request,c){
- recoverProfiles_(c);if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var ss=storage_(c,false).spreadsheet,principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,found=profileUser_(ss,principal.id),user=found.row,owner=user.ID_Usuario===PropertiesService.getScriptProperties().getProperty('IDENTITY_OWNER_USER_ID'),p=request.payload;
+ recoverProfiles_(c);if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var ss=storage_(c,false).spreadsheet,principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,found=profileUser_(ss,principal.id),user=found.row,owner=user.ID_Usuario===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID'),p=request.payload;
  if(request.action.indexOf('profile.email')===0)return emailChangeOperation_(request,c,principal);
  if(request.action==='profile.get'){
   authControlExact_(p,[]);var extra=owner?staffConfig_(ss,'profile.owner.'+user.ID_Usuario).row:null;

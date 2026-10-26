@@ -16,6 +16,9 @@ export function validateNotificationResponse(operation, data, payload, requestId
         data.nextOffset !== null && (data.nextOffset !== payload.offset + data.items.length || data.nextOffset >= data.total)) invalid();
     const ids = new Set();
     const items = data.items.map(n => {
+      if(n?.type==='MAINTENANCE_COMPLETED'){
+        if(!catalogUuid(n.id)||ids.has(n.id)||!catalogUuid(n.referenceId)||n.priority!=='MEDIA'||!text(n.title,300)||!n.title||!text(n.message,300)||!n.message||n.state!=='ABERTA'||!date(n.createdAt)||n.resolvedAt!==null||typeof n.read!=='boolean'||!payload.history&&n.read)invalid();ids.add(n.id);return Object.fromEntries(['id','referenceId','type','priority','title','message','state','createdAt','resolvedAt','read'].map(k=>[k,n[k]]));
+      }
       if(n&&['SCHEDULE_PUBLISHED','SCHEDULE_CHANGED','SCHEDULE_CANCELLED'].includes(n.type)){
         if(!catalogUuid(n.recipientId)||!catalogUuid(n.id)||ids.has(n.id)||!catalogUuid(n.scheduleId)||n.priority!=='MEDIA'||!text(n.title,300)||!n.title||!text(n.message,300)||n.state!=='ABERTA'||!date(n.createdAt)||n.resolvedAt!==null||typeof n.read!=='boolean'||!/^20\d\d-\d{2}-\d{2}$/.test(n.date)||!Number.isFinite(Date.parse(n.date+'T12:00Z'))||new Date(n.date+'T12:00Z').toISOString().slice(0,10)!==n.date||!/^([01]\d|2[0-3]):[0-5]\d$/.test(n.start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(n.end)||n.end<=n.start||!payload.history&&n.read)invalid();ids.add(n.id);return Object.fromEntries(['recipientId','id','scheduleId','type','priority','title','message','state','createdAt','resolvedAt','read','date','start','end'].map(k=>[k,n[k]]));
       }
