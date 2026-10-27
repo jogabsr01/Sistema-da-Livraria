@@ -12,6 +12,7 @@ FILES = [
     'google-apps-script/Sales.gs', 'google-apps-script/Stock.gs', 'google-apps-script/Notifications.gs', 'google-apps-script/Staff.gs', 'google-apps-script/Customers.gs', 'google-apps-script/Operations.gs', 'google-apps-script/SessionStore.gs',
     'google-apps-script/AuthControl.gs', 'google-apps-script/PasskeyStore.gs', 'google-apps-script/PasskeyManagement.gs',
     'google-apps-script/OwnerAccess.gs', 'google-apps-script/Recovery.gs', 'google-apps-script/EmergencyRecovery.gs', 'google-apps-script/Profile.gs', 'google-apps-script/EmailChange.gs', 'google-apps-script/Niches.gs', 'google-apps-script/Schedules.gs', 'google-apps-script/Audit.gs', 'google-apps-script/SecurityAudit.gs', 'google-apps-script/Reports.gs', 'google-apps-script/CustomerInsights.gs', 'google-apps-script/Catalog.gs', 'google-apps-script/CoverPhotos.gs', 'google-apps-script/appsscript.json',
+    'instalacao-google-dev/CodigoUnico.gs.txt', 'instalacao-google-dev/LEIA-ME.md',
     'docs/v17/INSTALACAO_GOOGLE.md', 'docs/v17/HOMOLOGACAO_GOOGLE_DEV.md', 'docs/v17/QA_INSTALACAO_GOOGLE_DEV.md', 'docs/v17/TESTE_CONEXAO_DEV.md', 'docs/v17/BACKUP_RECUPERACAO.md', 'docs/v17/MANUTENCAO_RECUPERACAO_DEV.md', '.env.example',
     'docs/v17/PERFIL_RECUPERACAO_DEV.md', 'docs/v17/EMAIL_VERIFICADO_DEV.md', 'docs/v17/NICHOS_DEV.md', 'docs/v17/ESCALAS_DEV.md', 'docs/v17/AUDITORIA_DEV.md', 'docs/v17/EVENTOS_AUDITORIA_DEV.md', 'docs/v17/RELATORIOS_COMERCIAIS_DEV.md', 'docs/v17/PERFIL_COMPRA_DEV.md', 'docs/v17/GESTAO_PASSKEYS_DEV.md', 'docs/v17/RECUPERACAO_EMERGENCIAL_DEV.md', 'docs/v17/OPERACOES_ADMIN_DEV.md', 'docs/v17/CEP_BRASILAPI_DEV.md', 'docs/v17/CLIENTES_CAIXA_DEV.md', 'docs/v17/EQUIPE_DEV.md', 'docs/v17/ESTOQUE_REPOSICAO_DEV.md', 'docs/v17/NOTIFICACOES_REPOSICAO_DEV.md',
     'docs/v17/PRIMEIRO_ACESSO_OWNER.md', 'docs/v17/CATALOGO_COMPARTILHADO_DEV.md', 'docs/v17/ISBN_COMPARTILHADO_DEV.md', 'docs/v17/FOTOS_CAPAS_DEV.md',
@@ -26,7 +27,8 @@ credenciais, configurações privadas ou prova de conexão Google real.
 1. Confira MANIFESTO.json e os hashes antes de copiar os arquivos.
 2. Na conta proprietária DEV, abra o projeto Apps Script correto. Se já existir,
    preserve propriedades, IDs, dados e URL /exec. Não reprovisione por cima.
-3. Atualize o lote COMPLETO de google-apps-script, não somente Code.gs.
+3. Use a modalidade única em instalacao-google-dev/LEIA-ME.md OU atualize
+   o lote COMPLETO modular. Não misture as duas modalidades no editor.
 4. Siga docs/v17/INSTALACAO_GOOGLE.md e HOMOLOGACAO_GOOGLE_DEV.md por etapas.
 5. Cadastre chaves somente em interfaces privadas; nunca no código ou no chat.
 6. Faça o diagnóstico assinado antes da ativação gradual e dos testes reais.

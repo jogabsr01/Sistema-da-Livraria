@@ -14,6 +14,8 @@ Conferir IAM no Drive, inclusive heranças: pastas/planilhas privadas e editores
 
 ## 2. Atualizar o lote completo
 
+Para reduzir a operação manual a uma colagem, existe também a [modalidade de arquivo único](../../instalacao-google-dev/LEIA-ME.md). Use a modalidade única ou o lote modular descrito abaixo. Na modalidade única, os módulos separados devem ser removidos do editor para evitar funções/variáveis duplicadas; recursos, propriedades e implantação são preservados.
+
 Gerar o ZIP fora do repositório com `python3 scripts/package-google-dev.py /caminho/privado/kit-dev.zip`. O destino deve ser novo. O empacotador verifica a lista completa de arquivos GAS e inclui `Maintenance.gs`, o manifest e os guias. Conferir hashes e tamanhos em `MANIFESTO.json` antes de copiar. O manifesto comprova o conteúdo do pacote; não comprova uma implantação real.
 
 Copiar **todos** os arquivos de `google-apps-script`, mantendo seus nomes, mais `appsscript.json`. Não atualizar somente `Code.gs` nem misturar versões. Não colar segredos no código. O schema é o do mesmo commit; não editar cabeçalhos para contornar falhas.
