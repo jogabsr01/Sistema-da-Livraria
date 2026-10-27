@@ -48,7 +48,8 @@
     "test:account-reconnection": "python3 scripts/test-account-reconnection.py",
     "test:maintenance": "python3 scripts/test-maintenance.py",
     "google:preflight": "node scripts/check-google-dev-setup.mjs",
-    "test:google-kit": "python3 scripts/test-google-dev-kit.py"
+    "test:google-kit": "python3 scripts/test-google-dev-kit.py",
+    "google:single": "node scripts/generate-google-single.mjs"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",

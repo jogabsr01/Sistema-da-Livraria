@@ -2,7 +2,7 @@
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-export function createGasEmulator(initialProperties = {}) {
+export function createGasEmulator(initialProperties = {}, {sourceMode = process.env.LIVRARIA_TEST_GAS_SOURCE || 'modules'} = {}) {
   let counter = 0, backupCount = 0, writes = 0, owner = 'owner@example.invalid';
   let failOnSheet = null, locked = false;
   const iterator=list=>{let i=0;return {hasNext:()=>i<list.length,next:()=>list[i++]};};
@@ -81,7 +81,10 @@ export function createGasEmulator(initialProperties = {}) {
     MailApp: { getRemainingDailyQuota: () => mailQuota, sendEmail: value => { if (mailFailure) throw Error('FAKE_MAIL_FAILURE'); outbox.push(value); mailQuota--; } },
   });
   context.Utilities.getUuid = randomUUID;
+  if(sourceMode==='single') vm.runInContext(readFileSync(new URL('../../instalacao-google-dev/CodigoUnico.gs.txt',import.meta.url),'utf8'),context);
+  else if(sourceMode==='modules') {
   for (const name of ['Schema.gs', 'Maintenance.gs', 'Code.gs', 'Sales.gs', 'Stock.gs', 'Notifications.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs','PasskeyManagement.gs', 'OwnerAccess.gs', 'Recovery.gs','EmergencyRecovery.gs', 'Profile.gs', 'EmailChange.gs','Niches.gs','Schedules.gs','Audit.gs','SecurityAudit.gs','Reports.gs','CustomerInsights.gs', 'Staff.gs', 'Customers.gs', 'Operations.gs', 'Catalog.gs', 'CoverPhotos.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
+  } else throw Error('INVALID_TEST_GAS_SOURCE_MODE');
   return { context, props, resources, sheets, outbox,
     call(name, ...args) { return context[name](...args); },
     post(envelope) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(envelope) } }).text); },
