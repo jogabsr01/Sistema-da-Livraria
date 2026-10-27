@@ -54,7 +54,7 @@ No Netlify, usar apenas o contexto da branch `dev`. Segredos operacionais precis
 | `WORKSPACE_HMAC_SECRET` | Mesma chave de `SIGNING_SECRET` |
 | `WORKSPACE_BACKEND_ENABLED` | `false` durante teste do canal |
 
-Netlify fornece `CONTEXT`, `BRANCH`, `DEPLOY_PRIME_URL`; não sobrescrever com valores do cliente. O hostname DEV aceito pelo backend é `dev--merry-chimera-49a1f3.netlify.app`. O runtime precisa alcançar `script.google.com` e os redirecionamentos permitidos para `script.googleusercontent.com`.
+Netlify fornece `CONTEXT`, `BRANCH`, `DEPLOY_PRIME_URL` no build. Esses metadados são empacotados privadamente para as Functions, vinculados ao `SITE_ID` da publicação, pois não são garantidos no runtime. Não criar substitutos manuais nem usar valores de headers do cliente. O hostname DEV aceito pelo backend é `dev--merry-chimera-49a1f3.netlify.app`. O runtime precisa alcançar `script.google.com` e os redirecionamentos permitidos para `script.googleusercontent.com`.
 
 No checkout completo do repositório (o ZIP é destinado ao editor GAS), executar `npm run google:preflight -- --phase service` no ambiente privado onde os valores estão configurados. Esse diagnóstico é **offline**, não carrega `.env` automaticamente, não altera flags e não mostra valores. Resultado válido não prova IAM ou conexão. Em seguida seguir [TESTE_CONEXAO_DEV.md](TESTE_CONEXAO_DEV.md) para o handshake real. Registrar evidência segura e voltar `WORKSPACE_VERIFY_CONNECTION=false` antes da ativação.
 
