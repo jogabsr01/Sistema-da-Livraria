@@ -5,7 +5,7 @@ import { properties, environment } from './fixtures.mjs';
 import { loadConfig } from '../../backend/config.mjs';
 import { pack, unpack, requestMessage, verifyResponse } from '../../backend/protocol.mjs';
 import { createWorkspaceClient } from '../../backend/workspace-client.mjs';
-import { checkDevelopmentConnection } from '../../backend/connection-check.mjs';
+import { checkDevelopmentConnection, DEV_CONNECTION_TIMEOUT_MS } from '../../backend/connection-check.mjs';
 import { runCheck } from '../../scripts/check-google-dev.mjs';
 
 function setup() {
@@ -69,4 +69,41 @@ test('diagnostic build output contains only fixed result codes, never private ex
   assert.equal(await runCheck({}, { check: async () => { throw Error('private key or personal information'); }, log: text => messages.push(text) }), 1);
   assert.deepEqual(messages, ['GOOGLE_DEV_CONNECTION_FAILED DEV_CHECK_FAILED; operational backend remains disabled.']);
   assert.equal(await runCheck({}, { check: async () => ({ checked: false }), log: () => assert.fail('must be silent') }), 0);
+});
+
+
+test('build diagnostic has a bounded 60-second budget while operational clients retain ten seconds', async t => {
+  const s = setup(), budgets = [], controller = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', ms => { budgets.push(ms); return controller.signal; });
+  let calls = 0;
+  const transport = async (_url, options) => {
+    calls++;
+    return new Response(JSON.stringify(s.gas.post(JSON.parse(options.body))));
+  };
+  const factory = (settings, options) => createWorkspaceClient(settings, { ...options, fetchImpl: transport });
+  const snapshot = { ...s.env };
+  assert.equal(DEV_CONNECTION_TIMEOUT_MS, 60_000);
+  assert.equal((await checkDevelopmentConnection(s.env, { createWorkspaceClient: factory })).checked, true);
+  assert.deepEqual(budgets, [60_000]);
+  await createWorkspaceClient(s.config, { fetchImpl: transport }).ping();
+  assert.deepEqual(budgets, [60_000, 10_000]);
+  assert.equal(calls, 2, 'one request per explicit check, without automatic retry');
+  assert.deepEqual(s.env, snapshot);
+});
+
+test('longer diagnostic deadline still aborts, reports only its safe code and never retries or activates', async t => {
+  const s = setup(), messages = [], controller = new AbortController(); let calls = 0;
+  t.mock.method(AbortSignal, 'timeout', ms => { assert.equal(ms, 60_000); return controller.signal; });
+  const factory = (settings, options) => createWorkspaceClient(settings, { ...options, fetchImpl: async (_url, { signal }) => {
+    calls++;
+    return new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      queueMicrotask(() => controller.abort(new Error('private upstream details')));
+    });
+  } });
+  const code = await runCheck(s.env, { check: env => checkDevelopmentConnection(env, { createWorkspaceClient: factory }), log: text => messages.push(text) });
+  assert.equal(code, 1);
+  assert.deepEqual(messages, ['GOOGLE_DEV_CONNECTION_FAILED UPSTREAM_TIMEOUT; operational backend remains disabled.']);
+  assert.equal(calls, 1);
+  assert.equal(s.env.WORKSPACE_BACKEND_ENABLED, 'false');
 });
