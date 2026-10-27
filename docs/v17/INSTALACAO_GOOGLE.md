@@ -1,136 +1,83 @@
-# Instalação DEV e autorização Google
+# Instalação e atualização Google DEV
 
-## Estado desta entrega
+O código de identidade e dos módulos de negócio está integrado em DEV. A configuração e a homologação Google DEV foram autorizadas pelo proprietário. Isso não comprova acesso autenticado nesta sessão, nem execução real no Google. Não publicar em main/PROD por este roteiro.
 
-Nenhum recurso Google ou usuário de produção foi criado. Não há binding Google/Netlify da livraria declarado no ambiente desta tarefa nem IDs de planilha/pasta da instalação. A máquina possui uma variável de credencial Google genérica, mas ela não comprova autorização sobre recursos da livraria e não foi usada para criar/alterar arquivos.
+Não enviar chaves, tokens, PINs, senhas ou JSON de credenciais no chat, GitHub, planilha ou frontend. Valores reais ficam nas interfaces privadas do Netlify e nas Propriedades do script. O arquivo `.env.example` é somente um modelo vazio.
 
-Não enviar credenciais, tokens, PINs, senhas, JSON de conta de serviço ou chaves no chat, GitHub, planilha ou frontend. A autorização abaixo é feita pelo proprietário em interfaces privadas. Os nomes das variáveis estão em `.env.example`; os valores reais ficam no Netlify e em Script Properties.
+## 1. Identificar e preservar a instalação existente
 
-## 1. Preparar a identidade DEV
+Na conta Google proprietária, abrir o projeto DEV informado pelo responsável. Conferir o projeto, a implantação /exec, `APP_ENV`, `OWNER_EMAIL`, `INSTALLATION_ID`, IDs de planilhas/pastas e permissões. O link do projeto e o e-mail não concedem acesso à conta. Se já existem recursos, preservar seus IDs, chaves, propriedades e dados; não criar outra instalação por cima.
 
-Usar uma conta Google DEV dedicada, aprovada pelo responsável, **sem acesso de edição a recursos PROD**. Criar um projeto Apps Script separado. Não reaproveitar um projeto que já escreva na planilha oficial.
+Se o projeto acessar recursos PROD, interromper a atualização até separar DEV. Para instalação nova, usar identidade DEV sem acesso de edição a PROD, outro UUID v4 e recursos próprios. Somente nesse caso executar `provisionDevelopment`, que cria recursos privados e o schema inicial. Em instalação existente, começar por `inspectDevelopmentSchema`; erros de marcação ou schema exigem investigação, não troca manual de IDs.
 
-O manifest usa Sheets e DriveApp. DriveApp exige escopo amplo de Drive: revisar esse consentimento antes de autorizar e limitar o alcance pela identidade dedicada. Caso a política não permita esse consentimento ou web app acessível ao backend sem login interativo, parar essa instalação e avaliar a alternativa com identidade de serviço/Google APIs descrita na arquitetura. Não desabilitar controles do Workspace para contornar a política.
+Conferir IAM no Drive, inclusive heranças: pastas/planilhas privadas e editores explicitamente necessários. O manifest declara Sheets, Drive, identidade Google, envio de e-mail e gerenciamento de gatilhos. Drive tem escopo amplo; revisar o consentimento na conta correta. Declarar o escopo de gatilhos não instala agendamento.
 
-## 2. Copiar o código e registrar a configuração privada
+## 2. Atualizar o lote completo
 
-Copiar em lote todos os arquivos atuais de `google-apps-script`: `Code.gs`, `Schema.gs`, `Sales.gs`, `Stock.gs`, `Notifications.gs`, `SessionStore.gs`, `AuthControl.gs`, `PasskeyStore.gs`, `OwnerAccess.gs`, `Catalog.gs`, `CoverPhotos.gs` e o manifest `appsscript.json`. Não misturar versões ou instalar somente os arquivos da fundação. O schema gerado deve acompanhar o JSON do mesmo commit; gerar com `npm run schema:generate` quando houver migração revisada. Homologação: [ESTOQUE_REPOSICAO_DEV.md](ESTOQUE_REPOSICAO_DEV.md) e [NOTIFICACOES_REPOSICAO_DEV.md](NOTIFICACOES_REPOSICAO_DEV.md).
+Gerar o ZIP fora do repositório com `python3 scripts/package-google-dev.py /caminho/privado/kit-dev.zip`. O destino deve ser novo. O empacotador verifica a lista completa de arquivos GAS e inclui `Maintenance.gs`, o manifest e os guias. Conferir hashes e tamanhos em `MANIFESTO.json` antes de copiar. O manifesto comprova o conteúdo do pacote; não comprova uma implantação real.
 
-Em Apps Script → Configurações do projeto → Propriedades do script, preencher:
+Copiar **todos** os arquivos de `google-apps-script`, mantendo seus nomes, mais `appsscript.json`. Não atualizar somente `Code.gs` nem misturar versões. Não colar segredos no código. O schema é o do mesmo commit; não editar cabeçalhos para contornar falhas.
 
-| Propriedade | Valor/origem |
+Revisar as Propriedades do script:
+
+| Propriedade | Origem |
 | --- | --- |
 | `APP_ENV` | `dev` |
-| `INSTALLATION_ID` | UUID v4 novo, exclusivo desta instalação |
-| `OWNER_EMAIL` | E-mail da conta Google DEV que autorizará o script |
-| `SIGNING_SECRET` | Chave aleatória de 32 bytes representada por 64 caracteres hexadecimais |
+| `OWNER_EMAIL` | Conta Google proprietária DEV verificada |
+| `INSTALLATION_ID` | UUID v4 desta instalação; preservar se existente |
+| `SIGNING_SECRET` | Chave HMAC desta instalação; preservar se existente |
+| IDs de recursos | Provisionamento DEV original; nunca IDs de PROD |
 
-Gerar UUID e chave somente em terminal privado confiável, fora do Git e sem gravação em logs compartilhados. UUID não é segredo; a chave é. Não colar a chave no editor de código. Não usar os PINs demonstrativos como chave.
+Chaves novas usam 32 bytes aleatórios em 64 caracteres hexadecimais, gerados em ambiente privado e guardados em cofre. Não reutilizar a mesma chave entre finalidades. Não trocar uma chave existente para resolver erro de configuração: isso pode invalidar dados ou assinaturas. Consultar o roteiro de manutenção para rotação planejada.
 
-Deixar os IDs de pasta/planilha ausentes para a primeira instalação. **Não inserir IDs de PROD.** Um recurso existente sem o marcador correto é recusado; o script não irá renomeá-lo/reclassificá-lo silenciosamente.
+Executar `inspectDevelopmentSchema`. Com schema principal atual, esperar `environment: dev`, `schemaVersion: 1`, `tables: 17`. Isso não inspeciona todas as permissões e controles privados. Executar `provisionDevelopmentAuthControls` para criar/atualizar o armazenamento privado de controles com suas migrações e backups. O journal privado do catálogo será preparado depois da identidade (etapa 6). Preservar recursos existentes. Falhas parciais devem ser retomadas pelo código; nunca apagar propriedades `IDENTITY_*_PENDING`, `MAINTENANCE_*_PENDING` ou journals.
 
-## 3. Provisionar e verificar DEV
+## 3. Atualizar a implantação existente
 
-Executar `provisionDevelopment` pelo editor, revisar os escopos e autorizar usando a conta DEV prevista. A função:
+Apps Script → Implantar → Gerenciar implantações → implantação DEV → editar → Nova versão → Implantar. Preservar a mesma URL /exec. Revisar execução como proprietário e acesso necessário ao backend sem login interativo. Os RPCs usam envelope assinado, nonce, tempo, bindings e autorização por operação; uma URL pública não concede papel administrativo.
 
-1. Confirma ambiente DEV e conta proprietária.
-2. Cria pasta DEV, planilha DEV e subpastas privadas `covers`, `profiles`, `documents`, `exports`, `backups`.
-3. Registra IDs em Script Properties e marcadores de ambiente/instalação nos recursos.
-4. Faz cópia de segurança antes da primeira alteração de schema.
-5. Cria as 17 abas do schema, cabeçalhos e versão. Preserva abas desconhecidas em vez de apagá-las.
+Se a política Google impedir esse acesso, resolver a arquitetura com o responsável. Não contornar login, consentimento ou política de rede. Funções manuais de provisionamento/manutenção não são expostas pelo dispatcher HTTP. Os módulos de negócio são disponíveis somente com suas flags e autorização válidas.
 
-Executar novamente: deve reaproveitar recursos e versão, sem duplicar a migração. Executar `inspectDevelopmentSchema`: a saída segura no log deve indicar `environment: dev`, `schemaVersion: 1`, `tables: 17`. Não há PII nessa verificação. O código recusa acesso público/de domínio. Conferir também no Drive as permissões nominais e eventuais heranças indesejadas; esse exame de IAM não é substituído pelos testes locais.
+## 4. Configurar o backend DEV e testar o canal
 
-Em falha parcial, não trocar IDs manualmente nem apontar para arquivos oficiais. Consultar o guia de recuperação. O retorno do provisionamento e Script Properties permitem localizar IDs; não contêm a chave em logs.
+No Netlify, usar apenas o contexto da branch `dev`. Segredos operacionais precisam do escopo Functions. O diagnóstico de build requer acesso temporário aos bindings/HMAC no build DEV; revisar o código de build e limitar esse escopo. Production e Deploy Previews não recebem esses valores. Não colocá-los em `netlify.toml`, arquivos servidos ou variáveis de frontend.
 
-## 4. Implantar o web app de DEV
-
-Criar uma implantação versionada de Apps Script, executando como a identidade DEV. O backend precisa conseguir chamar `/exec` sem sessão de browser; a autenticação da aplicação é o envelope criptográfico. Se o Workspace permitir acesso ao URL por qualquer chamador, mantê-lo protegido pela assinatura, nonce, tempo, bindings e allowlist de operação implementados no código. Se a política não permitir esse tipo de implantação, não tentar bypass de login/CORS: a arquitetura deverá ser ajustada antes da ativação.
-
-O web app só aceita a inspeção assinada do schema. `provisionDevelopment`, migração e comandos de venda não estão disponíveis por `doPost`; GET não expõe dados. O URL de implantação não é uma senha.
-
-## 5. Configurar Netlify por contexto, sem ativar operação real
-
-Na interface privada de variáveis do Netlify, no contexto **da branch dev** e escopo Functions, registrar:
-
-| Variável | Origem |
+| Netlify | Origem |
 | --- | --- |
 | `APP_ENV` | `dev` |
-| `WORKSPACE_INSTALLATION_ID` | `INSTALLATION_ID` do projeto DEV |
-| `WORKSPACE_SCRIPT_URL` | URL `/macros/s/.../exec` da implantação DEV |
-| `WORKSPACE_SPREADSHEET_ID` | `SPREADSHEET_ID` criado pelo provisionamento |
-| `WORKSPACE_DRIVE_ROOT_ID` | `DRIVE_ROOT_ID` criado pelo provisionamento |
-| `WORKSPACE_HMAC_SECRET` | Mesma chave privada `SIGNING_SECRET`, cadastrada como valor secreto |
-| `WORKSPACE_BACKEND_ENABLED` | Manter `false` nesta fase |
+| `WORKSPACE_INSTALLATION_ID` | `INSTALLATION_ID` |
+| `WORKSPACE_SCRIPT_URL` | URL /exec DEV existente |
+| `WORKSPACE_SPREADSHEET_ID` | `SPREADSHEET_ID` |
+| `WORKSPACE_DRIVE_ROOT_ID` | `DRIVE_ROOT_ID` |
+| `WORKSPACE_HMAC_SECRET` | Mesma chave de `SIGNING_SECRET` |
+| `WORKSPACE_BACKEND_ENABLED` | `false` durante teste do canal |
 
-Não colocar esses valores em `netlify.toml`, Git ou arquivos servidos. Netlify fornece `CONTEXT`, `BRANCH`, `DEPLOY_PRIME_URL`; não substituir essas evidências de ambiente por headers do cliente.
+Netlify fornece `CONTEXT`, `BRANCH`, `DEPLOY_PRIME_URL`; não sobrescrever com valores do cliente. O hostname DEV aceito pelo backend é `dev--merry-chimera-49a1f3.netlify.app`. O runtime precisa alcançar `script.google.com` e os redirecionamentos permitidos para `script.googleusercontent.com`.
 
-As chaves de HMAC precisam estar disponíveis em memória **no servidor Netlify e no Apps Script** para realizar a assinatura; um placeholder de proxy de segredos de outro ambiente não substitui a chave para esse cálculo. Não inserir chaves no frontend nem em valores públicos de build.
+No checkout completo do repositório (o ZIP é destinado ao editor GAS), executar `npm run google:preflight -- --phase service` no ambiente privado onde os valores estão configurados. Esse diagnóstico é **offline**, não carrega `.env` automaticamente, não altera flags e não mostra valores. Resultado válido não prova IAM ou conexão. Em seguida seguir [TESTE_CONEXAO_DEV.md](TESTE_CONEXAO_DEV.md) para o handshake real. Registrar evidência segura e voltar `WORKSPACE_VERIFY_CONNECTION=false` antes da ativação.
 
-O build `npm run build` publica `dist/`; os fontes privados ficam fora dele. A API administrativa continuará fechada, inclusive se alguém ativar o flag prematuramente, porque a identidade real ainda não está implementada. Só habilitar o modo real após os critérios das fases B/C e aprovação explícita.
+## 5. Ativar e homologar identidade
 
-## PROD
+No Netlify DEV, cadastrar três chaves independentes de HMAC: `WORKSPACE_SESSION_TOKEN_KEY`, `WORKSPACE_AUTH_GUARD_KEY`, `WORKSPACE_PIN_PEPPER`. Chaves de sessão, guarda e PIN ficam somente no backend; não copiá-las para Apps Script. Para dados pessoais dos módulos posteriores, cadastrar também `WORKSPACE_PERSONAL_DATA_KEY` e `WORKSPACE_PERSONAL_INDEX_KEY`, distintas entre si e das demais. Guardar cópias em cofre; backup Google não substitui essas chaves.
 
-Não executar provisionamento de PROD nesta fase. A função existente recusa esse ambiente. A instalação oficial exigirá outro projeto/identidade, UUID, planilha, pastas e segredos, com revisão de permissões e homologação. O contexto de produção nunca deve receber os valores DEV, e vice-versa.
+Ativar os quatro pares de flags de identidade no Netlify (`WORKSPACE_…`) e nas Propriedades do script (sem `WORKSPACE_`): `IDENTITY_SESSIONS_ENABLED`, `IDENTITY_GUARDS_ENABLED`, `IDENTITY_PASSKEYS_ENABLED`, `IDENTITY_ACCESS_ENABLED`. No Netlify, definir `WORKSPACE_BACKEND_ENABLED=true` e manter `WORKSPACE_VERIFY_CONNECTION=false`.
 
-## Rede
+Para conta ainda não preparada/ativada, executar `prepareDevelopmentOwnerAccess` como proprietário pelo editor. Seguir [PRIMEIRO_ACESSO_OWNER.md](PRIMEIRO_ACESSO_OWNER.md). Não executar esse bootstrap para redefinir uma conta já ativada: ele recusa esse uso. Não criar usuário, papel, PIN ou passkey manualmente nas tabelas. Homologar e-mail, PIN, passkey, logout e limites persistentes antes dos demais módulos.
 
-O runtime Netlify precisará alcançar `script.google.com` e `script.googleusercontent.com`; Apps Script usa seus serviços autorizados de Drive/Sheets. Credenciais Google não passam pelo navegador. A execução local desta tarefa não tinha instalação autorizada e não alterou uma allowlist externa para simular integração real.
+Executar `npm run google:preflight -- --phase identity` e testar pelo endereço DEV correto, em aparelhos reais. Em qualquer falha manter o módulo afetado fechado e preservar logs seguros/intents para investigação. Desligar uma flag não desfaz transações já concluídas.
 
-## Diagnóstico assinado sem ativar as funcionalidades
+## 6. Liberar módulos em etapas
 
-Após atualizar a implantação Apps Script com a operação de diagnóstico e integrar o código correspondente em dev mediante aprovação, seguir [TESTE_CONEXAO_DEV.md](TESTE_CONEXAO_DEV.md). O build da branch dev pode verificar a conexão com `WORKSPACE_VERIFY_CONNECTION=true`, mantendo `WORKSPACE_BACKEND_ENABLED=false`. O teste não substitui identidade/autorização real nem conclui as fases B–E.
+O modelo `.env.example` lista flags e chaves de backend. Cada módulo GAS tem sua propriedade correspondente sem o prefixo `WORKSPACE_`; consultar o guia respectivo para dependências. `WORKSPACE_ISBN_LOOKUP_ENABLED` é opção de backend, não um novo requisito de provisionamento Google.
 
-A entrega de sessões está em revisão e desativada. Não adicionar flags/chaves de identidade nem criar usuários manualmente: consultar [SESSOES_E_PERMISSOES.md](SESSOES_E_PERMISSOES.md). A conexão de serviço já confirmada não substitui a homologação de login.
+Antes do catálogo, executar `provisionDevelopmentCatalog` como proprietário, após preparar a identidade na etapa 5. Esse comando exige `IDENTITY_OWNER_USER_ID` existente e preserva o journal já provisionado.
 
-## Incremento de equipe (ativação posterior)
+Ordem sugerida: catálogo/capas/nichos → estoque/notificações → equipe/clientes → caixa/operações → perfil/recuperação/e-mail → escalas/auditoria/relatórios/perfil de compra → gestão de passkeys/recuperação emergencial. Ativar somente os pares do bloco que será homologado e suas dependências. Não habilitar todos de uma vez para tentar resolver falhas.
 
-Atualizar também `Staff.gs` junto com o lote de scripts existente. Sem nova aba ou escopo. As novas chaves privadas de cifra/índice ficam somente no backend Netlify DEV. As flags `WORKSPACE_STAFF_ENABLED` e `STAFF_ENABLED` permanecem desligadas por padrão. Procedimento, limites e formato cifrado estão em [EQUIPE_DEV.md](EQUIPE_DEV.md). Não editar manualmente `Usuarios.Nome` nem trocar as chaves com dados existentes. Instalação Google real será executada na etapa posterior solicitada pelo proprietário.
+Após todos os módulos opcionais do checklist v17 escolhidos para o aceite, `npm run google:preflight -- --phase modules` exige a configuração completa desses módulos (ISBN continua opcional). Esse comando verifica formato/configuração do backend; não lê Script Properties e não prova correspondência de chaves com Google. A prova integrada está em [HOMOLOGACAO_GOOGLE_DEV.md](HOMOLOGACAO_GOOGLE_DEV.md).
 
-## Incremento de clientes (ativação posterior)
+## 7. Manutenção e aceite operacional
 
-Atualizar também `Customers.gs`, preservando o lote completo/IDs/chaves existentes. Flags independentes `WORKSPACE_CUSTOMERS_ENABLED` e `CUSTOMERS_ENABLED`, desligadas por padrão. Sem nova aba ou escopo. Cifra, metadados, limites e contratos estão em [CLIENTES_CAIXA_DEV.md](CLIENTES_CAIXA_DEV.md). Não usar dados reais até homologação; a configuração Google continua reservada à etapa posterior solicitada.
+Seguir [MANUTENCAO_RECUPERACAO_DEV.md](MANUTENCAO_RECUPERACAO_DEV.md) para backup, restauração isolada, reconciliação e recuperação privilegiada. `MAINTENANCE_BACKUP_KEY` fica em Script Properties e em cofre externo, independente de `SIGNING_SECRET`; não vai no frontend ou no modelo Netlify. Backup assinado não é criptografia integral: revisar a privacidade dos arquivos.
 
-## Operações e CEP (ativação posterior)
-
-Atualizar o lote completo, incluindo `Operations.gs`, antes de usar o novo `Sales.gs`. Flags DEV independentes `WORKSPACE_OPERATIONS_ENABLED` e `OPERATIONS_ENABLED`, desligadas por padrão. Sem migração ou escopo novo. Ver [OPERACOES_ADMIN_DEV.md](OPERACOES_ADMIN_DEV.md) e [CEP_BRASILAPI_DEV.md](CEP_BRASILAPI_DEV.md). A consulta opcional de CEP já foi autorizada; apenas CEP sai para a BrasilAPI, ao clique, com limites privados de guardas existentes. Configuração Google real continua para a etapa posterior.
-
-## Atualização de perfil e recuperação de PIN
-
-Atualizar o lote inteiro, incluindo `Profile.gs` e `Recovery.gs`; as chamadas de sessão recuperam intenções pendentes desses módulos. Sem novas abas ou escopos. `WORKSPACE_PROFILE_ENABLED` / `PROFILE_ENABLED` e `WORKSPACE_RECOVERY_ENABLED` / `RECOVERY_ENABLED` são independentes, desligadas por padrão. Reutilizar a pasta privada `PROFILES_FOLDER_ID` marcada no provisionamento original e as chaves de dados pessoais existentes. Não recriar planilhas, pasta ou chaves. Ver [PERFIL_RECUPERACAO_DEV.md](PERFIL_RECUPERACAO_DEV.md). Este incremento não ativa Google nem altera propriedades reais.
-
-## Atualização de e-mail verificado
-
-Atualizar também `EmailChange.gs` junto ao lote completo. Flags `WORKSPACE_EMAIL_CHANGE_ENABLED` / `EMAIL_CHANGE_ENABLED` fechadas por padrão; requer perfil/sessões e autenticação forte existente. Não alterar `OWNER_EMAIL` ou `IDENTITY_OWNER_EMAIL_BINDING` para trocar o login. A nova propriedade privada `IDENTITY_OWNER_LOGIN_EMAIL` é gerida pelo fluxo verificado. Não apagar `IDENTITY_EMAIL_PENDING` nem journals privados de confirmação. Sem nova aba, migração ou escopo. Ver [EMAIL_VERIFICADO_DEV.md](EMAIL_VERIFICADO_DEV.md). Instalação real Google permanece posterior.
-
-## Atualização de nichos
-
-Atualizar o lote inteiro com `Niches.gs`. Flags `WORKSPACE_NICHES_ENABLED` / `NICHES_ENABLED` fechadas por padrão, catálogo/sessões existentes e pasta privada `COVERS_FOLDER_ID` original. Sem nova aba, escopo, chave ou reprovisionamento. Journal/revisões na planilha comum e imagens com marcador específico na pasta de capas. Não apagar intenções para contornar falhas. Ver [NICHOS_DEV.md](NICHOS_DEV.md); configuração Google real permanece posterior.
-
-## Escalas e notificações pessoais
-
-Atualizar o lote completo incluindo `Schedules.gs`, `SessionStore.gs` e `Notifications.gs`. Flags `WORKSPACE_SCHEDULES_ENABLED` / `SCHEDULES_ENABLED` fechadas por padrão; requer catálogo, notificações, sessões e chaves de dados pessoais existentes. Sem nova aba, escopo ou chave Google. Não editar diretamente `Escalas.Observacoes` nem apagar intenções, revisões ou destinatários em Configuracoes. Datas são gravadas como texto canônico. Ver [ESCALAS_DEV.md](ESCALAS_DEV.md). Instalação real Google continua reservada para depois das melhorias originais.
-
-## Consulta da auditoria e Excel
-
-Atualizar o lote completo com `Audit.gs`. Flags `WORKSPACE_AUDIT_ENABLED` / `AUDIT_ENABLED` fechadas por padrão; requer catálogo, sessões e chaves pessoais existentes, sem nova aba/escopo/chave ou recurso. Não editar nem apagar linhas de Logs_Auditoria. Consulta e exportação exigem autenticação administrativa recente; exportação registra autorização antes da liberação. Ver [AUDITORIA_DEV.md](AUDITORIA_DEV.md). A instalação Google real permanece posterior às melhorias originais.
-
-## Eventos de acesso e alterações de livros
-
-Atualizar o lote completo com `SecurityAudit.gs` e os leitores de sessão/guardas/acesso/catálogo/auditoria. Sem nova aba, migração, chave ou flag. A propriedade privada `IDENTITY_SECURITY_PENDING` é gerida pelo código e não deve ser editada/apagada; não rotacionar a chave de assinatura com intenção pendente. Novos produtos usam `auditVersion:2` no journal; intenções legadas terminam com seu formato anterior. Ver [EVENTOS_AUDITORIA_DEV.md](EVENTOS_AUDITORIA_DEV.md). Nenhuma ativação privada foi feita; a configuração Google permanece posterior.
-
-## Relatórios comerciais
-
-Atualizar o lote completo com `Reports.gs`. Flags `WORKSPACE_REPORTS_ENABLED` / `REPORTS_ENABLED` fechadas por padrão; requer catálogo/sessões e chaves pessoais existentes, sem nova aba/escopo/chave ou recurso. Consulta e exportação são administrativas com autenticação recente; CPF usa POST/índice privado e não aparece no Excel. Consultar resultados antes de exportar, com a mesma fonte/prova ainda válida. [RELATORIOS_COMERCIAIS_DEV.md](RELATORIOS_COMERCIAIS_DEV.md). Configuração Google real permanece posterior, conforme solicitado.
-
-## Perfil de compra e mensagens manuais
-
-Atualizar o lote completo com `CustomerInsights.gs` e `Reports.gs`, sem nova aba, escopo, journal, chave ou recurso. Novas flags `WORKSPACE_CUSTOMER_INSIGHTS_ENABLED` / `CUSTOMER_INSIGHTS_ENABLED`, fechadas por padrão; dependem de CUSTOMERS/REPORTS/CATALOG/IDENTITY_SESSIONS e chaves pessoais existentes. Requer administrador recente, consulta antes de preparar e consentimento/preferência WhatsApp registrados. Não envia mensagens. Preservar intenções privadas existentes; não apagar logs para liberar capacidade. [PERFIL_COMPRA_DEV.md](PERFIL_COMPRA_DEV.md). Instalação Google real permanece posterior às melhorias originais.
-
-## Gestão própria de passkeys
-
-Atualizar o lote completo com `PasskeyManagement.gs`, `PasskeyStore.gs`, `SessionStore.gs`, `OwnerAccess.gs` e `SecurityAudit.gs`. Sem nova aba, migração, escopo ou chave. Flags `WORKSPACE_KEY_MANAGEMENT_ENABLED` / `KEY_MANAGEMENT_ENABLED`, fechadas por padrão, exigem identidade/sessões/passkeys existentes DEV. A propriedade privada `IDENTITY_KEYS_PENDING` e os fluxos `IDENTITY_KEYS_<UUID>` são geridos pelo código, com HMAC e recuperação mesmo com a flag de novas operações desligada. Não apagar/editar intenções nem rotacionar SIGNING_SECRET enquanto houver pendência; rotação planejada deve tratar também fluxos concluídos assinados. Remoção protege a última chave e revoga outras sessões. Recuperação sem nenhuma chave continua pendente. [GESTAO_PASSKEYS_DEV.md](GESTAO_PASSKEYS_DEV.md). Configuração Google real segue reservada à etapa posterior.
-
-## Recuperação emergencial previamente preparada
-
-Atualizar o lote completo com `EmergencyRecovery.gs`, PasskeyManagement/OwnerAccess/Recovery/SessionStore/PasskeyStore/SecurityAudit. Sem nova aba, migração, escopo ou segredo. Flags `WORKSPACE_EMERGENCY_RECOVERY_ENABLED` / `EMERGENCY_RECOVERY_ENABLED` fechadas por padrão; exigem RECOVERY e identidade existentes. A emissão também exige a gestão de passkeys. Propriedades privadas `IDENTITY_RESCUE_CODES_<UUID>` e `IDENTITY_RESCUE_PENDING` são assinadas e geridas pelo código. Não editar/apagar nem rotacionar SIGNING_SECRET com intenção pendente. Os códigos em claro não são enviados ao Google. Homologar emissão, guarda fora do aparelho, e-mail, substituição, revogação e replay antes de disponibilizar. Sem códigos preparados/e-mail, recuperação administrativa continua pendente. [RECUPERACAO_EMERGENCIAL_DEV.md](RECUPERACAO_EMERGENCIAL_DEV.md). Google real permanece para a etapa posterior.
+Agendamento é opcional e permanece desligado até definir frequência, retenção e objetivos RPO/RTO. Não apagar histórico comercial, promover cópia restaurada nem instalar gatilho automaticamente por este roteiro. Homologação, entrega de e-mail, quotas e recuperação reais continuam pendentes até execução e evidência registradas. A promoção PROD exige decisão separada, recursos e segredos próprios.

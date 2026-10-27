@@ -46,7 +46,9 @@
     "test:staff-reconnection": "python3 scripts/test-staff-reconnection.py",
     "test:customers-reconnection": "python3 scripts/test-customers-reconnection.py",
     "test:account-reconnection": "python3 scripts/test-account-reconnection.py",
-    "test:maintenance": "python3 scripts/test-maintenance.py"
+    "test:maintenance": "python3 scripts/test-maintenance.py",
+    "google:preflight": "node scripts/check-google-dev-setup.mjs",
+    "test:google-kit": "python3 scripts/test-google-dev-kit.py"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.3",

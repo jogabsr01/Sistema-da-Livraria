@@ -1,6 +1,6 @@
 # Situação do PROMPT MASTER v17 — 26/10/2026 (São Paulo)
 
-O v17 ainda não está concluído. Código integrado, testes locais, publicação DEV e homologação Google são evidências distintas. Home de entrada dos perfis e configuração real Google foram reservadas pelo proprietário para a etapa posterior às melhorias.
+O v17 ainda não está concluído. Código integrado, testes locais, publicação DEV e homologação Google são evidências distintas. A configuração e a homologação Google DEV foram autorizadas e são a etapa atual. Home de entrada dos perfis continua pendente. Links/e-mail fornecidos pelo proprietário identificam a instalação, mas não concedem acesso autenticado.
 
 ## Entregas
 
@@ -36,7 +36,7 @@ O v17 ainda não está concluído. Código integrado, testes locais, publicaçã
 | PR #44 | Perfil com rascunho protegido e revisão explícita; e-mail/passkeys conservam pedido incerto; códigos e menu removidos ao perder contexto, sem reenvio automático. [Contrato](RECONEXAO_CONTA_DEV.md) e [QA](QA_RECONEXAO_CONTA.md). |
 | Continuidade e manutenção | Backup completo autenticado, cópia isolada com recuperação/inspeção, reconciliação, recuperação administrativa do proprietário, rotação de SIGNING_SECRET, compactação técnica e agendamento opcional. Avisos administrativos com leitura pessoal e auditoria. [Contrato](MANUTENCAO_RECUPERACAO_DEV.md) e [QA](QA_MANUTENCAO_RECUPERACAO.md). |
 
-Referência DEV antes deste lote: `f395493ed54b25596a713b6027f40a8353f0c11c`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma propriedade privada ou instalação Google real foi alterada neste incremento. O manifesto declara o escopo de gatilhos para instalação futura opcional; nenhum gatilho foi instalado.
+Referência DEV antes do kit de instalação: `a319186f563a52c2d47e84475bc1339562834f58`. Main/produção permanecem fora do escopo das publicações DEV autorizadas. Nenhuma propriedade privada ou instalação Google real foi alterada neste incremento. O manifesto declara o escopo de gatilhos para instalação futura opcional; nenhum gatilho foi instalado.
 
 ## Pendências originais
 
@@ -58,8 +58,14 @@ Projeções recuperáveis validam cadeias de estoque e versões junto das altera
 
 ## Ordem autorizada de continuidade
 
-As frentes de código de recuperação administrativa, assinatura, avisos, reconciliação, compactação técnica e backup/restauração foram acrescentadas neste lote. Conferir o aceite integrado e os limites documentados, definir a política operacional e seguir depois para home dos perfis e configuração/homologação Google, como solicitado. Isso não autoriza promoção automática de uma cópia restaurada nem exclusão de histórico. Publicações DEV já autorizadas; não tocar em main nem pedir segredos no chat ou repositório.
+As frentes de código de recuperação administrativa, assinatura, avisos, reconciliação, compactação técnica e backup/restauração foram acrescentadas neste lote. Conferir o aceite integrado e os limites documentados, definir a política operacional e executar agora a configuração/homologação Google DEV autorizada. Home dos perfis permanece na continuidade. Isso não autoriza promoção automática de uma cópia restaurada nem exclusão de histórico. Publicações DEV já autorizadas; não tocar em main nem pedir segredos no chat ou repositório.
 
 ## Validação deste incremento
 
 Suíte completa do backend: 356 testes em cada uma das versões Node 22 e 24, incluindo 24 novos contratos de manutenção. Navegador deste bloco: 21 cenários selecionados de manutenção, acesso, notificações e recuperação. As contagens por bloco não representam o total do sistema; o build de publicação executa a suíte completa do backend. Resultados deste lote em [QA_MANUTENCAO_RECUPERACAO.md](QA_MANUTENCAO_RECUPERACAO.md); conta anterior em [QA_RECONEXAO_CONTA.md](QA_RECONEXAO_CONTA.md); equipe/clientes anteriores em [QA_RECONEXAO_PESSOAS.md](QA_RECONEXAO_PESSOAS.md); nichos anteriores em [QA_RECONEXAO_NICHOS.md](QA_RECONEXAO_NICHOS.md); escalas anteriores em [QA_RECONEXAO_ESCALAS.md](QA_RECONEXAO_ESCALAS.md); perfil de compra anterior em [QA_RECONEXAO_PERFIL_COMPRA.md](QA_RECONEXAO_PERFIL_COMPRA.md); Auditoria anterior em [QA_RECONEXAO_AUDITORIA.md](QA_RECONEXAO_AUDITORIA.md); Relatórios comerciais anteriores em [QA_RECONEXAO_RELATORIOS.md](QA_RECONEXAO_RELATORIOS.md); Notificações anteriores em [QA_RECONEXAO_NOTIFICACOES.md](QA_RECONEXAO_NOTIFICACOES.md); Operações anteriores em [QA_RECONEXAO_OPERACOES.md](QA_RECONEXAO_OPERACOES.md); Catálogo anterior em [QA_RECONEXAO_CATALOGO.md](QA_RECONEXAO_CATALOGO.md); Caixa anterior em [QA_RECONEXAO_CAIXA.md](QA_RECONEXAO_CAIXA.md); recuperação anterior em [QA_RECUPERACAO_EMERGENCIAL.md](QA_RECUPERACAO_EMERGENCIAL.md); gestão anterior em [QA_GESTAO_PASSKEYS.md](QA_GESTAO_PASSKEYS.md); perfil de compra anterior em [QA_PERFIL_COMPRA.md](QA_PERFIL_COMPRA.md); relatórios anteriores em [QA_RELATORIOS_COMERCIAIS.md](QA_RELATORIOS_COMERCIAIS.md); eventos anteriores em [QA_EVENTOS_AUDITORIA.md](QA_EVENTOS_AUDITORIA.md); consulta anterior em [QA_AUDITORIA.md](QA_AUDITORIA.md); escalas anteriores em [QA_ESCALAS.md](QA_ESCALAS.md); nichos anteriores em [QA_NICHOS.md](QA_NICHOS.md). Build, sintaxe e diff check aprovados. Google/Drive/MailApp/BrasilAPI emulados. Testes de impressão verificam a função e o CSS, sem comprovar impressora/PDF real. Esses resultados não equivalem a homologação Google, operação em produção ou conclusão do v17.
+
+## Preparação da instalação Google DEV
+
+Kit corrigido para incluir todos os 26 arquivos GAS, especialmente Maintenance.gs, com manifesto de hashes e bloqueio de sobrescrita/fontes simbólicas. Modelo de configuração completo e diagnóstico offline por etapas (`google:preflight`), sem ativação ou impressão de valores privados. [Instalação](INSTALACAO_GOOGLE.md), [canal assinado](TESTE_CONEXAO_DEV.md) e [aceite real](HOMOLOGACAO_GOOGLE_DEV.md). A autenticação Google e as variáveis privadas de runtime ainda não estão disponíveis nesta sessão; nenhuma implantação, chave ou propriedade Google foi alterada por essa preparação. Não declarar homologação concluída.
+
+Validação do kit: 362 testes completos de backend em Node 22 e 24, seis testes Python de empacotamento e build aprovados. [QA desta preparação](QA_INSTALACAO_GOOGLE_DEV.md). Sem teste Google real nesta sessão.
