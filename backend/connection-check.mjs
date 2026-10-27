@@ -2,6 +2,10 @@ import { ApiError } from './errors.mjs';
 import { loadConfig } from './config.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 
+// Build diagnostics can encounter cold starts and the 20-second GAS lock wait.
+// Keep this bounded allowance separate from operational RPC timeouts.
+export const DEV_CONNECTION_TIMEOUT_MS = 60_000;
+
 // Explicit build-time service diagnostic, NOT a public route or user identity.
 // The operational activation flag is never mutated and must stay false.
 export async function checkDevelopmentConnection(env = process.env, dependencies = {}) {
@@ -12,7 +16,7 @@ export async function checkDevelopmentConnection(env = process.env, dependencies
   // without activating routes or weakening loadConfig's normal activation gate.
   const settings = loadConfig({ ...env, WORKSPACE_BACKEND_ENABLED: 'true' });
   const factory = dependencies.createWorkspaceClient || createWorkspaceClient;
-  const result = await factory(settings).ping();
+  const result = await factory(settings, { timeoutMs: DEV_CONNECTION_TIMEOUT_MS }).ping();
   if (result?.ready !== true || result.environment !== 'dev' || result.schemaVersion !== 1) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
   return { checked: true, environment: 'dev', schemaVersion: 1 };
 }
