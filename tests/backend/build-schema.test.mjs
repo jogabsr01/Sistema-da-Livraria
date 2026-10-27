@@ -11,6 +11,7 @@ test('public build preserves the demo byte-for-byte and excludes all private sou
   const source = await readFile(new URL('../../index.html', import.meta.url));
   await writeFile(join(root, 'index.html'), source); await writeFile(join(root, '.env'), 'DO_NOT_PUBLISH');
   await mkdir(join(root, 'backend')); await writeFile(join(root, 'backend', 'private.mjs'), 'DO_NOT_PUBLISH');
+  await writeFile(join(root, 'backend', 'deployment-metadata.mjs'), 'PRIVATE_BUILD_IDENTITY');
   await build(root);
   assert.deepEqual(await readdir(join(root, 'dist')), ['index.html']);
   assert.deepEqual(await readFile(join(root, 'dist', 'index.html')), source);
