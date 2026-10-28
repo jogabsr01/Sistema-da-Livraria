@@ -16,6 +16,19 @@ export const ACCESS_ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
 export const ACCESS_COOKIE = '__Host-livraria_access';
 const rejected = () => { throw new ApiError(401, 'ACCESS_REJECTED'); };
 const canonical = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value) && Buffer.from(value, 'base64url').toString('base64url') === value;
+const EMAIL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export function createAccessEmailCode() {
+  // 32 symbols: masking is unbiased, using seven independent random bytes.
+  return Array.from(randomBytes(7), byte => EMAIL_CODE_ALPHABET[byte & 31]).join('');
+}
+function normalizeAccessEmailCode(value) {
+  if (typeof value !== 'string') rejected();
+  const trimmed = value.trim();
+  if (/^[A-HJ-NP-Z2-9]{7}$/i.test(trimmed)) return trimmed.toUpperCase();
+  // A code already delivered before rollout remains valid for its original TTL.
+  if (canonical(trimmed)) return trimmed;
+  rejected();
+}
 function email(value) {
   if (typeof value !== 'string' || value.length > 254 || /[\x00-\x1f\x7f]/.test(value)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
   const normalized = value.trim().toLowerCase();
@@ -79,7 +92,7 @@ export function createOwnerAccessService(settings, { client }) {
       if(!completedRetry)await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
       if (operation === 'start'||operation==='recover') {
         if(operation==='recover'&&!settings.recoveryEnabled)throw new ApiError(503,'RECOVERY_NOT_ACTIVATED');
-        const code = randomBytes(32).toString('base64url');
+        const code = createAccessEmailCode();
         const value=identifier(input.email),staff=await staffLookup(value),proof={flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code};
         if(staff) await client.staffAccess(operation==='recover'?'recover':'start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery});
         else await client.access(operation==='recover'?'recover':'start', { email:value.includes('@')?value:'unknown@example.invalid',...proof });
@@ -95,8 +108,8 @@ export function createOwnerAccessService(settings, { client }) {
         return { stage: 'PASSKEY' };
       }
       if (operation === 'email') {
-        if (!canonical(input.code)) rejected();
-        const { verified } = await client.access('email', { tokenHash: hash(token), codeHash: digest('access.email.v1', [hash(token), input.code]) });
+        const code = normalizeAccessEmailCode(input.code);
+        const { verified } = await client.access('email', { tokenHash: hash(token), codeHash: digest('access.email.v1', [hash(token), code]) });
         if (!verified) rejected(); return { stage: 'PIN' };
       }
       const flow = await read(token), subject = { subjectId: flow.subjectId, authorizationVersion: flow.authorizationVersion };

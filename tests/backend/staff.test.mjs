@@ -8,7 +8,7 @@ import { createStaffHandler,loadStaffSettings,STAFF_ORIGIN } from '../../backend
 import { environment } from './fixtures.mjs';
 const result=async r=>({status:r.status,...await r.json()});
 const rows=s=>s.main.getSheetByName('Usuarios');
-const emailCode=s=>s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{43})\n/)[1];
+const emailCode=s=>s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1];
 function hash(s){const f=s.priv.getSheetByName('_Identity_Flows');return f.rows.at(-1)[f.rows[0].indexOf('Token_Hash')];}
 
 test('personal data uses scoped authenticated encryption, keyed indexes, fresh IVs, independent keys and valid CPF',()=>{

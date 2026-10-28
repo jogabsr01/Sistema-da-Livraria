@@ -7,7 +7,7 @@ const server = createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json');
   try {
     let body = ''; for await (const chunk of req) { body += chunk; if (body.length > 25000) throw Error('TEST_BODY_LIMIT'); }
-    if (req.url === '/test/code') { res.end(JSON.stringify({ code: fixture.gas.outbox.at(-1)?.body.match(/\n([A-Za-z0-9_-]{43})\n/)[1] })); return; }
+    if (req.url === '/test/code') { res.end(JSON.stringify({ code: fixture.gas.outbox.at(-1)?.body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1] })); return; }
     if (req.url === '/test/fault') { const input = JSON.parse(body); injectAccessFault(fixture, input.stage, input.after); res.end('{}'); return; }
     if (req.url === '/test/disable') { fixture.env.WORKSPACE_IDENTITY_ACCESS_ENABLED = 'false'; res.end('{}'); return; }
     if (req.url === '/test/state') {

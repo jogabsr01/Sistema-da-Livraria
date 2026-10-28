@@ -73,7 +73,7 @@ const server=createServer(async(req,res)=>{
     if(req.url==='/test/enable-customers'){fixture.env.WORKSPACE_CUSTOMERS_ENABLED='true';fixture.gas.props.CUSTOMERS_ENABLED='true';fixture.env.WORKSPACE_PERSONAL_DATA_KEY=randomBytes(32).toString('hex');fixture.env.WORKSPACE_PERSONAL_INDEX_KEY=randomBytes(32).toString('hex');res.end('{}');return;}
     if(req.url==='/test/enable-staff'){fixture.env.WORKSPACE_STAFF_ENABLED='true';fixture.gas.props.STAFF_ENABLED='true';fixture.env.WORKSPACE_PERSONAL_DATA_KEY=randomBytes(32).toString('hex');fixture.env.WORKSPACE_PERSONAL_INDEX_KEY=randomBytes(32).toString('hex');res.end('{}');return;}
     if(req.url==='/test/email-delivery'){res.end(JSON.stringify({count:fixture.gas.outbox.length,lastTo:fixture.gas.outbox.at(-1)?.to,googleOwner:fixture.gas.props.OWNER_EMAIL}));return;}
-    if(req.url==='/test/code'){res.end(JSON.stringify({code:fixture.gas.outbox.at(-1)?.body.match(/\n([A-Za-z0-9_-]{43})\n/)[1]}));return;}
+    if(req.url==='/test/code'){res.end(JSON.stringify({code:fixture.gas.outbox.at(-1)?.body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1]}));return;}
     if(req.url==='/test/fault'){const input=JSON.parse(body);injectCatalogFault(fixture,input.stage,input.after);res.end('{}');return;}
     if(req.url==='/test/lookup-mode'){lookupMode=JSON.parse(body).mode;lookupService=makeLookup();res.end('{}');return;}
     if(req.url==='/test/disable-photos'){fixture.env.WORKSPACE_COVER_PHOTOS_ENABLED='false';res.end('{}');return;}

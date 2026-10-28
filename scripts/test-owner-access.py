@@ -313,6 +313,43 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.step_posts['pin'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
+    def test_slow_previous_session_does_not_block_form_or_override_new_email_flow(self):
+        self.activate()
+        self.page.add_init_script("""(() => {
+          const original = window.fetch;
+          window.fetch = async (url, options) => {
+            const response = await original(url, options);
+            if (String(url) !== '/api/v1/session') return response;
+            window.sessionLookupWaiting = true;
+            await new Promise(resolve => window.releaseSessionLookup = resolve);
+            window.sessionLookupReleased = true;
+            return response;
+          };
+        })();""")
+        self.page.reload()
+        expect(self.page.locator('#initial')).to_be_visible()
+        self.page.wait_for_function('window.sessionLookupWaiting === true')
+        expect(self.page.get_by_role('button', name='Entrar na minha conta', exact=True)).to_be_enabled()
+        self.page.get_by_text('É meu primeiro acesso', exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button', name='Receber código por e-mail').click()
+        expect(self.page.locator('#email-form')).to_be_visible()
+        self.page.evaluate('window.releaseSessionLookup()')
+        self.page.wait_for_function('window.sessionLookupReleased === true')
+        expect(self.page.locator('#email-form')).to_be_visible()
+        expect(self.page.locator('#complete')).to_be_hidden()
+        self.assertEqual(self.errors, [])
+
+    def test_seven_character_email_code_accepts_lowercase_and_preserves_second_factor(self):
+        self.begin_email()
+        proof = self.page.locator('#email-code').input_value()
+        self.assertEqual(len(proof), 7)
+        self.page.locator('#email-code').fill(proof.lower())
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        expect(self.page.locator('#complete')).to_be_hidden()
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
         self.session_transport_failure = True
         self.page.goto(ORIGIN + '/acesso-dev.html#entrar')

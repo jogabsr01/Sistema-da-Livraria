@@ -7,7 +7,7 @@ import { properties, environment } from './fixtures.mjs';
 import { ACCESS_COOKIE, ACCESS_ORIGIN, accessCookie, createOwnerAccessHandler, loadOwnerAccessSettings } from '../../backend/owner-access.mjs';
 
 const fakePin = '8274';
-function code(s) { return s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{43})\n/)[1]; }
+function code(s) { return s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1]; }
 function flowHash(s) { const sheet = s.priv.getSheetByName('_Identity_Flows'); return sheet.rows.at(-1)[sheet.rows[0].indexOf('Token_Hash')]; }
 async function pending(s) {
   const service = s.service(), token = randomBytes(32).toString('base64url'), ip = '192.0.2.10';

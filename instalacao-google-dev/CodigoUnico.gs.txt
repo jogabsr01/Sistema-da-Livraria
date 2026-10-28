@@ -45,7 +45,7 @@ function auditOperation_(request,c){
 ;
 // END Audit.gs
 
-// BEGIN AuthControl.gs sha256=1d5a9611208b274a1ef018d9b8985078e6498c160089f99bfee14f26b910ddcd
+// BEGIN AuthControl.gs sha256=7161183604955a3f0b5cbd692039916ea73d428fc6e7eee35e964f1e0c3f04ef
 /* DEV-only private identity controls. Public callers never access this store.
  * All operations run under the installation ScriptLock in processRequest_. */
 var AUTH_CONTROL_SCHEMA = {
@@ -98,11 +98,14 @@ function authControlStore_(c) {
   storage_(c, false); // Validate public-data bindings as well as the private store.
   var id = scriptProperties_().getProperty('IDENTITY_CONTROL_SPREADSHEET_ID');
   if (!id) failure_('IDENTITY_UNAVAILABLE');
+  var cacheKey = JSON.stringify([c.environment, c.installationId, c.spreadsheetId, c.driveRootId, id]);
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.controls[cacheKey]) return RPC_STORAGE_SCOPE_.controls[cacheKey];
   assertMarker_(resourceFile_(id), c, 'identity-controls');
   var ss = resourceSheet_(id);
   if (authControlInstalled_(ss) !== 3) failure_('IDENTITY_UNAVAILABLE');
   // Migration rows were already validated; remaining store checks need headers and capacity only.
   AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { if (table.name !== '_Control_Migrations') authControlShape_(ss, table.name); });
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.controls[cacheKey] = ss;
   return ss;
 }
 function provisionDevelopmentAuthControls() {
@@ -526,7 +529,7 @@ function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=44fede43b7641d2aeb69b7aa85674da9f31458d1c27515c163964ede9c77237f
+// BEGIN Code.gs sha256=ffa1f5851e212d6f8856892bcc979bc847a4209dd7c57cd0782725a63e019835
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -560,7 +563,12 @@ function assertMarker_(resource, c, kind) {
   if (!marker || marker.application !== 'livraria-ipb' || marker.environment !== c.environment || marker.installationId !== c.installationId || marker.kind !== kind) failure_('BINDING_MISMATCH');
   if (resource.getSharingAccess() !== DriveApp.Access.PRIVATE) failure_('BINDING_MISMATCH');
 }
+// Populated only inside one signed HTTP operation under ScriptLock. Never cache
+// users, sessions, permissions, row contents or validation across requests.
+var RPC_STORAGE_SCOPE_ = null;
 function storage_(c, withBackup) {
+  var cacheKey = JSON.stringify([c.environment, c.installationId, c.spreadsheetId, c.driveRootId, c.backupsId || '', !!withBackup]);
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.main[cacheKey]) return RPC_STORAGE_SCOPE_.main[cacheKey];
   if (!c.spreadsheetId || !c.driveRootId) failure_('BINDING_MISMATCH');
   assertMarker_(resourceFile_(c.spreadsheetId), c, 'spreadsheet');
   assertMarker_(resourceFolder_(c.driveRootId), c, 'root');
@@ -569,7 +577,9 @@ function storage_(c, withBackup) {
     if (!c.backupsId) failure_('BINDING_MISMATCH');
     backup = resourceFolder_(c.backupsId); assertMarker_(backup, c, 'backups');
   }
-  return { spreadsheet: resourceSheet_(c.spreadsheetId), backup: backup };
+  var result = { spreadsheet: resourceSheet_(c.spreadsheetId), backup: backup };
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.main[cacheKey] = result;
+  return result;
 }
 function withLock_(fn) {
   var lock = LockService.getScriptLock();
@@ -702,6 +712,9 @@ function registerNonce_(request, spreadsheet) {
 }
 function processRequest_(request, c) {
   return withLock_(function () {
+    var previousScope = RPC_STORAGE_SCOPE_;
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {} };
+    try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('BUSY');
     var ss = storage_(c, false).spreadsheet; assertSchema_(ss);
     registerNonce_(request, ss);
@@ -778,6 +791,7 @@ function processRequest_(request, c) {
     if (actor.id !== principal.id || actor.role !== principal.role || actor.assurance !== principal.assurance || actor.authenticatedAt !== principal.authenticatedAt ||
         !['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
+    } finally { RPC_STORAGE_SCOPE_ = previousScope; }
   });
 }
 function signedResponse_(c, request, ok, data, code) {
@@ -2580,7 +2594,8 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=77f28100fa61e1676700a22447cd5131faf02f05fe29c3615f16ddf7720e220b
+// BEGIN OwnerAccess.gs sha256=01879e7afb24cb520d2c81e3ced3a85fb905a1515eb16dd9f06704be4e8d7d92
+function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
 function accessReject_() { failure_('ACCESS_REJECTED'); }
@@ -2692,7 +2707,7 @@ function accessNewFlow_(table, p, owner, purpose, now) {
 function accessStart_(ss, c, p, now, recovery) {
   var purpose=recovery?'RECOVER':'ACTIVATE';if(recovery&&!recoveryEnabled_())failure_('IDENTITY_UNAVAILABLE');
   authControlExact_(p, ['email', 'flowId', 'tokenHash', 'codeHash', 'code']);
-  if (!accessHash_(p.codeHash) || !passkeyText_(p.code, 43, 43)) accessReject_();
+  if (!accessHash_(p.codeHash) || !accessDeliveryCode_(p.code)) accessReject_();
   var owner = accessOwner_(c, p.email), table = accessFlows_(ss);
   if(owner&&owner.row.Primeiro_Acesso_Concluido!==!!recovery)owner=null;
   // Throttle delivery as well as requests. Invalid accounts have the same response.
@@ -4153,7 +4168,7 @@ function identitySessionOperation_(request, c) {
 ;
 // END SessionStore.gs
 
-// BEGIN Staff.gs sha256=534575918fd141f41c293d9000cf2a5b6884d2fb8642d35208ac2247d2b7108b
+// BEGIN Staff.gs sha256=fa71f9942a140a4aaf948de6e4fb252b47ec0f6e21dee039054df553c30234a5
 /* DEV staff management. Dispatcher owns ScriptLock. Contact data is AEAD-sealed
  * in Node; no plaintext personal fields, PINs or bearer tokens in this journal. */
 function staffEnabled_() { return scriptProperties_().getProperty('STAFF_ENABLED') === 'true'; }
@@ -4277,7 +4292,7 @@ function staffAccessOperation_(request,c) {
   if(['identity.staffAccess.start','identity.staffAccess.recover'].includes(request.action)){
     var recovery=request.action==='identity.staffAccess.recover',purpose=recovery?'RECOVER':'ACTIVATE';if(recovery&&!recoveryEnabled_())failure_('IDENTITY_UNAVAILABLE');
     authControlExact_(p,['subjectId','contactHash','delivery','flowId','tokenHash','codeHash','code']);
-    if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!passkeyText_(p.code,43,43))accessReject_();if([accessEmail_(c.owner),ownerLoginEmail_(c)].includes(accessEmail_(p.delivery)))accessReject_();
+    if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!accessDeliveryCode_(p.code))accessReject_();if([accessEmail_(c.owner),ownerLoginEmail_(c)].includes(accessEmail_(p.delivery)))accessReject_();
     var subject=staffSubject_(c,p.subjectId),table=accessFlows_(ss);
     if(!subject||subject.row.Primeiro_Acesso_Concluido!==recovery||digest_(subject.row.Nome)!==p.contactHash)subject=null;
     if(subject&&table.rows.some(function(r){return r.Subject_ID===subject.row.ID_Usuario&&now-authControlTime_(r.Created_At)<60000;}))subject=null;
