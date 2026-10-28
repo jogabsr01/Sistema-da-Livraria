@@ -1,3 +1,4 @@
+import { identityConfigurationIssues } from './identity-configuration.mjs';
 import { emergencyCodeHash } from './emergency-codes.mjs';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { loadPersonalDataSettings, createPersonalDataVault } from './personal-data.mjs';
@@ -139,13 +140,15 @@ const shapes = { rescue:['recoveryCode'],recover:['email'], start: ['email'], lo
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
     const requestId = randomUUID();
+    let operation, settingsLoaded = false;
     try {
       if (new URL(request.url).origin !== ACCESS_ORIGIN) throw new ApiError(403, 'FORBIDDEN');
-      const operation = new URL(request.url).pathname.split('/').at(-1);
+      operation = new URL(request.url).pathname.split('/').at(-1);
       if (operation !== 'state' && !Object.hasOwn(shapes, operation)) throw new ApiError(404, 'NOT_FOUND');
       const method = operation === 'state' ? 'GET' : 'POST';
       if (request.method !== method) { const result = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); result.headers.set('allow', method); return result; }
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
+      settingsLoaded = true;
       const service = createOwnerAccessService(settings, { client: (dependencies.createClient || createWorkspaceClient)(settings.config) });
       let token;
       if (operation === 'state') {
@@ -176,6 +179,13 @@ export function createOwnerAccessHandler(dependencies = {}) {
       } else if (['start', 'login','recover'].includes(operation)) result.headers.set('set-cookie', accessCookie(token));
       return result;
     } catch (error) {
+      // DEV operator setup only, before any identity/cookie/command processing.
+      // This does not relax validation or expose key material on public errors.
+      if (!settingsLoaded && operation === 'state' && process.env.APP_ENV === 'dev' &&
+          error instanceof ApiError && error.code === 'IDENTITY_CONFIGURATION_UNAVAILABLE') {
+        const configurationIssues = identityConfigurationIssues(process.env);
+        if (configurationIssues.length) return json({ error: { code: error.code, requestId, configurationIssues } }, 503);
+      }
       const result = safeFailure(error, requestId);
       if (error?.code === 'AUTH_RATE_LIMITED') result.headers.set('retry-after', String(error.retryAfterSeconds));
       return result;
