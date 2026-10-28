@@ -30,7 +30,14 @@ function configuration(env,pins) {
 }
 export function safeTimings(entries) {
   return (Array.isArray(entries)?entries:[]).slice(0,50).flatMap(entry=>{
-    const p=entry?.jsonPayload;
+    let p=entry?.jsonPayload;
+    // console.info(JSON.stringify(metric)) is stored as a message string by
+    // Apps Script. Parse locally, then keep the same closed numeric schema.
+    if(p?.metric!=='rpc.duration'){
+      const message=typeof p?.message==='string'?p.message:entry?.textPayload;
+      if(typeof message!=='string'||message.length>4096)return [];
+      try { p=JSON.parse(message); } catch { return []; }
+    }
     if (p?.metric !== 'rpc.duration') return [];
     const result={};
     for (const key of ['lockMs','bindingsMs','schemaMs','workMs','totalMs']) {
@@ -92,7 +99,7 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
     try {
       const logs=await requestJson('https://logging.googleapis.com/v2/entries:list',{
         method:'POST',headers:{authorization:'Bearer '+token.access_token,'content-type':'application/json'},
-        body:JSON.stringify({resourceNames:['projects/'+config.cloudProjectId],filter:'resource.type="app_script_function" AND jsonPayload.metric="rpc.duration" AND timestamp>="'+new Date(Date.now()-3600000).toISOString()+'"',orderBy:'timestamp desc',pageSize:50})
+        body:JSON.stringify({resourceNames:['projects/'+config.cloudProjectId],filter:'resource.type="app_script_function" AND (jsonPayload.metric="rpc.duration" OR jsonPayload.message:"rpc.duration" OR textPayload:"rpc.duration") AND timestamp>="'+new Date(Date.now()-3600000).toISOString()+'"',orderBy:'timestamp desc',pageSize:50})
       },'LOGS_UNAVAILABLE');
       report.timings=safeTimings(logs.entries);report.logging=report.timings.length?'SAMPLED':'NO_METRICS_IN_LAST_HOUR';
     } catch { report.logging='UNAVAILABLE'; }

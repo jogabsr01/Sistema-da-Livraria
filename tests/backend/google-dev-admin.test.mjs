@@ -119,3 +119,9 @@ test('Drive setup rejects scope substitution or non-DEV context before IO and re
 test('untrusted service state cannot claim enabled or trigger any mutation',async()=>{
   const f=fixture();f.state.driveStatus='secret-marker';await assert.rejects(f.run(setup),/DRIVE_API_STATUS_UNAVAILABLE/);assert.equal(f.state.calls.filter(c=>c.path.endsWith(':enable')).length,0);
 });
+test('Apps Script message and text metric formats retain numeric timings without disclosing messages, identifiers or malformed payloads',()=>{
+  const metric={metric:'rpc.duration',lockMs:8,bindingsMs:9,schemaMs:10,workMs:11,totalMs:38,email:'private-contact',code:'secret-marker'};
+  const expected={lockMs:8,bindingsMs:9,schemaMs:10,workMs:11,totalMs:38};
+  assert.deepEqual(safeTimings([{jsonPayload:{message:JSON.stringify(metric)}},{textPayload:JSON.stringify(metric)},{textPayload:'rpc.duration secret-marker'},{jsonPayload:{message:'{broken secret-marker'}},{textPayload:JSON.stringify({...metric,totalMs:'secret-marker'})}]),[expected,expected]);
+  assert.deepEqual(safeTimings([{textPayload:' '.repeat(4097)+JSON.stringify(metric)}]),[]);
+});
