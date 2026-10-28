@@ -274,6 +274,7 @@ function processRequest_(request, c) {
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
       if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
       if (request.action === 'identity.access.options') return accessOptions_(request, c);
+      if (request.action === 'identity.access.prepareCompletion') return accessPrepareCompletion_(request, c);
       return ownerAccessOperation_(request, c);
     }
     if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
