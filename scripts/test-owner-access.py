@@ -4,6 +4,7 @@ No live email is sent. No real Google identities, data, or TLS exceptions.
 import base64
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tomllib
@@ -44,6 +45,7 @@ class OwnerAccess(unittest.TestCase):
         self.lost_step = None
         self.step_failure = None
         self.step_posts = {}
+        self.complete_results = []
     def tearDown(self):
         self.context.close(); self.server.terminate(); self.server.communicate(timeout=10)
     def local(self, path, body=None, headers=None, method=None):
@@ -79,6 +81,11 @@ class OwnerAccess(unittest.TestCase):
             if operation == self.lost_step and self.step_failure == 'html-before':
                 route.fulfill(status=502 if operation == 'options' else 504, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
             result = self.local(path, body=body, headers=headers, method=request.method)
+            timing = re.search(r'rpc;desc="(\d+)"', result['headers'].get('server-timing', ''))
+            if timing: self.last_rpc_count = int(timing.group(1))
+            if operation == 'complete':
+                if not hasattr(self, 'complete_results'): self.complete_results = []
+                self.complete_results.append(result)
             if operation == self.lost_step:
                 if self.step_failure == 'html':
                     route.fulfill(status=502, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
@@ -126,6 +133,44 @@ class OwnerAccess(unittest.TestCase):
         state = self.local('/test/state'); self.assertEqual(state['sessions'], 2); self.assertEqual(state['pins'], 1); self.assertEqual(state['passkeys'], 1)
         self.page.screenshot(path=str(ARTIFACTS / 'acesso-desktop.png'), full_page=True)
         self.assert_no_secrets_in_browser_storage(); self.assertEqual(self.errors, [])
+    def test_completion_uses_two_acknowledged_phases_without_extra_session_read(self):
+        self.activation_until_passkey()
+        before = self.session_request_count
+        rpc_before = self.last_rpc_count
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#complete')).to_be_visible()
+        self.assertEqual(len(self.complete_results), 2)
+        first, second = self.complete_results
+        self.assertEqual(first['status'], 202)
+        self.assertEqual(json.loads(first['body'])['data']['stage'], 'COMMITTING')
+        self.assertEqual(first['cookies'], [])
+        first_count = int(re.search(r'rpc;desc="(\d+)"', first['headers']['server-timing']).group(1))
+        self.assertEqual(first_count - rpc_before, 2)
+        self.assertEqual(json.loads(second['body'])['data']['stage'], 'COMPLETE')
+        second_count = int(re.search(r'rpc;desc="(\d+)"', second['headers']['server-timing']).group(1))
+        self.assertEqual(second_count - first_count, 1)
+        self.assertEqual(self.session_request_count, before)
+        self.assertEqual(self.local('/test/state')['sessions'], 1)
+        self.assert_no_secrets_in_browser_storage()
+
+    def test_lost_proof_ack_stops_without_auto_commit_and_reload_resumes_one_session(self):
+        self.activation_until_passkey()
+        self.lost_step = 'complete'; self.step_failure = 'html'
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        self.assertEqual(self.step_posts.get('complete'), 1)
+        state = self.local('/test/state')
+        self.assertEqual(state['sessions'], 0)
+        self.assertEqual(state['passkeys'], 1)
+        self.lost_step = None; self.step_failure = None
+        self.page.reload()
+        expect(self.page.locator('#retry')).to_be_visible()
+        self.page.locator('#retry-button').click()
+        expect(self.page.locator('#complete')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['sessions'], 1)
+        self.assertEqual(self.local('/test/state')['passkeys'], 1)
+        self.assertEqual(self.errors, [])
+
     def test_mobile_activation_has_no_horizontal_overflow_and_preserves_verified_session(self):
         self.activate(); self.assert_no_secrets_in_browser_storage()
         self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))

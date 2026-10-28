@@ -121,6 +121,7 @@ test('PIN is salted scrypt in the private store; only verified passkey commits a
   const current = await s.sessions.current(new Request(ACCESS_ORIGIN + '/api/v1/session', { headers: { cookie } }));
   assert.equal(current.status, 200);
   const data = (await current.json()).data; assert.equal(data.user.role, 'SUPER_ADMIN'); assert.equal(data.user.assurance, 'passkey');
+  assert.equal(result.sessionCsrfToken,data.csrfToken,'completion returns the CSRF of the same persisted, cookie-bound session');
 });
 
 test('partial commit before/after each projection never grants a partial session; a fresh Node instance retries exactly one session', async () => {
@@ -185,7 +186,7 @@ test('activated account login requires its PIN, unknown accounts get the same re
   const s = ownerFixture(), prepared = await pending(s); await prepared.service.execute('complete', { response: null }, prepared.token, prepared.ip);
   for (const input of [{ email: properties.OWNER_EMAIL, pin: '0193' }, { email: 'unknown@example.invalid', pin: fakePin }]) await assert.rejects(s.service().execute('login', input, randomBytes(32).toString('base64url'), '192.0.2.3'), { code: 'ACCESS_REJECTED' });
   const token = randomBytes(32).toString('base64url'); assert.equal((await s.service().execute('login', { email: properties.OWNER_EMAIL, pin: fakePin }, token, '192.0.2.3')).stage, 'PASSKEY');
-  assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 2); await assert.rejects(s.service().execute('complete', { response: null }, token, '192.0.2.3'), { code: 'ACCESS_REJECTED' });
+  assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 2); await assert.rejects(s.service().execute('complete', { response: null }, token, '192.0.2.3'), { code: 'WORKSPACE_ACCESS_REJECTED' });
 });
 
 test('public HTTP requires CSRF, exact DEV origin, trusted context IP, bounded JSON and forbids caller role/subject claims', async () => {
@@ -275,4 +276,14 @@ test('fresh context after a preflight rejection still requires its new CSRF and 
  const r=await call(s,'start',{body:{email:properties.OWNER_EMAIL},token,csrfToken:state.data.data.csrfToken});
  assert.equal(r.response.status,202);assert.equal(calls,1);
  assert.equal(s.gas.outbox.length,1);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
+});
+
+test('prepared completion rejects embedded origin and foreign user handle before consuming a ceremony',async()=>{
+ for(const mode of ['embedded','handle']){
+  const s=ownerFixture(),p=await pending(s);await p.service.execute('complete',{response:null},p.token,p.ip);
+  const token=randomBytes(32).toString('base64url'),ip='192.0.2.98',svc=s.service();await svc.execute('login',{email:properties.OWNER_EMAIL,pin:fakePin},token,ip);await svc.execute('options',{},token,ip);
+  const response={id:randomBytes(32).toString('base64url'),response:{clientDataJSON:Buffer.from(JSON.stringify({type:'webauthn.get',origin:ACCESS_ORIGIN,crossOrigin:mode==='embedded'})).toString('base64url'),...(mode==='handle'?{userHandle:Buffer.from('11111111-1111-4111-8111-111111111111').toString('base64url')}:{})}};
+  await assert.rejects(svc.execute('complete',{response},token,ip));
+  const c=s.priv.getSheetByName('_Passkey_Ceremonies');assert.equal(c.rows.at(-1)[c.rows[0].indexOf('Consumed_At')],'');assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),2);
+ }
 });

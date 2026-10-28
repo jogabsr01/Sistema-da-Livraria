@@ -8,6 +8,7 @@ import {
   createOwnerAccessHandler,
   ACCESS_ORIGIN,
   OWNER_ACCESS_BUDGET_MS,
+  COMPLETION_REQUEST_BUDGET_MS,
 } from "../../backend/owner-access.mjs";
 import { ApiError } from "../../backend/errors.mjs";
 import { ownerFixture } from "../helpers/owner-access-fixture.mjs";
@@ -145,4 +146,12 @@ test("owner handler supplies a finite request-wide deadline and repeated state f
   assert.equal((await repeated.json()).error.code, "UPSTREAM_TIMEOUT");
   assert.equal(repeated.headers.get("set-cookie"), null);
   assert.equal(s.main.getSheetByName("Sessoes").getLastRow(), 1);
+});
+
+test('staged completion reserves hosting response margin and returns a structured uncertain timeout without replay or cookie loss',async()=>{
+ const s=ownerFixture();let options,calls=0;
+ const handler=createOwnerAccessHandler({loadSettings:()=>s.settings,createClient:(_c,o)=>{options=o;return {...s.client,prepareAccessCompletion:async()=>{calls++;throw new ApiError(502,'UPSTREAM_TIMEOUT');}};}});
+ const fresh=await handler(new Request(ACCESS_ORIGIN+'/api/v1/access/state'));const cookie=fresh.headers.get('set-cookie').split(';')[0],csrf=(await fresh.json()).data.csrfToken;
+ const before=performance.now();const result=await handler(new Request(ACCESS_ORIGIN+'/api/v1/access/complete',{method:'POST',headers:{cookie,origin:ACCESS_ORIGIN,'content-type':'application/json','x-csrf-token':csrf,'x-access-completion-version':'2'},body:JSON.stringify({response:null})}),{ip:'192.0.2.42'});
+ assert.equal(COMPLETION_REQUEST_BUDGET_MS,27000);assert.ok(options.deadlineAt>=before+27000&&options.deadlineAt<=performance.now()+27000);assert.equal(calls,1);assert.equal(result.status,502);assert.equal((await result.json()).error.code,'UPSTREAM_TIMEOUT');assert.equal(result.headers.get('set-cookie'),null);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
 });

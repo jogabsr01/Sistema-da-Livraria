@@ -343,8 +343,8 @@ function accessPrepareCompletion_(request,c) {
     }
     throw error;
   }
-  if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)accessReject_();
   if(flow.proofReady){
+    if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)accessReject_();
     // This is acknowledgement/recovery of an already verified proof, not a new
     // guess. commit rechecks key, epoch, flow binding and durable projections.
     var principal=ownerAccessOperation_({action:'identity.access.commit',payload:{tokenHash:p.tokenHash,sessionTokenHash:p.sessionTokenHash}},c);
@@ -353,7 +353,7 @@ function accessPrepareCompletion_(request,c) {
   var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
   if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
   if(p.handleSubjectId!==''&&p.handleSubjectId!==flow.subjectId)accessReject_();
-  if(flow.state!=='PASSKEY'||!p.hasResponse||!passkeyText_(p.credentialId,2,1400)||flow.replacementAllowed&&!p.allowReplacement)accessReject_();
+  if(flow.state!=='PASSKEY'||!flow.ceremonyId||!p.hasResponse||!passkeyText_(p.credentialId,2,1400)||flow.replacementAllowed&&!p.allowReplacement)accessReject_();
   var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion,ceremonyId:flow.ceremonyId,credentialId:flow.purpose==='ACTIVATE'||flow.replacementAllowed?'':p.credentialId}},c);
   return {allowed:true,done:false,flow:flow,ceremony:ceremony};
 }

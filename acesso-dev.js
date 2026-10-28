@@ -88,7 +88,7 @@
   }
   async function api(operation, body, canRenew = true) {
     const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-      headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) });
+      headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(operation==='complete'?{'x-access-completion-version':'2'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.ok) {
       // Renew only a server-confirmed preflight rejection: no command ran.
       // Never replay a timeout, invalid response, PIN/code guess or ceremony.
@@ -189,8 +189,18 @@
     $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
   async function finish() {
-    await api('complete', { response: pendingResponse }); pendingResponse = null; clearSecrets();
-    if (!await current()) throw new Error('SESSION_NOT_CONFIRMED');
+    let result=await api('complete',{response:pendingResponse});
+    if(result.stage==='COMMITTING'&&result.proofSaved===true){
+      pendingResponse=null;
+      result=await api('complete',{response:null});
+    }
+    if(result.stage!=='COMPLETE')throw unavailable('ACCESS_RESPONSE_INVALID');
+    pendingResponse=null;clearSecrets();
+    if(typeof result.sessionCsrfToken==='string'){
+      if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||result.user.assurance!=='passkey'||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
+      sessionCsrf=result.sessionCsrfToken;show('COMPLETE');message('Acesso verificado com sucesso.','success');
+      $('identity-result').textContent='Sua conta está pronta para uso.';$('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(result.user.role);
+    }else if(!await current())throw new Error('SESSION_NOT_CONFIRMED');
   }
   $('check-step').addEventListener('click', () => run(async () => {
     const state = await api('state');

@@ -17,7 +17,7 @@ function subject(value) {
       !Number.isSafeInteger(value.authorizationVersion) || value.authorizationVersion < 1) rejected();
   return { subjectId: value.subjectId, authorizationVersion: value.authorizationVersion };
 }
-function responseSize(value) {
+export function validatePasskeyResponse(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) rejected();
   try {
     if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 16384) rejected();
@@ -43,7 +43,7 @@ export function createPasskeyService(settings, { client }) {
       return { ceremonyId, options };
     },
     async verifyRegistration(input, response) {
-      const user = subject(input); if (typeof input.ceremonyId !== 'string' || !UUID.test(input.ceremonyId)) rejected(); responseSize(response);
+      const user = subject(input); if (typeof input.ceremonyId !== 'string' || !UUID.test(input.ceremonyId)) rejected(); validatePasskeyResponse(response);
       const ceremony = await client.takePasskey({ ...user, ceremonyId: input.ceremonyId, credentialId: '' });
       if (ceremony.purpose !== 'REGISTER') rejected();
       let result;
@@ -64,7 +64,7 @@ export function createPasskeyService(settings, { client }) {
       return { ceremonyId, options };
     },
     async verifyAuthentication(input, response) {
-      const user = subject(input); if (typeof input.ceremonyId !== 'string' || !UUID.test(input.ceremonyId)) rejected(); responseSize(response);
+      const user = subject(input); if (typeof input.ceremonyId !== 'string' || !UUID.test(input.ceremonyId)) rejected(); validatePasskeyResponse(response);
       const handle = response.response?.userHandle;
       if (handle !== null && handle !== undefined && (typeof handle !== 'string' || handle !== Buffer.from(user.subjectId, 'utf8').toString('base64url'))) rejected();
       const ceremony = await client.takePasskey({ ...user, ceremonyId: input.ceremonyId, credentialId: response.id });

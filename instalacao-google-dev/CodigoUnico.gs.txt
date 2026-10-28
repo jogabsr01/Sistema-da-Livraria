@@ -2639,7 +2639,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=903c2fbfa90f6435aba716d60fbe1a867d4abf483892ffb325863cf24a5e98c8
+// BEGIN OwnerAccess.gs sha256=256295843ad71f709c2c4afaa26195255ed65b0bc87cda24849897a0c1fb27c0
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -2985,8 +2985,8 @@ function accessPrepareCompletion_(request,c) {
     }
     throw error;
   }
-  if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)accessReject_();
   if(flow.proofReady){
+    if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)accessReject_();
     // This is acknowledgement/recovery of an already verified proof, not a new
     // guess. commit rechecks key, epoch, flow binding and durable projections.
     var principal=ownerAccessOperation_({action:'identity.access.commit',payload:{tokenHash:p.tokenHash,sessionTokenHash:p.sessionTokenHash}},c);
@@ -2995,7 +2995,7 @@ function accessPrepareCompletion_(request,c) {
   var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
   if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
   if(p.handleSubjectId!==''&&p.handleSubjectId!==flow.subjectId)accessReject_();
-  if(flow.state!=='PASSKEY'||!p.hasResponse||!passkeyText_(p.credentialId,2,1400)||flow.replacementAllowed&&!p.allowReplacement)accessReject_();
+  if(flow.state!=='PASSKEY'||!flow.ceremonyId||!p.hasResponse||!passkeyText_(p.credentialId,2,1400)||flow.replacementAllowed&&!p.allowReplacement)accessReject_();
   var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion,ceremonyId:flow.ceremonyId,credentialId:flow.purpose==='ACTIVATE'||flow.replacementAllowed?'':p.credentialId}},c);
   return {allowed:true,done:false,flow:flow,ceremony:ceremony};
 }
