@@ -48,3 +48,14 @@ A latência Google real após atualizar a implantação ainda precisa ser medida
 ## Aceite parcial dos formulários
 
 Após a atualização, o proprietário enviou imagem com os campos de acesso e a opção É meu primeiro acesso visíveis. A abertura foi confirmada; e-mail, PIN e passkey reais continuam pendentes. O atalho para a demonstração V15 e as mensagens que apontavam para ela foram removidos desta página de autenticação para evitar confusão entre as entradas. Essa remoção não altera o mecanismo de sessão nem as regras das APIs. Os PINs demonstrativos continuam sem autenticar o backend real.
+
+
+## Confirmação salva com resposta perdida
+
+O proprietário confirmou recebimento do e-mail real. Depois de confirmar o código, a tela não avançou; a recarga mostrou a etapa PIN, confirmando que o estado já havia mudado no servidor. Ao salvar o PIN, a tela apresentou ACCESS / ACCESS_RESPONSE_INVALID. Esse código indica resposta incompatível com o contrato JSON; a origem exata (plataforma, transporte ou serviço) e a gravação desse PIN ainda não foram confirmadas. Não atribuir automaticamente a erro de PIN ou de conexão do usuário.
+
+A tela limita a espera de cada consulta a 60 segundos, incluindo o corpo da resposta, e mostra aviso após oito segundos de operação. Após falha de transporte, timeout ou resposta inválida ao confirmar e-mail/salvar PIN, faz uma única leitura de estado. Só avança se o servidor confirmar respectivamente PIN ou PASSKEY. Não repete a mutação, não reenvia código e não concede sessão; estado diferente ou consulta indisponível preserva a falha. Rejeição de credencial não provoca essa reconciliação. Passkey e conferência de sessão continuam obrigatórias.
+
+Cenários: resposta perdida depois da confirmação do e-mail retoma PIN com uma única tentativa; resposta HTML depois de salvar PIN retoma PASSKEY sem novo envio; falha antes da confirmação mantém EMAIL, sem acesso ou sessão. Verificar também o prazo no corpo da resposta e aviso de espera. Google real continua sujeito ao aceite manual; os testes locais usam o serviço emulado. Esta alteração da tela não exige nova cópia de Código.gs ou propriedades.
+
+Validação desta correção: 16 cenários Chromium distintos aprovados (14 na execução completa, mais os dois novos casos de corpo sem resposta e consulta de estado indisponível). Estado não conferido não avança, nenhuma tentativa é repetida automaticamente e nenhuma sessão é emitida nesses casos de retomada. Evidência local em serviço emulado; latência e aceite no Google real permanecem pendentes.

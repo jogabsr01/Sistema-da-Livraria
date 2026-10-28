@@ -41,6 +41,9 @@ class OwnerAccess(unittest.TestCase):
         self.session_transport_failure = False
         self.state_response_invalid = False
         self.session_request_count = 0
+        self.lost_step = None
+        self.step_failure = None
+        self.step_posts = {}
     def tearDown(self):
         self.context.close(); self.server.terminate(); self.server.communicate(timeout=10)
     def local(self, path, body=None, headers=None, method=None):
@@ -62,7 +65,16 @@ class OwnerAccess(unittest.TestCase):
                 raw = bytearray(base64.urlsafe_b64decode(signature + '=' * ((4-len(signature)%4)%4))); raw[-1] ^= 1
                 value['response']['response']['signature'] = base64.urlsafe_b64encode(raw).decode().rstrip('='); body = json.dumps(value).encode()
             headers = {key: value for key, value in request.all_headers().items() if key not in ['host', 'content-length']}
+            operation = path.rsplit('/', 1)[-1]
+            if request.method == 'POST':
+                self.step_posts[operation] = self.step_posts.get(operation, 0) + 1
+            if operation == self.lost_step and self.step_failure == 'before':
+                route.abort('failed'); return
             result = self.local(path, body=body, headers=headers, method=request.method)
+            if operation == self.lost_step:
+                if self.step_failure == 'html':
+                    route.fulfill(status=502, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
+                route.abort('failed'); return
             if result['cookies']:
                 result['headers']['set-cookie'] = '\n'.join(result['cookies'])
             route.fulfill(status=result['status'], headers=result['headers'], body=result['body']); return
@@ -169,6 +181,79 @@ class OwnerAccess(unittest.TestCase):
         self.page.reload()
         expect(self.page.locator('#complete')).to_be_visible()
         self.assertEqual(self.local('/test/state')['sessions'], 1)
+
+    def begin_email(self):
+        self.open()
+        self.page.get_by_text('É meu primeiro acesso', exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button', name='Receber código por e-mail').click()
+        expect(self.page.locator('#email-form')).to_be_visible()
+        self.page.locator('#email-code').fill(self.local('/test/code')['code'])
+
+    def test_email_lost_acknowledgement_resumes_pin_without_repeating_code(self):
+        self.begin_email(); self.lost_step = 'email'
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.assertEqual(self.step_posts['email'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+        self.assertEqual(self.local('/test/state')['outbox'], 1)
+
+    def test_pin_saved_with_provider_html_resumes_passkey_without_resubmitting(self):
+        self.begin_email()
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.lost_step = 'pin'; self.step_failure = 'html'
+        self.page.locator('#new-pin').fill('8274'); self.page.locator('#confirm-pin').fill('8274')
+        self.page.get_by_role('button', name='Salvar PIN e continuar').click()
+        expect(self.page.locator('#passkey')).to_be_visible()
+        self.assertEqual(self.step_posts['pin'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+        self.assertNotIn('PRIVATE_PROVIDER_RESPONSE', self.page.locator('body').inner_text())
+        self.assertEqual(self.page.locator('#new-pin').input_value(), '')
+        self.assertEqual(self.page.locator('#confirm-pin').input_value(), '')
+
+    def test_email_stalled_body_has_bounded_wait_and_resumes_saved_stage(self):
+        self.page.add_init_script("""(() => {
+          const original = window.fetch;
+          window.fetch = async (url, options) => {
+            const response = await original(url, options);
+            if (!String(url).endsWith('/access/email')) return response;
+            window.testBodyWaiting = true;
+            return {ok: response.ok, json: () => new Promise((resolve, reject) => {
+              options.signal.addEventListener('abort', () => reject(new Error('test timeout')), {once:true});
+            })};
+          };
+        })();""")
+        self.page.clock.install()
+        self.begin_email()
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        self.page.wait_for_function('window.testBodyWaiting === true')
+        self.page.clock.fast_forward(8001)
+        expect(self.page.locator('#status')).to_contain_text('está demorando')
+        self.page.clock.fast_forward(52000)
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.assertEqual(self.step_posts['email'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+
+    def test_saved_step_without_readable_state_stays_closed_until_reload(self):
+        self.begin_email(); self.lost_step = 'email'; self.state_response_invalid = True
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('ACCESS_NETWORK_UNAVAILABLE')
+        expect(self.page.locator('#pin-form')).to_be_hidden()
+        expect(self.page.locator('#complete')).to_be_hidden()
+        self.assertEqual(self.step_posts['email'], 1)
+        self.state_response_invalid = False; self.page.reload()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+
+    def test_failed_code_transport_without_commit_does_not_advance(self):
+        self.begin_email(); self.lost_step = 'email'; self.step_failure = 'before'
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('ACCESS_NETWORK_UNAVAILABLE')
+        expect(self.page.locator('#email-form')).to_be_visible()
+        expect(self.page.locator('#pin-form')).to_be_hidden()
+        self.assertEqual(self.step_posts['email'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
 
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
         self.session_transport_failure = True
