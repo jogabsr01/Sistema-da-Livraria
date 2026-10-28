@@ -254,6 +254,21 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.step_posts['email'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
+    def test_opening_state_timeout_offers_read_retry_without_claiming_data_saved(self):
+        self.lost_step = 'state'; self.step_failure = 'html-before'
+        self.page.goto(ORIGIN + '/acesso-dev.html')
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos carregar seu acesso agora')
+        self.assertNotIn('salvos', self.page.locator('#status').inner_text())
+        expect(self.page.locator('#complete')).to_be_hidden()
+        expect(self.page.locator('#support-details')).to_be_visible()
+        self.assertEqual(self.step_posts, {})
+        self.lost_step = None
+        self.page.get_by_role('button', name='Tentar carregar novamente', exact=True).click()
+        expect(self.page.locator('#initial')).to_be_visible()
+        expect(self.page.locator('#check-step')).to_be_hidden()
+        self.assertEqual(self.step_posts, {})
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+
     def test_saved_step_without_readable_state_stays_closed_until_reload(self):
         self.begin_email(); self.lost_step = 'email'; self.state_response_invalid = True
         self.page.get_by_role('button', name='Confirmar código', exact=True).click()
@@ -453,7 +468,7 @@ class OwnerAccess(unittest.TestCase):
         self.page.goto(ORIGIN + '/acesso-dev.html')
         expect(self.page.locator('#access-diagnostic')).to_contain_text('STATE / ACCESS_RESPONSE_INVALID')
         expect(self.page.locator('#initial')).to_be_hidden()
-        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos carregar seu acesso agora')
         expect(self.page.locator('#access-progress')).to_be_hidden()
         expect(self.page.locator('#status')).to_have_attribute('data-tone', 'error')
         expect(self.page.locator('#access-diagnostic')).to_be_hidden()

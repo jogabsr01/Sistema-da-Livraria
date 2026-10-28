@@ -29,6 +29,7 @@
   const uncertainCodes = new Set(['ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
   function describe(error) {
     const code = error.code || '';
+    if (uncertainCodes.has(code) && ['state','session'].includes(error.transport?.operation)) return 'Não conseguimos carregar seu acesso agora. Aguarde alguns instantes e clique em “Tentar carregar novamente”. Se continuar, peça ajuda à administração.';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
     if (uncertainCodes.has(code) && error.transport?.operation === 'options') return 'Não conseguimos preparar a confirmação do aparelho agora. Aguarde alguns instantes e tente novamente em “Confirmar no meu aparelho”. Se continuar, peça ajuda à administração.';
     if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
@@ -88,7 +89,7 @@
     $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true;
     pendingMessage = null; $('status').hidden = true; $('access-progress').hidden = false;
     document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'true'));
-    try { await action(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').hidden = !uncertainCodes.has(error.code); }
+    try { await action(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = !uncertainCodes.has(error.code); }
     finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
   }
   function clearFieldError(field) {
