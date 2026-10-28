@@ -134,3 +134,16 @@ Atualizar primeiro o arquivo único Código.gs desta versão e a mesma implanta�
 Casos: um único RPC e uma única tentativa contabilizada; desafio devolvido coincide com o persistido e vinculado; conta desativada/versão alterada/fluxo vencido/PIN não definido/flag desligada recusados sem criar cerimônia; bloqueio respeitado; identidade ou função extra no payload recusada; falha no vínculo não concede acesso e nova tentativa funciona; erro502 na preparação explica tentar o aparelho, sem pedir novo cadastro de PIN. A validação física e a latência reais ainda dependem do proprietário.
 
 Validação final: 392 testes completos aprovados em Node22 com o arquivo único; Node24 aprovou391 na suíte completa antes de acrescentar o último cenário de falha no vínculo e depois os seis contratos específicos. Vinte e três cenários Chromium distintos aprovados (22 completos e um novo de erro502), incluindo assinaturas reais com autenticador virtual. Seis testes do kit, geração atual, build e diff check aprovados. Um ensaio inicial detectou que o SDK recodificava o desafio quando recebido como texto; corrigido para os bytes base64url antes dos resultados finais. Google/MailApp emulados, aceite real ainda pendente.
+
+
+## Erros de preenchimento por campo
+
+O proprietário apontou que INVALID_AUTH_REQUEST apresentava uma frase única misturando CPF, e-mail e PIN, mesmo após o PIN ser apagado da tela ao terminar a tentativa. A frase não permitia identificar o que corrigir.
+
+Entrar, primeiro acesso e recuperação passam a validar o formato localmente, antes de iniciar a espera ou enviar a requisição. CPF incompleto, CPF com dígitos verificadores inválidos, e-mail incompleto e PIN de entrada fora dos quatro números recebem texto próprio, aria-invalid, descrição junto ao campo e foco no primeiro erro. Editar o campo limpa o aviso antigo. Não se aplica a regra de PIN novo à verificação de PINs legados.
+
+Uma resposta genérica do servidor não é usada para adivinhar que o PIN ou CPF está errado. Se a tentativa com CPF retornar INVALID_AUTH_REQUEST, orienta tentar o e-mail cadastrado e pedir ajuda se necessário; nos demais casos, apresenta indisponibilidade para iniciar o acesso. Formato válido não significa cadastro existente, e rejeição de credenciais continua genérica, sem enumerar contas. Validações de segurança do servidor, flags e dados permanecem intactos.
+
+Casos: erro de CPF ou e-mail destaca somente o identificador e não envia tentativa; PIN incompleto destaca somente o PIN; correção limpa erro e permite envio; erro genérico de serviço com CPF válido não culpa PIN nem revela cadastro. Dados dos ensaios são sintéticos e não reproduzem o CPF da imagem do proprietário.
+
+Validação: 25 cenários Chromium aprovados, incluindo dois novos de validação local sem envio e resposta genérica do serviço sem atribuir erro ao PIN. Captura do campo inválido inspecionada; build, sintaxe JS e diff check aprovados. Backend e Apps Script não foram alterados.

@@ -399,6 +399,44 @@ class OwnerAccess(unittest.TestCase):
         self.page.get_by_text('Informações para o suporte', exact=True).click()
         expect(self.page.locator('#access-diagnostic')).to_contain_text('etapa: OPTIONS / HTTP: 502')
 
+    def test_login_validation_names_one_field_and_does_not_send_incomplete_inputs(self):
+        self.open()
+        submit = self.page.get_by_role('button', name='Entrar na minha conta', exact=True)
+        for value, explanation in [('1234','11 números do CPF'), ('12345678900','CPF inválido'), ('person@','E-mail inválido')]:
+            self.page.locator('#login-email').fill(value)
+            self.page.locator('#login-pin').fill('8274')
+            submit.click()
+            expect(self.page.locator('#status')).to_contain_text(explanation)
+            expect(self.page.locator('#login-email')).to_have_attribute('aria-invalid','true')
+            expect(self.page.locator('#login-email')).to_be_focused()
+            expect(self.page.locator('#login-email-error')).to_be_visible()
+            expect(self.page.locator('#support-details')).to_be_hidden()
+            self.assertEqual(self.step_posts.get('login',0),0)
+        self.page.locator('#login-email').fill('owner@example.invalid')
+        self.page.locator('#login-pin').fill('')
+        submit.click()
+        expect(self.page.locator('#status')).to_contain_text('Digite seu PIN de quatro números')
+        expect(self.page.locator('#login-pin')).to_have_attribute('aria-invalid','true')
+        expect(self.page.locator('#login-pin')).to_be_focused()
+        self.assertEqual(self.step_posts.get('login',0),0)
+        self.page.screenshot(path=str(ARTIFACTS / 'acesso-validacao-campo.png'),full_page=True)
+        self.page.locator('#login-pin').fill('8274')
+        expect(self.page.locator('#login-pin-error')).to_be_hidden()
+        submit.click()
+        expect(self.page.locator('#status')).to_contain_text('Não foi possível entrar')
+        self.assertEqual(self.step_posts['login'],1)
+
+    def test_server_validation_error_does_not_blame_correct_pin(self):
+        self.page.route('**/api/v1/access/login',lambda route:route.fulfill(status=400,content_type='application/json',body='{"error":{"code":"INVALID_AUTH_REQUEST"}}'))
+        self.open()
+        self.page.locator('#login-email').fill('529.982.247-25')
+        self.page.locator('#login-pin').fill('8274')
+        self.page.get_by_role('button',name='Entrar na minha conta',exact=True).click()
+        expect(self.page.locator('#status')).to_contain_text('Tente usar seu e-mail cadastrado')
+        self.assertNotIn('PIN tem quatro',self.page.locator('#status').inner_text())
+        self.assertEqual(self.page.locator('#login-pin').input_value(),'')
+        self.assertEqual(self.local('/test/state')['sessions'],0)
+
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
         self.session_transport_failure = True
         self.page.goto(ORIGIN + '/acesso-dev.html#entrar')

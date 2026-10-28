@@ -34,3 +34,6 @@ button.pin-visibility[aria-pressed="true"] { background: #e6eee8; }
 @media (prefers-reduced-motion: reduce) { .access-spinner { animation: none; } }
 #status[data-tone="error"] { background: #fff1ee; color: #853d31; }
 #status[data-tone="success"] { background: #e6f3e9; color: #174d30; }
+
+.field-error { margin: 6px 0 12px; color: #853d31; font-size: .9rem; }
+input[aria-invalid="true"] { border-color: #ad4434; }
