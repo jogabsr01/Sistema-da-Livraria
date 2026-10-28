@@ -1,0 +1,32 @@
+name: Google DEV administration
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ops/google-dev-request.json
+      - scripts/google-dev-admin.mjs
+      - .github/workflows/google-dev-admin.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: google-dev-administration
+  cancel-in-progress: false
+jobs:
+  google-dev:
+    if: github.repository == 'jogabsr01/Sistema-da-Livraria' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Verify generated Google source
+        run: node scripts/generate-google-single.mjs --check
+      - name: Verify administration contracts with synthetic credentials
+        run: node --test tests/backend/google-dev-admin.test.mjs
+      - name: Inspect or publish the pinned DEV project
+        env:
+          GOOGLE_DEV_ADMIN: ${{ secrets.GOOGLE_DEV_ADMIN }}
+        run: node scripts/google-dev-admin.mjs
