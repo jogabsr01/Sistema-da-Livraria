@@ -14,7 +14,23 @@ function fault(s,stage,after){let once=true;for(const fn of ['accessSaveMain_','
 const product=s=>{const id=randomUUID();return {commandId:randomUUID(),id,expectedVersion:0,record:normalizeProduct({title:'Título anterior',author:'Autor anterior',publisher:'Editora anterior',edition:'1ª',priceCents:3200,nicheIds:[s.main.getSheetByName('Nichos').rows[1][0]],active:true},id)};};
 
 test('unknown and known wrong-PIN denials have the same response and anonymous events without identifier, PIN, IP, flow or credential material',async()=>{
- const s=ownerFixture();await activate(s);const inputs=[{email:'owner@example.invalid',pin:'0193'},{email:'unknown@example.invalid',pin:'8274'}];for(const input of inputs)await assert.rejects(s.service().execute('login',input,token(),'192.0.2.44'),{code:'ACCESS_REJECTED'});const events=rows(s).filter(r=>r.Acao==='IDENTITY_ACCESS_DENIED');assert.equal(events.length,2);for(const r of events){assert.equal(r.ID_Usuario,'SYSTEM_AUTH');assert.equal(r.Perfil,'SYSTEM');assert.equal(r.ID_Entidade,'');assert.deepEqual(JSON.parse(r.Depois),{phase:'LOGIN',code:'CREDENTIALS_REJECTED'});}assert.ok(!/owner@example|unknown@example|0193|8274|192\.0\.2\.44|Token_Hash|tokenHash|codeHash|publicKey/.test(JSON.stringify(events)));assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),2);
+ const s=ownerFixture();await activate(s);
+ const inputs=[{email:'owner@example.invalid',pin:'0193'},{email:'unknown@example.invalid',pin:'8274'}];
+ // Public event IDs may contain these digits; they are not submitted credentials.
+ const ids=['01930000-0000-4000-8000-000000000001','82740000-0000-4000-8000-000000000002'];
+ const record=s.client.recordSecurityEvent;let next=0;
+ s.client.recordSecurityEvent=p=>record({...p,commandId:ids[next++]});
+ for(const input of inputs)await assert.rejects(s.service().execute('login',input,token(),'192.0.2.44'),{code:'ACCESS_REJECTED'});
+ const events=rows(s).filter(r=>r.Acao==='IDENTITY_ACCESS_DENIED');
+ assert.equal(events.length,2);assert.deepEqual(events.map(r=>r.ID_Log),ids);
+ for(const r of events){
+  assert.equal(r.ID_Usuario,'SYSTEM_AUTH');assert.equal(r.Perfil,'SYSTEM');
+  assert.equal(r.ID_Entidade,'');assert.equal(r.Antes,'');
+  assert.deepEqual(JSON.parse(r.Depois),{phase:'LOGIN',code:'CREDENTIALS_REJECTED'});
+  assert.ok(Object.values(r).every(v=>v!=='0193'&&v!=='8274'));
+ }
+ assert.ok(!/owner@example|unknown@example|192\.0\.2\.44|Token_Hash|tokenHash|codeHash|publicKey/.test(JSON.stringify(events)));
+ assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),2);
 });
 test('email denials and fifth-proof block are durable, generic and do not activate an account or expose the code',async()=>{
  const s=ownerFixture(),t=token(),service=s.service(),ip='192.0.2.7';await service.execute('start',{email:'owner@example.invalid'},t,ip);const secret=code(s);for(let i=0;i<5;i++)await assert.rejects(service.execute('email',{code:token()},t,ip),{code:'ACCESS_REJECTED'});assert.equal(rows(s).filter(r=>r.Acao==='IDENTITY_ACCESS_DENIED').length,5);const blocked=rows(s).filter(r=>r.Acao==='IDENTITY_PROOF_BLOCKED');assert.equal(blocked.length,1);assert.equal(blocked[0].Resultado,'BLOQUEADO');assert.ok(!JSON.stringify(rows(s)).includes(secret));assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);assert.equal(s.priv.getSheetByName('_Identity_Flows').rows.at(-1)[4],'REVOKED');

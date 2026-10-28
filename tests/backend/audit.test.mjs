@@ -11,7 +11,26 @@ test('audit filters intersect responsible user, operation, period, product in sa
  const original=JSON.stringify(s.main.getSheetByName('Logs_Auditoria').rows);for(const [f,count]of [[{},3],[{employeeId:s.master.id,operation:'SALE_COMMITTED',saleId:sale,productId:product,result:'SUCESSO'},1],[{result:'NEGADO'},1],[{productId:product},2],[{productId:randomUUID()},0],[{from:'2026-10-25T03:00:00.000Z'},0]]){const out=await data(await s.auditList({...s.filters(),...f}));assert.equal(out.total,count);if(f.saleId)assert.equal(out.items[0].id,hit.ID_Log);}assert.equal(JSON.stringify(s.main.getSheetByName('Logs_Auditoria').rows),original);
 });
 test('closed disclosure omits PII, secrets, notes, encrypted envelopes and unknown fields but preserves safe sale lines and signals omission',async()=>{
- const s=auditFixture();s.addAudit({Antes:JSON.stringify({pin:'8274',token:'secret-marker',email:'person@example.invalid',cpf:'52998224725',contact:{name:'Private'},notes:'Private notes',version:1}),Depois:JSON.stringify({version:2,items:[{productId:randomUUID(),title:'=HYPERLINK("evil") <livro> 😀',quantity:2,token:'secret-marker'}]})});const r=await s.auditList();const text=await r.clone().text();assert.ok(!/secret-marker|52998224725|person@example|Private notes|8274/.test(text));const out=await data(r);assert.equal(out.items[0].detailsOmitted,true);assert.equal(out.items[0].after.items[0].quantity,2);assert.equal(out.people[0].name,'Conta proprietária');assert.equal(out.people[0].contact,undefined);
+ const s=auditFixture();
+ // These are legitimate identifiers even though they contain the test PIN.
+ // Searching four digits across the whole JSON made random UUIDs/hashes fail CI.
+ const productId='82740000-0000-4000-8000-000000000001';
+ const auditId='00008274-0000-4000-8000-000000000002';
+ const requestId='00000000-8274-4000-8000-000000000003';
+ const title='=HYPERLINK("evil") <livro> 😀';
+ s.addAudit({ID_Log:auditId,ID_Requisicao:requestId,
+  Antes:JSON.stringify({pin:'8274',token:'secret-marker',email:'person@example.invalid',cpf:'52998224725',contact:{name:'Private'},notes:'Private notes',version:1}),
+  Depois:JSON.stringify({version:2,items:[{productId,title,quantity:2,token:'secret-marker'}]})});
+ const r=await s.auditList();const text=await r.clone().text();
+ assert.ok(!/secret-marker|52998224725|person@example|Private notes/.test(text));
+ const out=await data(r),item=out.items[0];
+ assert.equal(out.items.length,1);
+ assert.equal(item.id,auditId);assert.equal(item.requestId,requestId);
+ // Exact disclosure shapes reject PIN/contact/unknown fields at every tested depth.
+ assert.deepEqual(item.before,{version:1});
+ assert.deepEqual(item.after,{version:2,items:[{productId,title,quantity:2}]});
+ assert.equal(item.detailsOmitted,true);
+ assert.deepEqual(out.people,[{id:s.master.id,name:'Conta proprietária'}]);
 });
 test('stable snapshot pagination refuses concurrent insert and raw historical edit instead of mixing pages or exporting unseen data',async()=>{
  const s=auditFixture();for(let i=0;i<27;i++)s.addAudit();const first=await data(await s.auditList());assert.equal(first.items.length,25);const second=await data(await s.auditList(s.filters(),25,first.snapshot));assert.equal(second.items.length,2);assert.ok(second.items.every(r=>!first.items.some(x=>x.id===r.id)));s.addAudit();assert.equal((await s.auditList(s.filters(),25,first.snapshot)).status,409);assert.equal((await s.auditHttp('export',{commandId:randomUUID(),filters:s.filters(),snapshot:first.snapshot})).status,409);
