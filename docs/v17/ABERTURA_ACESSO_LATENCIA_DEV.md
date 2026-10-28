@@ -102,3 +102,16 @@ O código entregue por e-mail passa a sete caracteres aleatórios em um alfabeto
 3. Recarregar a tela uma vez e medir abertura, envio/validação de e-mail, PIN e confirmação pelo aparelho. Marcar aceite real somente depois desses resultados.
 
 Cenários: formulário utilizável com consulta de sessão suspensa; sessão atrasada não sobrepõe novo fluxo; código de sete caracteres/minúsculas funciona sem conceder sessão; código legado mantém validade; vínculo/privacidade/cabeçalho alterado entre requisições é recusado e o escopo sempre é limpo.
+
+
+## Espera visual e falha ao confirmar PIN
+
+O proprietário voltou a receber falha de confirmação na etapa de criar PIN, com referência ACCESS / ACCESS_RESPONSE_INVALID. Esse retorno não prova PIN errado nem gravação concluída; a causa da resposta incompatível continua sem evidência suficiente para atribuir à plataforma, rede ou serviço. A otimização anterior não deve ser registrada como correção definitiva desse incidente.
+
+Durante uma ação, a tela apresenta somente um indicador circular e **Aguarde…**. Mensagens intermediárias não substituem o resultado na tela a cada etapa interna. Ao concluir, o indicador desaparece e aparece o resultado final; falhas recebem tom de erro e etapas confirmadas recebem tom de sucesso. Formulários anunciam aria-busy e botões ficam bloqueados contra envios repetidos. A preferência por movimento reduzido é respeitada. Nenhuma etapa é considerada concluída apenas porque a animação terminou.
+
+O painel fechado de suporte acrescenta somente o nome de operação de uma lista fixa, status HTTP numérico e duração. Nunca mostra corpo da resposta, cabeçalhos, PIN, código, e-mail ou tokens. Resposta HTML após tentativa de PIN mantém a etapa fechada até confirmação real pelo servidor. Consultas de sessão também passam a limitar headers/corpo a sessenta segundos; respostas401/403 continuam significando ausência de sessão, sem exigir corpo JSON. Não há mudança em Apps Script, propriedades ou chaves nesta alteração visual/diagnóstica.
+
+Cenários: operação suspensa mantém indicador visível, mensagens antigas ocultas, botões desabilitados e movimento reduzido; término apresenta resultado e libera controles; falha HTML504 antes da gravação de PIN oculta indicador, preserva a etapa e expõe somente metadados seguros ao abrir suporte; nenhuma repetição automática de PIN ou concessão de sessão. O novo diagnóstico permitirá distinguir status/tempo no acesso real, ainda pendente.
+
+Validação desta interface: 22 cenários Chromium aprovados, incluindo espera/corpo suspenso, movimento reduzido, resultado final e HTML504 antes de salvar PIN. Capturas do carregamento e erro de PIN inspecionadas. Build, sintaxe JS e diff check aprovados. Serviço emulado; a falha real de PIN permanece pendente de novo detalhe de suporte.

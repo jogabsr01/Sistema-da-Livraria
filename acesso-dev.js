@@ -2,13 +2,16 @@
 (() => {
   const DEV = 'dev--merry-chimera-49a1f3.netlify.app';
   const $ = id => document.getElementById(id);
-  const message = text => { $('status').textContent = text; };
+  let pendingMessage = null;
+  const message = (text, tone = 'info') => { if (busy) { pendingMessage = { text, tone }; return; } $('status').textContent = text; $('status').dataset.tone = tone; $('status').hidden = false; };
   let accessPhase = 'STATE', actionRevision = 0;
   const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
     node.textContent = 'Referência para suporte: ' + accessPhase + ' / ' + (diagnosticCodes.has(error?.code) ? error.code : 'ACCESS_PAGE_UNAVAILABLE');
+    const info = error.transport;
+    if (info && ['state','start','recover','login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
     node.hidden = false;
     $('support-details').hidden = false;
   }
@@ -41,20 +44,29 @@
     if (code === 'FORBIDDEN') return 'Não foi possível validar esta tentativa de acesso. Atualize a página e tente novamente no endereço da livraria. Se continuar, peça ajuda à administração.';
     return 'Não foi possível concluir esta etapa. Aguarde alguns instantes e tente novamente. Se o problema continuar, peça ajuda à administração da livraria.';
   }
-  async function api(operation, body) {
-    // Bound both headers and body; a lost acknowledgement must not freeze the form.
-    const controller = new AbortController();
+  async function requestJson(operation, options) {
+    const controller = new AbortController(), started = performance.now();
     const timer = setTimeout(() => controller.abort(), 60000);
-    let response, result;
+    let response;
+    const failure = code => {
+      const error = unavailable(code);
+      error.transport = {operation, status: response?.status || 0, elapsedMs: Math.round(performance.now() - started)};
+      return error;
+    };
     try {
-      try { response = await fetch('/api/v1/access/' + operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
-        headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) }); }
-      catch { throw unavailable(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_NETWORK_UNAVAILABLE'); }
-      try { result = await response.json(); }
-      catch { throw unavailable(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
+      try { response = await fetch(operation === 'session' ? '/api/v1/session' : '/api/v1/access/' + operation, {...options, signal: controller.signal}); }
+      catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_NETWORK_UNAVAILABLE'); }
+      if (operation === 'session' && [401,403].includes(response.status)) return {response, result:null, failure};
+      let result; try { result = await response.json(); }
+      catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
+      return {response, result, failure};
     } finally { clearTimeout(timer); }
-    if (!response.ok) throw unavailable(typeof result?.error?.code === 'string' ? result.error.code : 'ACCESS_RESPONSE_INVALID');
-    if (!result?.data || typeof result.data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
+  }
+  async function api(operation, body) {
+    const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) });
+    if (!response.ok) throw failure(typeof result?.error?.code === 'string' ? result.error.code : 'ACCESS_RESPONSE_INVALID');
+    if (!result?.data || typeof result.data.csrfToken !== 'string') throw failure('ACCESS_RESPONSE_INVALID');
     if (result.data.csrfToken) csrfToken = result.data.csrfToken;
     if(operation==='recover'){recoveryFlow=true;replacementReady=false;$('use-rescue').checked=false;$('rescue-status').textContent='';$('rescue-inputs').hidden=true;}if(operation==='start'||operation==='login'){recoveryFlow=false;replacementReady=false;}if(result.data.purpose)recoveryFlow=result.data.purpose==='RECOVER';if(result.data.replacementAllowed!==undefined)replacementReady=result.data.replacementAllowed===true;if(result.data.emergencyRecoveryEnabled!==undefined)emergencyEnabled=result.data.emergencyRecoveryEnabled;
     if(result.data.recoveryEnabled!==undefined)$('recovery-choice').hidden=!result.data.recoveryEnabled;
@@ -68,9 +80,10 @@
     busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
     const detail = document.getElementById('access-diagnostic'); if (detail) { detail.hidden = true; detail.textContent = ''; }
     $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true;
-    const slow = setTimeout(() => message('Está demorando um pouco mais que o esperado. Aguarde sem clicar novamente; estamos conferindo sua solicitação.'), 8000);
-    try { await action(); } catch (error) { diagnostic(error); message(describe(error)); $('check-step').hidden = !uncertainCodes.has(error.code); }
-    finally { clearTimeout(slow); busy = false; document.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
+    pendingMessage = null; $('status').hidden = true; $('access-progress').hidden = false;
+    document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'true'));
+    try { await action(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').hidden = !uncertainCodes.has(error.code); }
+    finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
   }
   function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); run(action); }); }
   function clearSecrets() { maskPins(); ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
@@ -96,15 +109,14 @@
     return result;
   }
   async function current(shouldApply = () => true) {
-    let response; try { response = await fetch('/api/v1/session', { credentials: 'same-origin', cache: 'no-store' }); }
-    catch { throw unavailable('ACCESS_NETWORK_UNAVAILABLE'); }
+    // Read401/403 as expected absence without requiring its body to be JSON.
+    const {response, result, failure} = await requestJson('session', {credentials:'same-origin', cache:'no-store'});
     if ([401,403].includes(response.status)) return false;
-    if (!response.ok) throw unavailable('UPSTREAM_UNAVAILABLE');
-    let result; try { result = await response.json(); } catch { throw unavailable('ACCESS_RESPONSE_INVALID'); }
+    if (!response.ok) throw failure('UPSTREAM_UNAVAILABLE');
     const data = result?.data;
     if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || data.user.assurance !== 'passkey' || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (!shouldApply()) return false;
-    sessionCsrf = data.csrfToken; show('COMPLETE'); message('Acesso verificado com sucesso.');
+    sessionCsrf = data.csrfToken; show('COMPLETE'); message('Acesso verificado com sucesso.', 'success');
     $('identity-result').textContent = data.user.role==='SUPER_ADMIN'?'Conta master autenticada com PIN e confirmação pelo aparelho.':data.user.role==='ADMIN'?'Conta administrativa autenticada com PIN e confirmação pelo aparelho.':'Conta de atendente autenticada com PIN e confirmação pelo aparelho.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
   async function finish() {
@@ -140,15 +152,15 @@
     }
   }
   submit('email-form', async () => {
-    const data = await saveAccessStep('email', { code: $('email-code').value.trim() }, 'PIN'); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina seu PIN novo.');
+    const data = await saveAccessStep('email', { code: $('email-code').value.trim() }, 'PIN'); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina seu PIN novo.', 'success');
   });
   $('use-rescue').addEventListener('change',()=>{$('rescue-inputs').hidden=!$('use-rescue').checked;});
   $('rescue-confirm').addEventListener('click',()=>run(async()=>{try{await api('rescue',{recoveryCode:$('rescue-code').value});$('rescue-status').textContent='Código confirmado. Defina um PIN novo e cadastre novamente a confirmação pelo aparelho.';}finally{$('rescue-code').value='';}}));
   submit('pin-form', async () => {
-    if(recoveryFlow&&emergencyEnabled&&$('use-rescue').checked&&!replacementReady){message('Valide o código de recuperação antes de continuar.');return;}
-    if (/([0-9])\1/.test($('new-pin').value)) { message('Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.'); return; }
-    if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.'); return; }
-    try { const data = await saveAccessStep('pin', { pin: $('new-pin').value }, 'PASSKEY'); show(data.stage); message('Agora confirme sua identidade pelo aparelho para proteger sua conta.'); }
+    if(recoveryFlow&&emergencyEnabled&&$('use-rescue').checked&&!replacementReady){message('Valide o código de recuperação antes de continuar.', 'error');return;}
+    if (/([0-9])\1/.test($('new-pin').value)) { message('Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.', 'error'); return; }
+    if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.', 'error'); return; }
+    try { const data = await saveAccessStep('pin', { pin: $('new-pin').value }, 'PASSKEY'); show(data.stage); message('Agora confirme sua identidade pelo aparelho para proteger sua conta.', 'success'); }
     finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
   });
   $('passkey-button').addEventListener('click', () => run(async () => {
@@ -166,7 +178,7 @@
   $('restart').addEventListener('click', () => { clearSecrets(); pendingResponse = null; show('INITIAL'); message('Solicite um novo código ou entre na conta já ativada.'); });
   $('logout-button').addEventListener('click', () => run(async () => {
     const response = await fetch('/api/v1/session/logout', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': sessionCsrf }, body: '{}' });
-    if (!response.ok) throw new Error('LOGOUT_FAILED'); sessionCsrf = ''; show('INITIAL'); message('Você saiu da conta verificada.');
+    if (!response.ok) throw new Error('LOGOUT_FAILED'); sessionCsrf = ''; show('INITIAL'); message('Você saiu da conta verificada.', 'success');
     const state = await api('state'); csrfToken = state.csrfToken;
   }));
   function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}

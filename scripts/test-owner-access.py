@@ -70,6 +70,8 @@ class OwnerAccess(unittest.TestCase):
                 self.step_posts[operation] = self.step_posts.get(operation, 0) + 1
             if operation == self.lost_step and self.step_failure == 'before':
                 route.abort('failed'); return
+            if operation == self.lost_step and self.step_failure == 'html-before':
+                route.fulfill(status=504, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
             result = self.local(path, body=body, headers=headers, method=request.method)
             if operation == self.lost_step:
                 if self.step_failure == 'html':
@@ -131,6 +133,8 @@ class OwnerAccess(unittest.TestCase):
         self.activation_until_passkey(); self.local('/test/fault', {'stage': stage, 'after': True})
         self.page.locator('#passkey-button').click()
         expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        expect(self.page.locator('#access-progress')).to_be_hidden()
+        expect(self.page.locator('#status')).to_have_attribute('data-tone', 'error')
         self.assertFalse(any(c['name'] == '__Host-livraria_session' for c in self.context.cookies()))
         if stage == 'session':
             self.page.get_by_role('button', name='Conferir etapa salva', exact=True).click()
@@ -198,6 +202,8 @@ class OwnerAccess(unittest.TestCase):
         self.begin_email(); self.lost_step = 'email'
         self.page.get_by_role('button', name='Confirmar código', exact=True).click()
         expect(self.page.locator('#pin-form')).to_be_visible()
+        expect(self.page.locator('#access-progress')).to_be_hidden()
+        expect(self.page.locator('#status')).to_have_attribute('data-tone', 'success')
         self.assertEqual(self.step_posts['email'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
         self.assertEqual(self.local('/test/state')['outbox'], 1)
@@ -233,9 +239,18 @@ class OwnerAccess(unittest.TestCase):
         self.page.get_by_role('button', name='Confirmar código', exact=True).click()
         self.page.wait_for_function('window.testBodyWaiting === true')
         self.page.clock.fast_forward(8001)
-        expect(self.page.locator('#status')).to_contain_text('demorando um pouco')
+        expect(self.page.locator('#access-progress')).to_be_visible()
+        expect(self.page.locator('#access-progress')).to_contain_text('Aguarde')
+        expect(self.page.locator('#status')).to_be_hidden()
+        expect(self.page.get_by_role('button', name='Confirmar código', exact=True)).to_be_disabled()
+        expect(self.page.locator('#email-form')).to_have_attribute('aria-busy', 'true')
+        self.page.emulate_media(reduced_motion='reduce')
+        self.assertEqual(self.page.locator('.access-spinner').evaluate('(el) => getComputedStyle(el).animationName'), 'none')
+        self.page.screenshot(path=str(ARTIFACTS / 'acesso-carregando.png'), full_page=True)
         self.page.clock.fast_forward(52000)
         expect(self.page.locator('#pin-form')).to_be_visible()
+        expect(self.page.locator('#access-progress')).to_be_hidden()
+        expect(self.page.locator('#status')).to_have_attribute('data-tone', 'success')
         self.assertEqual(self.step_posts['email'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
@@ -350,6 +365,27 @@ class OwnerAccess(unittest.TestCase):
         expect(self.page.locator('#complete')).to_be_hidden()
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
+    def test_pin_provider_failure_ends_spinner_and_exposes_only_safe_support_metadata(self):
+        self.begin_email()
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.lost_step = 'pin'; self.step_failure = 'html-before'
+        self.page.locator('#new-pin').fill('8274'); self.page.locator('#confirm-pin').fill('8274')
+        self.page.get_by_role('button', name='Salvar PIN e continuar').click()
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        expect(self.page.locator('#status')).to_have_attribute('data-tone', 'error')
+        expect(self.page.locator('#access-progress')).to_be_hidden()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        expect(self.page.locator('#passkey')).to_be_hidden()
+        self.assertNotIn('HTTP: 504', self.page.locator('body').inner_text())
+        self.page.get_by_text('Informações para o suporte', exact=True).click()
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('etapa: PIN / HTTP: 504 / espera:')
+        self.assertNotIn('PRIVATE_PROVIDER_RESPONSE', self.page.locator('body').inner_text())
+        self.assertEqual(self.page.locator('#new-pin').input_value(), '')
+        self.assertEqual(self.step_posts['pin'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+        self.page.screenshot(path=str(ARTIFACTS / 'pin-falha-confirmacao.png'), full_page=True)
+
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
         self.session_transport_failure = True
         self.page.goto(ORIGIN + '/acesso-dev.html#entrar')
@@ -367,6 +403,8 @@ class OwnerAccess(unittest.TestCase):
         expect(self.page.locator('#access-diagnostic')).to_contain_text('STATE / ACCESS_RESPONSE_INVALID')
         expect(self.page.locator('#initial')).to_be_hidden()
         expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        expect(self.page.locator('#access-progress')).to_be_hidden()
+        expect(self.page.locator('#status')).to_have_attribute('data-tone', 'error')
         expect(self.page.locator('#access-diagnostic')).to_be_hidden()
         self.assertNotIn('ACCESS_RESPONSE_INVALID', self.page.locator('body').inner_text())
         self.assertNotIn('PRIVATE_RESPONSE_SENTINEL', self.page.locator('body').inner_text())
