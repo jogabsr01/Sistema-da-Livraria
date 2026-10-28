@@ -27,3 +27,10 @@ a { color: #205b43; } summary { cursor: pointer; padding: 18px 0; }
 .pin-field input { padding-right: 58px; }
 button.pin-visibility { position: absolute; top: 0; right: 0; width: 48px; height: 100%; margin: 0; padding: 10px; background: transparent; color: #205b43; display: grid; place-items: center; }
 button.pin-visibility[aria-pressed="true"] { background: #e6eee8; }
+
+.access-progress { display: flex; align-items: center; gap: 12px; padding: 18px 14px; margin: 16px 0; background: #eef5ef; border-radius: 8px; }
+.access-spinner { width: 24px; height: 24px; flex: 0 0 24px; border: 3px solid #c8dcd0; border-top-color: #205b43; border-radius: 50%; animation: access-spin .8s linear infinite; }
+@keyframes access-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .access-spinner { animation: none; } }
+#status[data-tone="error"] { background: #fff1ee; color: #853d31; }
+#status[data-tone="success"] { background: #e6f3e9; color: #174d30; }
