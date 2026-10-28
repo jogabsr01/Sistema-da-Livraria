@@ -5,5 +5,8 @@
 !.env.example
 .netlify/
 .clasp.json
+.clasprc.json
+livraria-oauth.json
+client_secret*.json
 *.local.json
 __pycache__/
