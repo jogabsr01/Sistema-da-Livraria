@@ -33,7 +33,7 @@ test("maintenance requires active Google owner, DEV, private folder, independent
   s.gas.props.APP_ENV = "prod";
   assert.throws(() => backup(s), /FORBIDDEN/);
   s.gas.props.APP_ENV = "dev";
-  await assert.rejects(s.client.ping(), /BUSY|unavailable|retry|Workspace/i);
+  await assert.rejects(s.client.ping(), {code:'WORKSPACE_MAINTENANCE_ACTIVE'});
   const folder = s.gas.resources.get(s.gas.props.BACKUPS_FOLDER_ID);
   folder.viewers = [{ getEmail: () => "other@example.invalid" }];
   assert.throws(() => backup(s), /BINDING_MISMATCH/);

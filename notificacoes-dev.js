@@ -35,14 +35,14 @@
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
     try {
       const response=await fetch(path,{credentials:'same-origin',cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify(body)}:{})});
-      const result=await response.json();if(!response.ok)throw Object.assign(Error('REQUEST_FAILED'),{code:result.error?.code,status:response.status});return result.data;
+      const result=await response.json();if(!response.ok)throw Object.assign(Error('REQUEST_FAILED'),{code:result.error?.code,field:result.error?.field,readOnly:!body,status:response.status});return result.data;
     } catch(error) {if(error.status===401||error.status===403)revokeView();if(!error.status||error.status===401||error.status===403)invalidate();throw error;}
     finally {clearTimeout(timer);}
   }
   async function api(operation, body, query = '') {
     return requestData('/api/v1/notifications/'+operation+query,body);
   }
-  function explain(error) {
+  function explain(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     if(error.code==='OFFLINE')return 'Sem conexão. Mantenha a aba aberta e confira novamente ao reconectar.';
     if (error.status === 401 || error.status === 403) return 'Entre novamente na conta verificada. Relatórios exigem acesso administrativo e autenticação forte recente.';
     if (error.code?.includes('CAPACITY')) return 'O limite seguro foi atingido. Não foi gerado um relatório parcial. Filtre por fornecedor ou solicite a revisão da capacidade.';

@@ -43,6 +43,9 @@ export function createSessionService(settings, { client, now = () => Date.now() 
   // Constructor validates the private key/bindings, without issuing any session.
   const tokens = createSessionTokens({ environment: config.environment, installationId: config.installationId, tokenKey });
   const csrfKey = Buffer.from(tokenKey);
+  // Only principals created by this service instance can derive CSRF without
+  // repeating the same session RPC. No cache of authorization across requests.
+  const authenticated = new WeakMap();
   const origin = config.environment === 'dev' ? 'https://dev--merry-chimera-49a1f3.netlify.app' : 'https://merry-chimera-49a1f3.netlify.app';
   if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   function csrf(rawToken) {
@@ -64,7 +67,15 @@ export function createSessionService(settings, { client, now = () => Date.now() 
   return {
     async authenticate(request) {
       const { principal, tokenHash } = await resolve(request);
-      return Object.freeze({ ...principal, sessionTokenHash: tokenHash });
+      const result = Object.freeze({ ...principal, sessionTokenHash: tokenHash });
+      authenticated.set(result, tokenHash);
+      return result;
+    },
+    csrfFor(request, principal) {
+      checkHost(request);
+      const rawToken = readSessionToken(request);
+      if (!authenticated.has(principal) || authenticated.get(principal) !== tokens.hash(rawToken)) denied();
+      return csrf(rawToken);
     },
     async current(request) {
       const { principal, rawToken } = await resolve(request);

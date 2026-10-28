@@ -87,13 +87,14 @@ function staffOperation_(request,c) {
   if(request.action!=='staff.save')failure_('FORBIDDEN');
   authControlExact_(p,['commandId','id','expectedRevision','reason','role','status','fingerprint','contact','emailIndex','cpfIndex','emailCheck']);
   if(!identityUuid_(p.commandId)||!identityUuid_(p.id)||!Number.isSafeInteger(p.expectedRevision)||p.expectedRevision<0||p.expectedRevision>1000000||!['ATENDENTE','ADMIN'].includes(p.role)||!['ATIVO','INATIVO'].includes(p.status)||!staffSealed_(p.contact)||!staffSealed_(p.reason)||![p.fingerprint,p.emailIndex,p.cpfIndex,p.emailCheck].every(accessHash_))staffFail_();
-  if([digest_(accessEmail_(c.owner)),digest_(ownerLoginEmail_(c))].includes(p.emailCheck))staffFail_('STAFF_DUPLICATE');
+  if([digest_(accessEmail_(c.owner)),digest_(ownerLoginEmail_(c))].includes(p.emailCheck))staffFail_('STAFF_EMAIL_DUPLICATE');
   var prior=staffJournal_(ss).filter(function(v){return v.commandId===p.commandId;});
   if(prior.length){var v=prior[0];if(v.fingerprint!==p.fingerprint||v.actor!==principal.id||v.id!==p.id)staffFail_('STAFF_CONFLICT');return {id:v.id,revision:v.revision,reenrollmentRequired:v.reenrollmentRequired};}
   var found=users.rows.filter(function(r){return r.ID_Usuario===p.id;}),old=found[0];
   if(principal.id===p.id||old&&old.Perfil==='SUPER_ADMIN'||(p.role==='ADMIN'||old&&old.Perfil==='ADMIN')&&principal.role!=='SUPER_ADMIN')failure_('FORBIDDEN');
   if(staffRevision_(ss,p.id)!==p.expectedRevision||!old&&p.expectedRevision!==0)staffFail_('STAFF_CONFLICT');
-  if(users.rows.some(function(r){return r.ID_Usuario!==p.id&&(r.Email_Indice===p.emailIndex||r.CPF_Indice===p.cpfIndex);}))staffFail_('STAFF_DUPLICATE');
+  if(users.rows.some(function(r){return r.ID_Usuario!==p.id&&r.CPF_Indice===p.cpfIndex;}))staffFail_('STAFF_CPF_DUPLICATE');
+  if(users.rows.some(function(r){return r.ID_Usuario!==p.id&&r.Email_Indice===p.emailIndex;}))staffFail_('STAFF_EMAIL_DUPLICATE');
   var epoch=staffConfig_(ss,'identity.version.'+p.id).row;if(old&&!epoch||!old&&epoch)staffFail_('STAFF_UNAVAILABLE');
   var reset=!old||old.Email_Indice!==p.emailIndex||old.CPF_Indice!==p.cpfIndex||old.Perfil!==p.role||old.Status!==p.status;
   if(old&&old.CPF_Indice!==p.cpfIndex&&principal.role!=='SUPER_ADMIN')failure_('FORBIDDEN');
@@ -123,12 +124,14 @@ function staffAccessOperation_(request,c) {
     authControlExact_(p,['subjectId','contactHash','delivery','flowId','tokenHash','codeHash','code']);
     if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!accessDeliveryCode_(p.code))accessReject_();if([accessEmail_(c.owner),ownerLoginEmail_(c)].includes(accessEmail_(p.delivery)))accessReject_();
     var subject=staffSubject_(c,p.subjectId),table=accessFlows_(ss);
+    if(!recovery&&subject&&subject.row.Primeiro_Acesso_Concluido&&digest_(subject.row.Nome)===p.contactHash)return {accepted:true,outcome:'ALREADY_ACTIVE'};
     if(!subject||subject.row.Primeiro_Acesso_Concluido!==recovery||digest_(subject.row.Nome)!==p.contactHash)subject=null;
-    if(subject&&table.rows.some(function(r){return r.Subject_ID===subject.row.ID_Usuario&&now-authControlTime_(r.Created_At)<60000;}))subject=null;
+    if(!recovery&&!subject)return {accepted:true,outcome:'NOT_FOUND'};
+    if(subject&&table.rows.some(function(r){return r.Subject_ID===subject.row.ID_Usuario&&now-authControlTime_(r.Created_At)<60000;})){if(!recovery)return {accepted:true,outcome:'THROTTLED'};subject=null;}
     if(subject)table.rows.filter(function(r){return r.Subject_ID===subject.row.ID_Usuario&&!['COMMITTING','COMPLETE','REVOKED'].includes(r.State);}).forEach(function(r){r.State='REVOKED';authControlSave_(table,r);});
     var flow=accessNewFlow_(table,p,subject,purpose,now);
-    if(subject){try{if(MailApp.getRemainingDailyQuota()<1)throw Error('QUOTA');MailApp.sendEmail({to:p.delivery,subject:'Livraria IPB DEV — confirmar acesso',body:'Foi solicitado acesso à sua conta na Livraria IPB DEV.\n\nCódigo de uso único (10 minutos):\n'+p.code+'\n\nUse somente em https://dev--merry-chimera-49a1f3.netlify.app/acesso-dev.html\nSe não solicitou, ignore. Não compartilhe o código.'});}catch(_){flow.State='REVOKED';authControlSave_(accessFlows_(ss),flow);}}
-    return {accepted:true};
+    if(subject){try{if(MailApp.getRemainingDailyQuota()<1)throw Error('QUOTA');MailApp.sendEmail({to:p.delivery,subject:'Livraria IPB DEV — confirmar acesso',body:'Foi solicitado acesso à sua conta na Livraria IPB DEV.\n\nCódigo de uso único (10 minutos):\n'+p.code+'\n\nUse somente em https://dev--merry-chimera-49a1f3.netlify.app/acesso-dev.html\nSe não solicitou, ignore. Não compartilhe o código.'});}catch(_){flow.State='REVOKED';authControlSave_(accessFlows_(ss),flow);if(!recovery)return {accepted:true,outcome:'DELIVERY_UNAVAILABLE'};}}
+    return recovery?{accepted:true}:{accepted:true,outcome:'SENT'};
   }
   failure_('FORBIDDEN');
 }

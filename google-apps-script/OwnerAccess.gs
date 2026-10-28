@@ -112,14 +112,16 @@ function accessStart_(ss, c, p, now, recovery) {
   authControlExact_(p, ['email', 'flowId', 'tokenHash', 'codeHash', 'code']);
   if (!accessHash_(p.codeHash) || !accessDeliveryCode_(p.code)) accessReject_();
   var owner = accessOwner_(c, p.email), table = accessFlows_(ss);
+  if (!recovery && !owner) return {accepted:true,outcome:'NOT_FOUND'};
+  if (!recovery && owner.row.Primeiro_Acesso_Concluido) return {accepted:true,outcome:'ALREADY_ACTIVE'};
   if(owner&&owner.row.Primeiro_Acesso_Concluido!==!!recovery)owner=null;
   // Throttle delivery as well as requests. Invalid accounts have the same response.
   var prior = owner && table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === purpose && (purpose!=='ACTIVATE'||row.Authorization_Version===owner.version); });
-  if (prior && prior.some(function (row) { return now - authControlTime_(row.Created_At) < 60000; })) owner = null;
+  if (prior && prior.some(function (row) { return now - authControlTime_(row.Created_At) < 60000; })) {if(!recovery)return {accepted:true,outcome:'THROTTLED'};owner = null;}
   if (owner) table.rows.filter(function (row) { return row.Subject_ID === owner.row.ID_Usuario && row.Purpose === purpose && !['COMPLETE', 'COMMITTING', 'REVOKED'].includes(row.State); }).forEach(function (row) {
     row.State = 'REVOKED'; authControlSave_(table, row);
   });
-  var flow = accessNewFlow_(table, p, owner, purpose, now);
+  var flow = accessNewFlow_(table, p, owner, purpose, now), outcome = 'SENT';
   if (owner) {
     try {
       if (MailApp.getRemainingDailyQuota() < 1) throw new Error('MAIL_QUOTA');
@@ -128,10 +130,11 @@ function accessStart_(ss, c, p, now, recovery) {
           '\n\nDigite esse código somente em:\nhttps://dev--merry-chimera-49a1f3.netlify.app/acesso-dev.html\n\nSe não solicitou, ignore este e-mail. Não compartilhe o código.' });
     } catch (_) {
       // No raw code is persisted or logged, including on provider errors.
+      outcome = 'DELIVERY_UNAVAILABLE';
       var persisted = accessCurrent_(ss, p.tokenHash, now); persisted.row.State = 'REVOKED'; authControlSave_(persisted.table, persisted.row);
     }
   }
-  return { accepted: true };
+  return recovery?{accepted:true}:{accepted:true,outcome:outcome};
 }
 function accessCommit_(ss, c, current, p, now) {
   if(current.row.Purpose==='RECOVER')return recoveryCommit_(ss,c,current,p,now,false);
@@ -205,13 +208,18 @@ function ownerAccessOperation_(request, c) {
     'identity.access.rescueBegin':['tokenHash','ceremonyId','challenge'],
     'identity.access.rescueKey':['tokenHash','sessionTokenHash','ceremonyId','credentialId','publicKey','counter','transports'],
     'identity.access.recover':['email','flowId','tokenHash','codeHash','code'],
-    'identity.access.lookup': ['email'],
+    'identity.access.lookup': ['email'], 'identity.access.ownerLookup':['cpfIndex'],
     'identity.access.login': ['flowId', 'tokenHash', 'subjectId', 'authorizationVersion'],
     'identity.access.read': ['tokenHash'], 'identity.access.email': ['tokenHash', 'codeHash'],
     'identity.access.pin': ['tokenHash', 'record'], 'identity.access.bind': ['tokenHash', 'ceremonyId'],
     'identity.access.commit': ['tokenHash', 'sessionTokenHash']
   };
   if (!Object.prototype.hasOwnProperty.call(schemas, action)) failure_('FORBIDDEN'); authControlExact_(p, schemas[action]);
+  if (action === 'identity.access.ownerLookup') {
+    if (!accessHash_(p.cpfIndex)) accessReject_();
+    var ownerLookup=accessOwner_(c);
+    return {email:ownerLookup&&ownerLookup.row.CPF_Indice===p.cpfIndex?ownerLoginEmail_(c):null};
+  }
   if (['identity.access.start', 'identity.access.lookup'].includes(action)) accessRecoverIntents_(ss, c, now);
   if(action==='identity.access.recover')return accessStart_(ss,c,p,now,true);
   if (action === 'identity.access.start') return accessStart_(ss, c, p, now);
@@ -283,4 +291,36 @@ function accessOptions_(request, c) {
   else passkeyOperation_({action:'identity.passkey.begin',payload:{subjectId:user.subjectId,authorizationVersion:user.authorizationVersion,ceremonyId:p.ceremonyId,purpose:kind === 'create' ? 'REGISTER':'AUTHENTICATE',challenge:p.challenge}}, c);
   ownerAccessOperation_({action:'identity.access.bind',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId}}, c);
   return {allowed:true, subjectId:user.subjectId, authorizationVersion:user.authorizationVersion, kind:kind, credentials:credentials, ceremonyId:p.ceremonyId, challenge:p.challenge, replacementAllowed:flow.replacementAllowed};
+}
+
+function accessStartGuarded_(request,c) {
+  var p=request.payload;
+  authControlExact_(p,['accountKey','originKey','email','flowId','tokenHash','codeHash','code']);
+  recoverSecurityIntent_(c);
+  var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  var result=ownerAccessOperation_({action:'identity.access.start',payload:{email:p.email,flowId:p.flowId,tokenHash:p.tokenHash,codeHash:p.codeHash,code:p.code}},c);
+  result.allowed=true;return result;
+}
+
+// Fixed commands combine a durable attempt with one existing operation. The
+// client cannot choose additional actions; all flow/epoch checks still run.
+function accessEmailGuarded_(request,c) {
+  var p=request.payload;
+  authControlExact_(p,['accountKey','originKey','tokenHash','codeHash']);
+  recoverSecurityIntent_(c);
+  var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  var result=ownerAccessOperation_({action:'identity.access.email',payload:{tokenHash:p.tokenHash,codeHash:p.codeHash}},c);
+  result.allowed=true;return result;
+}
+function accessPinReadGuarded_(request,c) {
+  var p=request.payload;
+  authControlExact_(p,['accountKey','originKey','tokenHash']);
+  recoverSecurityIntent_(c);
+  var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  var result=ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}},c);
+  if(result.state!=='PIN')accessReject_();
+  result.allowed=true;return result;
 }

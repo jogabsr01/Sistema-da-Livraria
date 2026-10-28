@@ -90,7 +90,7 @@ class Catalog(OwnerAccess):
         self.assertEqual(self.local('/test/state')['products'],1);self.save();self.assertEqual(self.local('/test/state')['products'],1)
     def test_catalog_google_projection_failure_is_recovered_by_retry(self):
         self.activate();self.catalog();self.create();self.local('/test/fault',{'stage':'product','after':True})
-        self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_contain_text('Não foi possível confirmar o resultado');self.save()
+        self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_contain_text('O serviço está indisponível no momento');self.save()
         self.assertEqual(self.local('/test/state')['products'],1)
     def test_catalog_mobile_search_and_broken_cover_preserve_book_metadata(self):
         self.activate();self.catalog();self.create(cover='https://covers.example.org/missing.png')
@@ -100,7 +100,7 @@ class Catalog(OwnerAccess):
         self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth<=window.innerWidth'))
         self.page.screenshot(path=str(ARTIFACTS/'catalogo-celular.png'),full_page=True);self.assertEqual(self.errors,[])
     def test_catalog_disabled_or_unauthenticated_and_prod_have_no_write_form(self):
-        self.page.goto(ORIGIN+'/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('Entre na conta verificada');expect(self.page.locator('#catalog')).to_be_hidden()
+        self.page.goto(ORIGIN+'/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('Entre na sua conta para continuar');expect(self.page.locator('#catalog')).to_be_hidden()
         self.activate();self.local('/test/disable',{});self.page.goto(ORIGIN+'/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('ainda não está disponível');expect(self.page.locator('#catalog')).to_be_hidden()
         self.page.goto('https://merry-chimera-49a1f3.netlify.app/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('exclusivamente no endereço DEV');expect(self.page.locator('#catalog')).to_be_hidden()
 

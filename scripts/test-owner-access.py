@@ -51,6 +51,12 @@ class OwnerAccess(unittest.TestCase):
         with urlopen(req, timeout=15) as response:
             return json.load(response)
     def relay(self, route):
+        # Other module suites inherit this relay and own their server setup.
+        # Initialize transport-fault controls for those fixtures too.
+        if not getattr(self, '_transport_initialized', False):
+            for name, value in [('session_request_count',0),('state_response_invalid',False),('session_transport_failure',False),('corrupt_signature',False),('lost_step',None),('step_failure',None),('step_posts',{})]:
+                if not hasattr(self,name):setattr(self,name,value)
+            self._transport_initialized = True
         request = route.request; path = urlsplit(request.url).path
         if path == '/api/v1/access/state' and self.state_response_invalid:
             route.fulfill(status=200, content_type='text/html', body='<html>PRIVATE_RESPONSE_SENTINEL</html>'); return
@@ -254,6 +260,34 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.step_posts['email'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
+    def test_first_access_errors_stay_inside_its_box_and_name_the_actual_cause(self):
+        for code, status, expected in [('ACCESS_EMAIL_NOT_REGISTERED',404,'E-mail não cadastrado'),('ACCESS_ALREADY_ACTIVATED',409,'já tem acesso ativo'),('AUTH_DELIVERY_RATE_LIMITED',429,'Confira o e-mail mais recente'),('ACCESS_EMAIL_DELIVERY_UNAVAILABLE',503,'confirmar o envio')]:
+            with self.subTest(code=code):
+                self.page.route('**/api/v1/access/start',lambda route, request, c=code, s=status: route.fulfill(status=s,json={'error':{'code':c,'message':'PRIVATE_PROVIDER_SENTINEL'}}))
+                self.page.goto(ORIGIN + '/acesso-dev.html')
+                self.page.get_by_text('É meu primeiro acesso', exact=True).click()
+                self.page.locator('#activation-email').fill('pessoa@example.invalid')
+                self.page.get_by_role('button',name='Receber código por e-mail',exact=True).click()
+                expect(self.page.locator('#first-access-box #status')).to_contain_text(expected)
+                expect(self.page.locator('#email-form')).to_be_hidden()
+                self.assertNotIn('PRIVATE_PROVIDER_SENTINEL',self.page.locator('body').inner_text())
+                self.assertNotIn(code,self.page.locator('body').inner_text())
+                self.page.unroute('**/api/v1/access/start')
+        self.assertEqual(self.local('/test/state')['sessions'],0)
+
+    def test_first_access_invalid_email_is_local_and_cpf_missing_keys_is_explained_in_its_box(self):
+        self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.page.get_by_text('É meu primeiro acesso',exact=True).click()
+        self.page.locator('#activation-email').fill('incompleto@')
+        self.page.get_by_role('button',name='Receber código por e-mail',exact=True).click()
+        expect(self.page.locator('#first-access-box')).to_contain_text('E-mail inválido')
+        self.assertEqual(self.step_posts,{})
+        self.page.locator('#activation-email').fill('52998224725')
+        self.page.get_by_role('button',name='Receber código por e-mail',exact=True).click()
+        expect(self.page.locator('#first-access-box #status')).to_contain_text('use o e-mail configurado')
+        expect(self.page.locator('#email-form')).to_be_hidden()
+        self.assertEqual(self.local('/test/state')['sessions'],0)
+
     def test_opening_state_timeout_offers_read_retry_without_claiming_data_saved(self):
         self.lost_step = 'state'; self.step_failure = 'html-before'
         self.page.goto(ORIGIN + '/acesso-dev.html')
@@ -363,10 +397,10 @@ class OwnerAccess(unittest.TestCase):
         self.page.get_by_text('É meu primeiro acesso', exact=True).click()
         self.page.locator('#activation-email').fill('owner@example.invalid')
         self.page.get_by_role('button', name='Receber código por e-mail').click()
-        expect(self.page.locator('#email-form')).to_be_visible()
+        expect(self.page.locator('#first-access-box #status')).to_contain_text('já tem acesso ativo')
         self.page.evaluate('window.releaseSessionLookup()')
         self.page.wait_for_function('window.sessionLookupReleased === true')
-        expect(self.page.locator('#email-form')).to_be_visible()
+        expect(self.page.locator('#first-access-box #status')).to_contain_text('já tem acesso ativo')
         expect(self.page.locator('#complete')).to_be_hidden()
         self.assertEqual(self.errors, [])
 

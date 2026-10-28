@@ -20,7 +20,7 @@ class Maintenance(qa.Emergency):
     def test_maintenance_mobile_owner_reenrolls_with_new_email_new_pin_and_new_real_passkey(self):
         self.keys();old=next(c['value'] for c in self.context.cookies() if c['name']=='__Host-livraria_session');result=self.local('/test/maintenance-owner-recovery',{})
         self.assertTrue(result['reenrollmentRequired']);self.assertEqual(self.local('/api/v1/session',headers={'cookie':'__Host-livraria_session='+old})['status'],401)
-        self.second_authenticator();self.open();self.page.locator('summary').click();self.page.locator('#activation-email').fill('new-owner@example.invalid');self.page.get_by_role('button',name='Receber código por e-mail').click()
+        self.second_authenticator();self.open();self.page.get_by_text('É meu primeiro acesso',exact=True).click();self.page.locator('#activation-email').fill('new-owner@example.invalid');self.page.get_by_role('button',name='Receber código por e-mail').click()
         expect(self.page.locator('#email-form')).to_be_visible();self.page.locator('#email-code').fill(self.local('/test/code')['code']);self.page.get_by_role('button',name='Confirmar código').click()
         expect(self.page.locator('#pin-form')).to_be_visible();self.page.locator('#new-pin').fill('9382');self.page.locator('#confirm-pin').fill('9382');self.page.get_by_role('button',name='Salvar PIN e continuar').click()
         expect(self.page.locator('#passkey')).to_be_visible();self.page.locator('#passkey-button').click();expect(self.page.locator('#complete')).to_be_visible();self.assert_no_secrets_in_browser_storage();self.assertEqual(self.errors,[])
@@ -32,7 +32,7 @@ class Maintenance(qa.Emergency):
         expect(card.get_by_role('link',name='Adicionar unidades')).to_have_count(0);expect(card.get_by_role('button',name='Marcar em atendimento')).to_have_count(0);card.get_by_role('button',name='Marcar como lida').click()
         expect(self.page.locator('.alert')).to_have_count(1);self.page.locator('#history').check();expect(self.page.locator('.alert')).to_have_count(2);self.assertEqual(self.errors,[])
     def test_maintenance_journal_reconciliation_preserves_unknown_command_for_explicit_retry(self):
-        self.activate();self.catalog();self.create(cover='');self.local('/test/fault',{'stage':'product','after':False});self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_contain_text('Não foi possível confirmar o resultado')
+        self.activate();self.catalog();self.create(cover='');self.local('/test/fault',{'stage':'product','after':False});self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_contain_text('O serviço está indisponível no momento')
         result=self.local('/test/maintenance-reconcile',{});self.assertTrue(result['reconciled']);self.save();expect(self.page.locator('.book')).to_have_count(1);self.assertEqual(self.errors,[])
 if __name__=='__main__':
     suite=unittest.TestSuite(Maintenance(n) for n in unittest.defaultTestLoader.getTestCaseNames(Maintenance) if n.startswith('test_maintenance_'));r=unittest.TextTestRunner(verbosity=2).run(suite);raise SystemExit(0 if r.wasSuccessful() else 1)

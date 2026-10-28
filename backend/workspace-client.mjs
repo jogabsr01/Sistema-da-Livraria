@@ -7,6 +7,7 @@ import { paymentMethods } from './checkout-command.mjs';
 import { validateNotificationResponse } from './notification-model.mjs';
 export const WORKSPACE_RPC_TIMEOUT_MS = 20_000;
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = WORKSPACE_RPC_TIMEOUT_MS, deadlineAt = Infinity, now = () => performance.now() } = {}) {
+  let calls=0, durationMs=0;
   async function invoke(action, actor, payload = {}) {
     const request = requestMessage(config, actor);
     request.action = action;
@@ -14,6 +15,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     const remaining = Number.isFinite(deadlineAt) ? Math.floor(deadlineAt - now()) : Infinity;
     if (remaining <= 0) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
     const signal = AbortSignal.timeout(Math.min(timeoutMs, remaining));
+    const started=now();calls++;
     let response;
     try {
       response = await fetchImpl(config.scriptUrl, { method: 'POST', redirect: 'manual', signal,
@@ -39,6 +41,11 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       let data = verifyResponse(signed, request);
+      if (['identity.access.startGuarded','identity.access.emailGuarded','identity.access.pinReadGuarded'].includes(action)) {
+        if (data?.allowed === false && Number.isSafeInteger(data.retryAfterSeconds) && data.retryAfterSeconds > 0 && data.retryAfterSeconds <= 3600) { const error=new ApiError(429,'AUTH_RATE_LIMITED');error.retryAfterSeconds=data.retryAfterSeconds;throw error; }
+        if(data?.allowed!==true)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+        action={'identity.access.startGuarded':'identity.access.start','identity.access.emailGuarded':'identity.access.email','identity.access.pinReadGuarded':'identity.access.read'}[action];
+      }
       if (action === 'identity.access.options') {
         if (data?.allowed === false && Number.isSafeInteger(data.retryAfterSeconds) && data.retryAfterSeconds >= 1 && data.retryAfterSeconds <= 3600) {
           const error = new ApiError(429, 'AUTH_RATE_LIMITED'); error.retryAfterSeconds = data.retryAfterSeconds; throw error;
@@ -120,7 +127,11 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
         const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
         const untrusted = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
         if (['identity.access.start','identity.access.recover', 'identity.access.login'].includes(action)) {
-          if (data?.accepted !== true) untrusted(); return { accepted: true };
+          if (data?.accepted !== true || data.outcome!==undefined&&!['SENT','NOT_FOUND','ALREADY_ACTIVE','THROTTLED','DELIVERY_UNAVAILABLE'].includes(data.outcome)) untrusted(); return { accepted: true,...(data.outcome?{outcome:data.outcome}:{}) };
+        }
+        if (action === 'identity.access.ownerLookup') {
+          if (!data || !Object.hasOwn(data,'email') || data.email!==null&&(typeof data.email!=='string'||data.email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email))) untrusted();
+          return {email:data.email};
         }
         if (action === 'identity.access.lookup') {
           if (!data || !Object.hasOwn(data, 'account')) untrusted();
@@ -204,7 +215,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(502, signal.aborted ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE');
-    }
+    } finally { durationMs+=Math.max(0,now()-started); }
   }
   return { keys:(op,actor,payload)=>{if(!['list','state','start','authorize','register','cancel','codes'].includes(op))throw new ApiError(400,'INVALID_KEY_MANAGEMENT');return invoke('keys.'+op,actor,payload);},insights:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('insights.'+op,actor,payload);},reports:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('reports.'+op,actor,payload);},audit:(op,actor,payload)=>{if(!['list','export'].includes(op))throw new ApiError(400,'INVALID_AUDIT');return invoke('audit.'+op,actor,payload);},schedules:(op,actor,payload)=>{if(!['list','get','people','save','cancel'].includes(op))throw new ApiError(400,'INVALID_SCHEDULE');return invoke('schedules.'+op,actor,payload);},niches:(op,actor,payload)=>{if(!['list','save','image'].includes(op))throw new ApiError(400,'INVALID_NICHE');return invoke('niches.'+op,actor,payload);},schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
     profile:(operation,actor,payload)=>{if(!['get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
@@ -223,7 +234,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {
-      if (!['rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      if (!['rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'ownerLookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       return invoke('identity.access.' + operation, null, payload);
     },
     listPasskeys: payload => invoke('identity.passkey.list', null, payload),
@@ -232,6 +243,10 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     registerPasskey: payload => invoke('identity.passkey.register', null, payload),
     advancePasskeyCounter: payload => invoke('identity.passkey.counter', null, payload),
     recordSecurityEvent: payload => invoke('identity.security.record',null,payload),
+    startOwnerAccess: payload => invoke('identity.access.startGuarded', null, payload),
+    timings: () => Object.freeze({calls,durationMs:Math.round(durationMs)}),
+    verifyAccessEmail: payload => invoke('identity.access.emailGuarded', null, payload),
+    readAccessForPin: payload => invoke('identity.access.pinReadGuarded', null, payload),
     prepareAccessOptions: payload => invoke('identity.access.options', null, payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
     createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),

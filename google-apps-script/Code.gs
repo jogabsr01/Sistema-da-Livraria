@@ -34,6 +34,13 @@ function assertMarker_(resource, c, kind) {
 // Populated only inside one signed HTTP operation under ScriptLock. Never cache
 // users, sessions, permissions, row contents or validation across requests.
 var RPC_STORAGE_SCOPE_ = null;
+function rpcSheet_(spreadsheet, name) {
+  if (!RPC_STORAGE_SCOPE_) return spreadsheet.getSheetByName(name);
+  var sheets = RPC_STORAGE_SCOPE_.sheets.get(spreadsheet);
+  if (!sheets) { sheets = new Map(); RPC_STORAGE_SCOPE_.sheets.set(spreadsheet, sheets); }
+  if (!sheets.has(name)) sheets.set(name, spreadsheet.getSheetByName(name));
+  return sheets.get(name);
+}
 function storage_(c, withBackup) {
   var cacheKey = JSON.stringify([c.environment, c.installationId, c.spreadsheetId, c.driveRootId, c.backupsId || '', !!withBackup]);
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.main[cacheKey]) return RPC_STORAGE_SCOPE_.main[cacheKey];
@@ -49,12 +56,21 @@ function storage_(c, withBackup) {
   if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.main[cacheKey] = result;
   return result;
 }
-function withLock_(fn) {
+function withLock_(fn, waitMs) {
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(20000)) failure_('BUSY');
+  var wait=waitMs===undefined?20000:waitMs;
+  var waiting=Date.now();
+  if (!lock.tryLock(wait)) { try { console.info(JSON.stringify({metric:'rpc.lockBusy',waitMs:Date.now()-waiting,limitMs:wait})); } catch (_) {} failure_('BUSY'); }
   try { return fn(); } finally { lock.releaseLock(); }
 }
-function rowValues_(sheet, knownLastRow) { return (knownLastRow === undefined ? sheet.getLastRow() : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : []; }
+function rowValues_(sheet, knownLastRow) {
+  // Runtime commands never edit row 1. Reuse only its header during this locked
+  // invocation; authorization and business rows are always read afresh.
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.headers.has(sheet)) return RPC_STORAGE_SCOPE_.headers.get(sheet).slice();
+  var header = (knownLastRow === undefined ? sheet.getLastRow() : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.headers.set(sheet, header.slice());
+  return header;
+}
 function same_(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function migrationRows_(spreadsheet) {
   var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? sheet.getLastRow() : 0;
@@ -80,7 +96,7 @@ function assertSchema_(spreadsheet) {
   // Conflicting nonempty headers still take precedence over missing sheets.
   var missing = false;
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
-    var sheet = spreadsheet.getSheetByName(table.name), lastRow = sheet ? sheet.getLastRow() : 0;
+    var sheet = rpcSheet_(spreadsheet, table.name), lastRow = sheet ? sheet.getLastRow() : 0;
     if (!sheet || !lastRow) { missing = true; return; }
     if (!same_(rowValues_(sheet, lastRow), table.columns)) failure_('SCHEMA_CONFLICT');
   });
@@ -169,7 +185,7 @@ function registerNonce_(request, spreadsheet) {
   var live = rows.filter(function (r) { return Date.parse(r[2]) > now; });
   var hash = digest_(request.nonce);
   if (live.some(function (r) { return r[0] === hash; })) failure_('REPLAY');
-  if (live.length >= 5000) failure_('BUSY');
+  if (live.length >= 5000) failure_('SERVICE_CAPACITY');
   if (rows.length !== live.length) {
     sheet.getRange(2, 1, rows.length, 4).clearContent();
     if (live.length) sheet.getRange(2, 1, live.length, 4).setValues(live);
@@ -179,12 +195,16 @@ function registerNonce_(request, spreadsheet) {
   SpreadsheetApp.flush();
 }
 function processRequest_(request, c) {
+  var started=Date.now();
   return withLock_(function () {
+    var acquired=Date.now(),bound=acquired,validated=acquired;
     var previousScope = RPC_STORAGE_SCOPE_;
-    RPC_STORAGE_SCOPE_ = { main: {}, controls: {} };
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap() };
     try {
-    if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('BUSY');
-    var ss = storage_(c, false).spreadsheet; assertSchema_(ss);
+    if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
+    var ss;
+    try { ss=storage_(c, false).spreadsheet; } finally { bound=Date.now();validated=bound; }
+    try { assertSchema_(ss); } finally { validated=Date.now(); }
     registerNonce_(request, ss);
     // Service readiness is not a user login: no roles, PII or table names.
     // Full installation bindings, schema, signature and durable nonce still apply.
@@ -235,6 +255,9 @@ function processRequest_(request, c) {
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
       var props = scriptProperties_();
       if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
+      if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
+      if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
       if (request.action === 'identity.access.options') return accessOptions_(request, c);
       return ownerAccessOperation_(request, c);
     }
@@ -260,8 +283,12 @@ function processRequest_(request, c) {
     if (actor.id !== principal.id || actor.role !== principal.role || actor.assurance !== principal.assurance || actor.authenticatedAt !== principal.authenticatedAt ||
         !['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
-    } finally { RPC_STORAGE_SCOPE_ = previousScope; }
-  });
+    } finally {
+      // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
+      try { console.info(JSON.stringify({metric:'rpc.duration',lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started})); }
+      catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }
+    }
+  }, 5000);
 }
 function signedResponse_(c, request, ok, data, code) {
   var result = { version: 1, environment: c.environment, installationId: c.installationId,
@@ -279,15 +306,15 @@ function doPost(event) {
   } catch (_) { return jsonOutput_({ error: { code: 'UNAUTHORIZED' } }); }
   try { return signedResponse_(c, request, true, processRequest_(request, c)); }
   catch (error) {
-    var allowed = ['EMERGENCY_RECOVERY_UNAVAILABLE','KEY_MANAGEMENT_RATE_LIMITED','KEY_MANAGEMENT_UNAVAILABLE','KEY_MANAGEMENT_REJECTED','KEY_MANAGEMENT_CONFLICT','KEY_MANAGEMENT_LAST_KEY','KEY_MANAGEMENT_CAPACITY','CUSTOMER_NOT_FOUND','CUSTOMER_CONTACT_NOT_AUTHORIZED','REPORT_UNAVAILABLE','INVALID_REPORT','REPORT_CHANGED','REPORT_CONFLICT','REPORT_CAPACITY','SECURITY_AUDIT_UNAVAILABLE','REPLAY', 'BUSY', 'SCHEMA_REQUIRED', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED', 'ACCESS_REJECTED', 'CATALOG_UNAVAILABLE', 'CATALOG_INVALID', 'CATALOG_CONFLICT', 'CATALOG_DUPLICATE', 'CATALOG_NOT_FOUND', 'CATALOG_STOCK_HISTORY', 'COVER_PHOTOS_UNAVAILABLE', 'COVER_PHOTO_INVALID'];
+    var allowed = ['EMERGENCY_RECOVERY_UNAVAILABLE','KEY_MANAGEMENT_RATE_LIMITED','KEY_MANAGEMENT_UNAVAILABLE','KEY_MANAGEMENT_REJECTED','KEY_MANAGEMENT_CONFLICT','KEY_MANAGEMENT_LAST_KEY','KEY_MANAGEMENT_CAPACITY','CUSTOMER_NOT_FOUND','CUSTOMER_CONTACT_NOT_AUTHORIZED','REPORT_UNAVAILABLE','INVALID_REPORT','REPORT_CHANGED','REPORT_CONFLICT','REPORT_CAPACITY','SECURITY_AUDIT_UNAVAILABLE','REPLAY', 'BUSY', 'SERVICE_CAPACITY', 'MAINTENANCE_ACTIVE', 'SCHEMA_REQUIRED', 'SCHEMA_CONFLICT', 'FORBIDDEN', 'BINDING_MISMATCH', 'UNAUTHENTICATED', 'IDENTITY_UNAVAILABLE', 'CHALLENGE_REJECTED', 'PASSKEY_REJECTED', 'ACCESS_REJECTED', 'CATALOG_UNAVAILABLE', 'CATALOG_INVALID', 'CATALOG_CONFLICT', 'CATALOG_DUPLICATE', 'CATALOG_NOT_FOUND', 'CATALOG_STOCK_HISTORY', 'COVER_PHOTOS_UNAVAILABLE', 'COVER_PHOTO_INVALID'];
     allowed = allowed.concat(['CHECKOUT_UNAVAILABLE', 'INVALID_SALE', 'IDEMPOTENCY_CONFLICT', 'INSUFFICIENT_STOCK', 'PRODUCT_UNAVAILABLE', 'SALE_PRICE_CHANGED', 'JOURNAL_CAPACITY', 'JOURNAL_INVALID', 'PROJECTION_CONFLICT']);
-    allowed = allowed.concat(['STAFF_UNAVAILABLE','INVALID_STAFF','STAFF_CONFLICT','STAFF_DUPLICATE','STAFF_CAPACITY']);
+    allowed = allowed.concat(['STAFF_UNAVAILABLE','INVALID_STAFF','STAFF_CONFLICT','STAFF_DUPLICATE','STAFF_CAPACITY','STAFF_CPF_DUPLICATE','STAFF_EMAIL_DUPLICATE']);
     allowed = allowed.concat(['CUSTOMERS_UNAVAILABLE','INVALID_CUSTOMER','CUSTOMER_CONFLICT','CUSTOMER_DUPLICATE','CUSTOMER_CAPACITY','CUSTOMER_UNAVAILABLE']);
     allowed = allowed.concat(['EMAIL_CHANGE_UNAVAILABLE','EMAIL_CHANGE_REJECTED','EMAIL_CHANGE_CONFLICT','EMAIL_CHANGE_RATE_LIMITED','EMAIL_CHANGE_DELIVERY']);
     allowed = allowed.concat(['AUDIT_UNAVAILABLE','INVALID_AUDIT','AUDIT_CHANGED','AUDIT_CONFLICT','AUDIT_CAPACITY','AUDIT_EXPORT_LIMIT']);
     allowed = allowed.concat(['SCHEDULE_UNAVAILABLE','INVALID_SCHEDULE','SCHEDULE_NOT_FOUND','SCHEDULE_CONFLICT','SCHEDULE_CAPACITY','SCHEDULE_EMPLOYEE_UNAVAILABLE','SCHEDULE_NO_CHANGE','SCHEDULE_OVERLAP']);
     allowed = allowed.concat(['NICHES_UNAVAILABLE','INVALID_NICHE','NICHE_CONFLICT','NICHE_DUPLICATE','NICHE_NOT_FOUND']);
-    allowed = allowed.concat(['PROFILE_UNAVAILABLE','INVALID_PROFILE','PROFILE_CONFLICT','PROFILE_NOT_FOUND']);
+    allowed = allowed.concat(['PROFILE_UNAVAILABLE','INVALID_PROFILE','PROFILE_CONFLICT','PROFILE_NOT_FOUND','PROFILE_CPF_DUPLICATE','PROFILE_CPF_LOCKED']);
     allowed = allowed.concat(['OPERATIONS_UNAVAILABLE','INVALID_OPERATION','SALE_NOT_FOUND','OPERATION_CONFLICT','STOCK_NO_CHANGE']);
     allowed = allowed.concat(['INVALID_STOCK_RECEIPT', 'STOCK_LIMIT']);
     allowed = allowed.concat(['NOTIFICATIONS_UNAVAILABLE', 'INVALID_NOTIFICATION', 'NOTIFICATION_NOT_FOUND', 'NOTIFICATION_CONFLICT', 'NOTIFICATION_CAPACITY']);

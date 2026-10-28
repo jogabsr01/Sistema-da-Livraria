@@ -32,9 +32,9 @@ test('bindings are checked once per resource per RPC while each new request reva
   const s=ownerFixture(), original=s.gas.context.assertMarker_;let checks=0;
   s.gas.context.assertMarker_=(...args)=>{checks++;return original(...args);};
   const token=randomBytes(32).toString('base64url'), service=s.service(), ip='192.0.2.44';
-  await service.execute('start',{email:properties.OWNER_EMAIL},token,ip);assert.equal(checks,6);
-  checks=0;await service.execute('email',{code:code(s)},token,ip);assert.equal(checks,6);
-  checks=0;await service.execute('pin',{pin:'8274'},token,ip);assert.equal(checks,9);
+  await service.execute('start',{email:properties.OWNER_EMAIL},token,ip);assert.equal(checks,3);
+  checks=0;await service.execute('email',{code:code(s)},token,ip);assert.equal(checks,3);
+  checks=0;await service.execute('pin',{pin:'8274'},token,ip);assert.equal(checks,6);
   checks=0;assert.equal((await service.state(token)).stage,'PASSKEY');assert.equal(checks,3);
   assert.equal(s.gas.context.RPC_STORAGE_SCOPE_,null);
   const mainFile=s.gas.resources.get(s.settings.config.spreadsheetId);mainFile.sharing='public';

@@ -25,7 +25,7 @@ export function createStaffHandler(dependencies={}){
    if(!data||!Array.isArray(data.users)||data.users.length>25||!Number.isSafeInteger(data.total)||data.total<0||data.total>5000||data.nextOffset!==null&&(!Number.isSafeInteger(data.nextOffset)||data.nextOffset!==Number(url.searchParams.get('offset')||0)+data.users.length||data.nextOffset>=data.total))throw new ApiError(502,'UPSTREAM_UNTRUSTED');
    return json({data:{total:data.total,nextOffset:data.nextOffset,users:data.users.map(row=>staffDto(row,vault))},requestId});
   }
-  if(url.search)staffInvalid();requireCsrfToken(request,(await sessions.current(request)).csrfToken);
+  if(url.search)staffInvalid();requireCsrfToken(request,sessions.csrfFor(request,principal));
   const reader=request.body?.getReader(),decoder=new TextDecoder('utf-8',{fatal:true});let content='',size=0;
   if(reader){try{while(true){const {value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>5000){await reader.cancel();throw new ApiError(413,'INVALID_STAFF');}content+=decoder.decode(value,{stream:true});}content+=decoder.decode();}catch(e){if(e instanceof ApiError)throw e;staffInvalid();}}
   let input;try{input=JSON.parse(content);}catch{staffInvalid();}if(input?.contact?.cpf===''&&catalogUuid(input.id)&&Number.isSafeInteger(input.expectedRevision)&&input.expectedRevision>0){

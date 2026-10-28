@@ -34,7 +34,12 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
     const info = await lstat(input).catch(e => { if (e.code !== 'ENOENT') throw e; });
     if (!info && file !== 'index.html') continue;
     if (!info?.isFile() || info.isSymbolicLink()) throw new Error('Invalid public asset');
-    await copyFile(input, resolve(destination, file));
+    if (file.endsWith('-dev.js')) {
+      const sharedPath = resolve(root,'ui-messages.js'), sharedInfo = await lstat(sharedPath);
+      if (!sharedInfo.isFile() || sharedInfo.isSymbolicLink()) throw new Error('Invalid public message asset');
+      const shared = await readFile(sharedPath,'utf8');
+      await writeFile(resolve(destination,file),shared + '\n' + await readFile(input,'utf8'));
+    } else await copyFile(input, resolve(destination, file));
   }
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) await build();

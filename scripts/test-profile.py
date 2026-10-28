@@ -29,6 +29,40 @@ class Profile(qa.Catalog):
         super().relay(route)
     def profile(self):
         self.activate();self.local('/test/enable-profile',{});self.page.goto(qa.ORIGIN+'/meu-perfil-dev.html');expect(self.page.locator('#profile')).to_be_visible()
+    def test_profile_menu_uses_existing_profile_and_generic_navigation_has_no_background_requests(self):
+        self.activate();self.local('/test/enable-profile',{})
+        calls=[]
+        self.page.on('request',lambda req:calls.append(req.url) if '/api/v1/profile/get' in req.url else None)
+        self.page.goto(qa.ORIGIN+'/meu-perfil-dev.html')
+        expect(self.page.locator('#profile')).to_be_visible()
+        expect(self.page.locator('.account-menu summary')).to_have_attribute('aria-label','Abrir menu de Conta proprietária')
+        self.assertEqual(len(calls),1,'header must reuse the profile already fetched by the page')
+        self.catalog()
+        self.page.evaluate("window.dispatchEvent(new Event('focus'))")
+        expect(self.page.locator('.account-menu summary')).to_have_attribute('aria-label','Abrir menu da conta')
+        self.assertEqual(len(calls),1,'focus must not launch another personal-data lookup')
+        self.page.get_by_label('Abrir menu da conta',exact=True).click()
+        expect(self.page.locator('.account-menu summary')).to_have_attribute('aria-label','Abrir menu de Conta proprietária')
+        self.assertEqual(len(calls),2,'opening the menu performs one authorized profile request')
+
+    def test_profile_master_cpf_error_stays_in_form_and_success_links_once_with_masked_display(self):
+        self.profile()
+        self.page.locator('#owner-cpf-input').fill('123')
+        self.page.locator('#save').click()
+        expect(self.page.locator('#form-status')).to_contain_text('CPF inválido')
+        expect(self.page.locator('#owner-cpf-input')).to_have_attribute('aria-invalid','true')
+        expect(self.page.locator('#owner-cpf-input')).to_be_focused()
+        expect(self.page.locator('#owner-cpf')).to_be_visible()
+        self.page.locator('#owner-cpf-input').fill('52998224725')
+        expect(self.page.locator('#owner-cpf-input')).not_to_have_attribute('aria-invalid','true')
+        self.page.locator('#save').click()
+        expect(self.page.locator('#form-status')).to_have_text('Alterações salvas.')
+        expect(self.page.locator('#cpf')).to_have_text('***.982.247-**')
+        expect(self.page.locator('#owner-cpf')).to_be_hidden()
+        self.assertNotIn('52998224725',self.page.locator('body').inner_text())
+        self.assertEqual(self.page.evaluate('Object.keys(localStorage)'),[])
+        self.assertEqual(self.page.evaluate('Object.keys(sessionStorage)'),[])
+
     def test_profile_mobile_save_and_avatar_updates_header_without_browser_persistence(self):
         self.profile();self.page.locator('#display-name').fill('Responsável de teste');self.page.locator('#phone').fill('11988887777')
         from PIL import Image
@@ -40,7 +74,7 @@ class Profile(qa.Catalog):
         self.profile();self.page.locator('#phone').fill('11988887777');self.lose_profile=True;self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_contain_text('tente novamente');expect(self.page.locator('#phone')).to_be_disabled();self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_have_text('Alterações salvas.');self.assertEqual(self.commands[0],self.commands[1]);self.page.locator('#photo-remove').click();self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_have_text('Alterações salvas.');expect(self.page.locator('#avatar-preview')).to_be_hidden()
     def test_profile_pin_recovery_requires_real_existing_passkey_and_revokes_old_cookie(self):
         self.profile();old=next(c['value'] for c in self.context.cookies() if c['name']=='__Host-livraria_session');self.page.goto(qa.ORIGIN+'/acesso-dev.html#recuperar-pin');expect(self.page.locator('#recovery-form')).to_be_visible();self.page.locator('#recovery-email').fill('owner@example.invalid');self.page.get_by_role('button',name='Enviar código de recuperação').click();expect(self.page.locator('#email-form')).to_be_visible();self.page.locator('#email-code').fill(self.local('/test/code')['code']);self.page.get_by_role('button',name='Confirmar código').click();expect(self.page.locator('#pin-form')).to_be_visible();self.page.locator('#new-pin').fill('9382');self.page.locator('#confirm-pin').fill('9382');self.page.get_by_role('button',name='Salvar PIN e continuar').click();expect(self.page.locator('#passkey')).to_be_visible();self.page.locator('#passkey-button').click();expect(self.page.locator('#complete')).to_be_visible();new=next(c['value'] for c in self.context.cookies() if c['name']=='__Host-livraria_session');self.assertNotEqual(old,new)
-        out=self.local('/api/v1/session',headers={'cookie':'__Host-livraria_session='+old});self.assertEqual(out['status'],401);self.logout();self.begin_login('8274');expect(self.page.locator('#status')).to_contain_text('Não foi possível confirmar os dados');self.begin_login('9382');expect(self.page.locator('#passkey')).to_be_visible();self.page.locator('#passkey-button').click();expect(self.page.locator('#complete')).to_be_visible();self.assertEqual(self.errors,[])
+        out=self.local('/api/v1/session',headers={'cookie':'__Host-livraria_session='+old});self.assertEqual(out['status'],401);self.logout();self.begin_login('8274');expect(self.page.locator('#status')).to_contain_text('Não foi possível entrar com os dados informados');self.begin_login('9382');expect(self.page.locator('#passkey')).to_be_visible();self.page.locator('#passkey-button').click();expect(self.page.locator('#complete')).to_be_visible();self.assertEqual(self.errors,[])
     def test_profile_other_sessions_button_keeps_current_session(self):
         self.profile();self.page.locator('#revoke-others').click();expect(self.page.locator('#status')).to_contain_text('outras sessões foram encerradas');self.page.reload();expect(self.page.locator('#profile')).to_be_visible()
     def test_profile_default_disabled_and_unknown_account_recovery_stays_generic(self):

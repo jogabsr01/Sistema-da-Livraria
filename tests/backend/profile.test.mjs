@@ -33,10 +33,10 @@ test('avatar is sanitized, private and user-bound, survives retries and can be r
 
 test('profile change repairs every interrupted projection and remains recoverable with the feature turned off',async()=>{
  for(const stage of ['intent','user','owner','revision','audit','marker'])for(const after of [false,true]){
-  const s=profileFixture(),p={commandId:randomUUID(),expectedRevision:0,phone:'11988887777',displayName:'Perfil de teste',photo:await photo()},save=s.gas.context.accessSaveMain_;let once=true;
+  const s=profileFixture(),p={commandId:randomUUID(),expectedRevision:0,phone:'11988887777',displayName:'Perfil de teste',photo:await photo(),cpf:'52998224725'},save=s.gas.context.accessSaveMain_;let once=true;
   s.gas.context.accessSaveMain_=(table,row)=>{const key=row.Chave||'',target=table.sheet.name==='Usuarios'?'user':table.sheet.name==='Logs_Auditoria'?'audit':key.startsWith('profile.owner.')?'owner':key.startsWith('staff.revision.')?'revision':key.startsWith('profile.command.')?JSON.parse(row.Valor).state==='PENDING'?'intent':'marker':'';if(!once||stage!==target)return save(table,row);once=false;if(after)save(table,row);throw Error('INJECTED_PROFILE');};
   assert.notEqual((await s.profileHttp('save',p)).status,200);if(stage==='intent'&&!after)assert.equal((await s.profileHttp('save',p)).status,200);
-  s.gas.props.PROFILE_ENABLED='false';await s.client.readSession(s.master.tokenHash);s.gas.props.PROFILE_ENABLED='true';assert.equal((await s.profileHttp('save',p)).status,200,stage+after);assert.equal((await result(await s.profileHttp('get'))).data.name,p.displayName);assert.equal([...s.gas.resources.values()].filter(r=>r.kind==='image').length,1);
+  s.gas.props.PROFILE_ENABLED='false';await s.client.readSession(s.master.tokenHash);s.gas.props.PROFILE_ENABLED='true';assert.equal((await s.profileHttp('save',p)).status,200,stage+after);const restored=(await result(await s.profileHttp('get'))).data;assert.equal(restored.name,p.displayName);assert.equal(restored.cpfMasked,'***.982.247-**');assert.equal([...s.gas.resources.values()].filter(r=>r.kind==='image').length,1);
  }
 });
 

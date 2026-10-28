@@ -44,7 +44,10 @@ export function loadOwnerAccessSettings(env = process.env) {
       [sessions.config.secret, env.WORKSPACE_SESSION_TOKEN_KEY, env.WORKSPACE_AUTH_GUARD_KEY].some(key => key?.toLowerCase() === pepper.toLowerCase()) ||
       sessions.tokenKey.equals(guards.guardKey)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
   const staffEnabled=env.WORKSPACE_STAFF_ENABLED==='true';
-  return { ...sessions, ...guards, pepper: Buffer.from(pepper, 'hex'),staffEnabled,emergencyRecoveryEnabled:env.WORKSPACE_EMERGENCY_RECOVERY_ENABLED==='true'&&env.WORKSPACE_RECOVERY_ENABLED==='true',recoveryEnabled:env.WORKSPACE_RECOVERY_ENABLED==='true',...(staffEnabled?loadPersonalDataSettings(env):{}) };
+  let personal = null;
+  if (staffEnabled) personal = loadPersonalDataSettings(env);
+  else if (env.WORKSPACE_PERSONAL_DATA_KEY && env.WORKSPACE_PERSONAL_INDEX_KEY) { try { personal = loadPersonalDataSettings(env); } catch {} }
+  return { ...sessions, ...guards, ...personal, cpfEnabled: !!personal, pepper: Buffer.from(pepper, 'hex'),staffEnabled,emergencyRecoveryEnabled:env.WORKSPACE_EMERGENCY_RECOVERY_ENABLED==='true'&&env.WORKSPACE_RECOVERY_ENABLED==='true',recoveryEnabled:env.WORKSPACE_RECOVERY_ENABLED==='true', };
 }
 export function accessCookie(value) {
   if (!canonical(value)) rejected();
@@ -60,14 +63,27 @@ function readCookie(request) {
 export function createOwnerAccessService(settings, { client }) {
   const { config, guardKey, tokenKey, pepper } = settings;
   if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
-  const vault=settings.staffEnabled?createPersonalDataVault(settings):null;
-  const identifier=value=>{if(typeof value!=='string')throw new ApiError(400,'INVALID_AUTH_REQUEST');if(value.includes('@'))return email(value);if(!vault)throw new ApiError(400,'INVALID_AUTH_REQUEST');return normalizeCpf(value);};
+  const vault=settings.cpfEnabled||settings.staffEnabled?createPersonalDataVault(settings):null;
+  const identifier=value=>{if(typeof value!=='string')throw new ApiError(400,'INVALID_AUTH_REQUEST');if(value.includes('@'))return email(value);if(!vault)throw new ApiError(503,'ACCESS_CPF_NOT_AVAILABLE');return normalizeCpf(value);};
   async function staffLookup(value){
-    if(!vault)return null;const data=await client.staffAccess('lookup',{emailIndex:value.includes('@')?vault.index('email',value):'',cpfIndex:value.includes('@')?'':vault.index('cpf',value)});
+    if(!vault||!settings.staffEnabled)return null;const data=await client.staffAccess('lookup',{emailIndex:value.includes('@')?vault.index('email',value):'',cpfIndex:value.includes('@')?'':vault.index('cpf',value)});
     if(!data||!Object.hasOwn(data,'account'))throw new ApiError(502,'UPSTREAM_UNTRUSTED');if(data.account===null)return null;
     const a=data.account;if(!catalogUuid(a.subjectId)||!Number.isSafeInteger(a.authorizationVersion)||a.authorizationVersion<1||typeof a.activated!=='boolean')throw new ApiError(502,'UPSTREAM_UNTRUSTED');
-    const contact=normalizeStaffContact(vault.open('users',a.subjectId,a.contact));
+    let contact;try{contact=normalizeStaffContact(vault.open('users',a.subjectId,a.contact));}catch(e){if(e instanceof ApiError&&e.status===400)throw new ApiError(502,'UPSTREAM_UNTRUSTED');throw e;}
     if((value.includes('@')?contact.email:contact.cpf)!==value)throw new ApiError(502,'UPSTREAM_UNTRUSTED');return {...a,delivery:contact.email};
+  }
+  async function ownerDelivery(value, operation) {
+    if (value.includes('@')) return value;
+    const result = await client.access('ownerLookup',{cpfIndex:vault.index('cpf',value)});
+    if (result.email) return result.email;
+    if (operation === 'start') throw new ApiError(404,'ACCESS_CPF_NOT_REGISTERED');
+    return 'unknown@example.invalid';
+  }
+  function acceptedStart(result, value) {
+    if (result?.accepted !== true || result.outcome !== undefined && !['SENT','NOT_FOUND','ALREADY_ACTIVE','THROTTLED','DELIVERY_UNAVAILABLE'].includes(result.outcome)) throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+    const codes = {NOT_FOUND:value.includes('@')?'ACCESS_EMAIL_NOT_REGISTERED':'ACCESS_CPF_NOT_REGISTERED',ALREADY_ACTIVE:'ACCESS_ALREADY_ACTIVATED',THROTTLED:'AUTH_DELIVERY_RATE_LIMITED',DELIVERY_UNAVAILABLE:'ACCESS_EMAIL_DELIVERY_UNAVAILABLE'};
+    if (codes[result.outcome]) { const error=new ApiError(result.outcome==='NOT_FOUND'?404:result.outcome==='ALREADY_ACTIVE'?409:result.outcome==='THROTTLED'?429:503,codes[result.outcome]);if(result.outcome==='THROTTLED')error.retryAfterSeconds=60;throw error; }
+    return {stage:'EMAIL',message:result.outcome==='SENT'?'Código enviado ao e-mail vinculado ao seu cadastro. Confira a caixa de entrada.':'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.'};
   }
   const scope = [config.environment, config.installationId];
   const digest = (purpose, value, format = 'hex', key = guardKey) => createHmac('sha256', key).update(JSON.stringify([purpose, scope, value])).digest(format);
@@ -87,6 +103,19 @@ export function createOwnerAccessService(settings, { client }) {
     async execute(operation, input, token, ip) {
      try {
       // Trusted platform address only, never body/forwarded HTTP headers.
+      if (operation === 'email' && typeof client.verifyAccessEmail === 'function' && typeof input.code === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/i.test(input.code.trim()) || canonical(input.code.trim()))) {
+        const code=normalizeAccessEmailCode(input.code);
+        const result=await client.verifyAccessEmail({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code])});
+        if (!result.verified) rejected();
+        return {stage:'PIN'};
+      }
+      let pinFlow;
+      if (operation === 'pin' && typeof client.readAccessForPin === 'function') pinFlow=await client.readAccessForPin({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token)});
+      if (operation === 'start' && !settings.staffEnabled && typeof client.startOwnerAccess === 'function' && typeof input.email === 'string' && input.email.includes('@')) {
+        const value=identifier(input.email), code=createAccessEmailCode();
+        const result=await client.startOwnerAccess({...guard.attemptKeys({identifier:value,originAddress:ip}),email:value,flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code});
+        return acceptedStart(result,value);
+      }
       // This fixed command reserves the SAME durable attempt in GAS before
       // checking the flow, listing keys, storing the challenge and binding it.
       // Other operations, completion/retry and time budgets remain unchanged.
@@ -99,19 +128,19 @@ export function createOwnerAccessService(settings, { client }) {
       }
       let completedRetry=false;if(operation==='complete'){try{const previous=await read(token);completedRetry=previous.state==='COMPLETE'&&previous.proofReady;}catch{}}
       // Releasing the same durable, cookie-bound grant is not another guess.
-      if(!completedRetry)await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
+      if(!completedRetry&&!pinFlow)await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
       if (operation === 'start'||operation==='recover') {
         if(operation==='recover'&&!settings.recoveryEnabled)throw new ApiError(503,'RECOVERY_NOT_ACTIVATED');
         const code = createAccessEmailCode();
         const value=identifier(input.email),staff=await staffLookup(value),proof={flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code};
-        if(staff) await client.staffAccess(operation==='recover'?'recover':'start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery});
-        else await client.access(operation==='recover'?'recover':'start', { email:value.includes('@')?value:'unknown@example.invalid',...proof });
-        return { stage: 'EMAIL', message: 'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.' };
+        const result=staff ? await client.staffAccess(operation==='recover'?'recover':'start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery})
+          : await client.access(operation==='recover'?'recover':'start', { email:await ownerDelivery(value,operation),...proof });
+        return operation==='start'?acceptedStart(result,value):{stage:'EMAIL',message:'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.'};
       }
       if (operation === 'login') {
         if (typeof input.pin !== 'string' || !/^[0-9]{4}$/.test(input.pin)) rejected();
         const value=identifier(input.email),staff=await staffLookup(value);
-        const {account}=staff?{account:staff.activated&&staff.record?staff:null}:await client.access('lookup',{email:value.includes('@')?value:'unknown@example.invalid'});
+        const {account}=staff?{account:staff.activated&&staff.record?staff:null}:await client.access('lookup',{email:await ownerDelivery(value,'login')});
         const valid = await pins.verify(input.pin, account?.subjectId || '00000000-0000-4000-8000-000000000000', account?.record || dummy);
         if (!account || !valid) rejected();
         await client.access('login', { flowId: randomUUID(), tokenHash: hash(token), subjectId: account.subjectId, authorizationVersion: account.authorizationVersion });
@@ -122,7 +151,7 @@ export function createOwnerAccessService(settings, { client }) {
         const { verified } = await client.access('email', { tokenHash: hash(token), codeHash: digest('access.email.v1', [hash(token), code]) });
         if (!verified) rejected(); return { stage: 'PIN' };
       }
-      const flow = await read(token), subject = { subjectId: flow.subjectId, authorizationVersion: flow.authorizationVersion };
+      const flow = pinFlow || await read(token), subject = { subjectId: flow.subjectId, authorizationVersion: flow.authorizationVersion };
       if(operation==='rescue'){if(!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');if(flow.purpose!=='RECOVER'||flow.state!=='PIN')rejected();const result=await client.access('rescue',{tokenHash:hash(token),codeHash:emergencyCodeHash(settings,flow.subjectId,input.recoveryCode)});if(!result.authorized)rejected();return {stage:'PIN',replacementAllowed:true};}
       if (operation === 'pin') {
         if (flow.state !== 'PIN') rejected();
@@ -163,8 +192,9 @@ const shapes = { rescue:['recoveryCode'],recover:['email'], start: ['email'], lo
 export const OWNER_ACCESS_BUDGET_MS = 55_000;
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
-    const requestId = randomUUID(), deadlineAt = performance.now() + OWNER_ACCESS_BUDGET_MS;
-    let operation, settingsLoaded = false;
+    const requestId = randomUUID(), startedAt = performance.now(), deadlineAt = startedAt + OWNER_ACCESS_BUDGET_MS;
+    let operation, settingsLoaded = false, client;
+    const timed=response=>{const metrics=client?.timings?.();response.headers.set('server-timing',`app;dur=${Math.round(performance.now()-startedAt)}`+(metrics?`, google;dur=${metrics.durationMs}, rpc;desc="${metrics.calls}"`:''));return response;};
     try {
       if (new URL(request.url).origin !== ACCESS_ORIGIN) throw new ApiError(403, 'FORBIDDEN');
       operation = new URL(request.url).pathname.split('/').at(-1);
@@ -173,14 +203,15 @@ export function createOwnerAccessHandler(dependencies = {}) {
       if (request.method !== method) { const result = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); result.headers.set('allow', method); return result; }
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
       settingsLoaded = true;
-      const service = createOwnerAccessService(settings, { client: (dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt }) });
+      client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt });
+      const service = createOwnerAccessService(settings, { client });
       let token;
       if (operation === 'state') {
         let fresh = false;
         try { token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }
         const data = fresh ? { stage: 'INITIAL' } : await service.state(token);
-        const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId });
-        if (fresh) result.headers.set('set-cookie', accessCookie(token)); return result;
+        const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId });
+        if (fresh) result.headers.set('set-cookie', accessCookie(token)); return timed(result);
       }
       requireSameOriginMutation(request, ACCESS_ORIGIN); token = readCookie(request);
       requireCsrfToken(request, service.csrf(token));
@@ -196,12 +227,12 @@ export function createOwnerAccessHandler(dependencies = {}) {
       // Rotate the flow bearer for every new request/login, after CSRF validation.
       if (['start', 'login','recover'].includes(operation)) token = randomBytes(32).toString('base64url');
       const output = await service.execute(operation, input, token, context.ip), { cookie, ...data } = output;
-      const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation) ? 202 : 200);
+      const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation) ? 202 : 200);
       if (cookie) {
         result.headers.append('set-cookie', cookie);
         result.headers.append('set-cookie', `${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);
       } else if (['start', 'login','recover'].includes(operation)) result.headers.set('set-cookie', accessCookie(token));
-      return result;
+      return timed(result);
     } catch (error) {
       // DEV operator setup only, before any identity/cookie/command processing.
       // This does not relax validation or expose key material on public errors.
@@ -211,8 +242,8 @@ export function createOwnerAccessHandler(dependencies = {}) {
         if (configurationIssues.length) return json({ error: { code: error.code, requestId, configurationIssues } }, 503);
       }
       const result = safeFailure(error, requestId);
-      if (error?.code === 'AUTH_RATE_LIMITED') result.headers.set('retry-after', String(error.retryAfterSeconds));
-      return result;
+      if (['AUTH_RATE_LIMITED','AUTH_DELIVERY_RATE_LIMITED'].includes(error?.code)) result.headers.set('retry-after', String(error.retryAfterSeconds));
+      return timed(result);
     }
   };
 }

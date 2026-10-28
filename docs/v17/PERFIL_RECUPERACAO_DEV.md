@@ -1,8 +1,8 @@
 # Perfil e recuperação de PIN — DEV
 
-`meu-perfil-dev.html` mostra somente o perfil da sessão: nome, CPF mascarado (ausente no bootstrap do proprietário), e-mail, papel, último acesso, telefone e avatar. Funcionários alteram telefone/foto; nome e CPF permanecem administrativos. O proprietário pode definir nome de exibição, preservando seu e-mail privado de autenticação. E-mail não é editável neste lote.
+`meu-perfil-dev.html` mostra somente o perfil da sessão: nome, CPF mascarado (ausente no bootstrap do proprietário), e-mail, papel, último acesso, telefone e avatar. Funcionários alteram telefone/foto; nome e CPF permanecem administrativos. O proprietário pode definir nome de exibição e vincular seu CPF uma vez após autenticação forte, preservando seu e-mail privado de autenticação. O CPF passa por validação, cifragem e índice privado; duplicatas e substituição de um CPF já vinculado são recusadas. E-mail não é editável neste lote.
 
-O menu da conta aparece no catálogo, Caixa, equipe, operações e notificações quando o módulo está habilitado. Inclui perfil, recuperação de PIN, notificações e saída. No perfil há revogação das outras sessões. Alterações exigem CSRF, origem DEV exata e autenticação forte de até cinco minutos, validada também no Apps Script. O servidor deriva a conta da sessão; não aceita usuário, papel, CPF ou e-mail no formulário de alteração.
+O menu da conta aparece no catálogo, Caixa, equipe, operações e notificações quando o módulo está habilitado. Inclui perfil, recuperação de PIN, notificações e saída. No perfil há revogação das outras sessões. Alterações exigem CSRF, origem DEV exata e autenticação forte de até cinco minutos, validada também no Apps Script. O servidor deriva a conta da sessão; não aceita usuário, papel ou e-mail no formulário de alteração. O campo de CPF é permitido somente para a vinculação inicial do próprio proprietário. A navegação básica do menu não faz consultas em segundo plano; os detalhes são carregados ao abrir o menu ou aproveitados da consulta já feita pela tela de perfil.
 
 ## Dados e fotos
 
