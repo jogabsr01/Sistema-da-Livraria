@@ -82,3 +82,16 @@ export function createPasskeyService(settings, { client }) {
     },
   };
 }
+
+// The challenge and binding have already been durably stored by one signed RPC.
+export async function preparedAccessOptions(input) {
+  const user = subject(input);
+  if (!['create','get'].includes(input.kind) || !Array.isArray(input.credentials) || input.credentials.length > 5 ||
+      input.kind === 'get' && !input.credentials.length) rejected();
+  const common = {rpID:RP_ID, userVerification:'required', challenge:new Uint8Array(Buffer.from(input.challenge,'base64url')), timeout:120000};
+  const options = input.kind === 'create'
+    ? await generateRegistrationOptions({...common, rpName:'Livraria IPB — DEV',userID:new TextEncoder().encode(user.subjectId),userName:user.subjectId,userDisplayName:'Funcionário',attestationType:'none',supportedAlgorithmIDs:[-7],authenticatorSelection:{residentKey:'preferred',userVerification:'required'},excludeCredentials:input.credentials})
+    : await generateAuthenticationOptions({...common,allowCredentials:input.credentials});
+  if (options.challenge !== input.challenge) rejected();
+  return {stage:'PASSKEY',kind:input.kind,options};
+}

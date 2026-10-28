@@ -264,3 +264,23 @@ function ownerAccessOperation_(request, c) {
   if (action === 'identity.access.commit') return accessCommit_(ss, c, current, p, now);
   accessReject_();
 }
+
+// Fixed access commands only, signed and gated by processRequest_ under ScriptLock.
+// They preserve the existing validators; no caller-selected arbitrary batch.
+function accessOptions_(request, c) {
+  var p = request.payload;
+  authControlExact_(p, ['tokenHash','accountKey','originKey','ceremonyId','challenge','allowReplacement']);
+  if (typeof p.allowReplacement !== 'boolean' || !identityUuid_(p.ceremonyId) || !/^[A-Za-z0-9_-]{43}$/.test(p.challenge || '')) accessReject_();
+  recoverSecurityIntent_(c);
+  var attempt = authAttempt_(authControlStore_(c), {accountKey:p.accountKey, originKey:p.originKey}, Date.now());
+  if (!attempt.allowed) return {allowed:false, retryAfterSeconds:attempt.retryAfterSeconds};
+  var flow = ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}}, c);
+  if (flow.state !== 'PASSKEY' || flow.replacementAllowed && !p.allowReplacement) accessReject_();
+  var user = {subjectId:flow.subjectId, authorizationVersion:flow.authorizationVersion};
+  var credentials = passkeyOperation_({action:'identity.passkey.list', payload:user}, c).credentials;
+  var kind = flow.purpose === 'ACTIVATE' || flow.replacementAllowed ? 'create' : 'get';
+  if (flow.replacementAllowed) ownerAccessOperation_({action:'identity.access.rescueBegin',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId,challenge:p.challenge}}, c);
+  else passkeyOperation_({action:'identity.passkey.begin',payload:{subjectId:user.subjectId,authorizationVersion:user.authorizationVersion,ceremonyId:p.ceremonyId,purpose:kind === 'create' ? 'REGISTER':'AUTHENTICATE',challenge:p.challenge}}, c);
+  ownerAccessOperation_({action:'identity.access.bind',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId}}, c);
+  return {allowed:true, subjectId:user.subjectId, authorizationVersion:user.authorizationVersion, kind:kind, credentials:credentials, ceremonyId:p.ceremonyId, challenge:p.challenge, replacementAllowed:flow.replacementAllowed};
+}

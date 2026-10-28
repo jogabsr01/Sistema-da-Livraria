@@ -30,6 +30,7 @@
   function describe(error) {
     const code = error.code || '';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
+    if (uncertainCodes.has(code) && error.transport?.operation === 'options') return 'Não conseguimos preparar a confirmação do aparelho agora. Aguarde alguns instantes e tente novamente em “Confirmar no meu aparelho”. Se continuar, peça ajuda à administração.';
     if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
     if (code === 'INVALID_AUTH_REQUEST' || code === 'INVALID_CPF') return 'Confira se o CPF ou e-mail está completo e se o PIN tem quatro números. Corrija os campos antes de continuar.';
     if (code === 'PIN_ADJACENT_REPETITION') return 'Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.';

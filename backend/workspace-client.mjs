@@ -38,7 +38,16 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       if (signal.aborted || now() >= deadlineAt) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
-      const data = verifyResponse(signed, request);
+      let data = verifyResponse(signed, request);
+      if (action === 'identity.access.options') {
+        if (data?.allowed === false && Number.isSafeInteger(data.retryAfterSeconds) && data.retryAfterSeconds >= 1 && data.retryAfterSeconds <= 3600) {
+          const error = new ApiError(429, 'AUTH_RATE_LIMITED'); error.retryAfterSeconds = data.retryAfterSeconds; throw error;
+        }
+        if (data?.allowed !== true) throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+          const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+          if (!uuid(data.subjectId) || !Number.isSafeInteger(data.authorizationVersion) || data.authorizationVersion < 1 || !['create','get'].includes(data.kind) || data.ceremonyId !== payload.ceremonyId || data.challenge !== payload.challenge || typeof data.replacementAllowed !== 'boolean' || !Array.isArray(data.credentials) || data.credentials.length > 5 || data.credentials.some(key => !key || typeof key.id !== 'string' || key.id.length < 2 || key.id.length > 1400 || !Array.isArray(key.transports) || key.transports.some(t => !['ble','cable','hybrid','internal','nfc','smart-card','usb'].includes(t)))) throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+          return {subjectId:data.subjectId,authorizationVersion:data.authorizationVersion,kind:data.kind,credentials:data.credentials,ceremonyId:data.ceremonyId,challenge:data.challenge,replacementAllowed:data.replacementAllowed};
+      }
       if(action.startsWith('keys.'))return data;
       if(action.startsWith('reports.')||action.startsWith('insights.'))return data;
       if(action==='identity.security.record'){if(!data||data.recorded!==true)throw new ApiError(502,'UPSTREAM_UNTRUSTED');return {recorded:true};}
@@ -223,6 +232,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     registerPasskey: payload => invoke('identity.passkey.register', null, payload),
     advancePasskeyCounter: payload => invoke('identity.passkey.counter', null, payload),
     recordSecurityEvent: payload => invoke('identity.security.record',null,payload),
+    prepareAccessOptions: payload => invoke('identity.access.options', null, payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
     createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),
     consumeAuthChallenge: payload => invoke('identity.challenge.consume', null, payload),

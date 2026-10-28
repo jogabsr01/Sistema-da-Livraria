@@ -235,6 +235,7 @@ function processRequest_(request, c) {
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
       var props = scriptProperties_();
       if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      if (request.action === 'identity.access.options') return accessOptions_(request, c);
       return ownerAccessOperation_(request, c);
     }
     if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
