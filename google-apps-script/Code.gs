@@ -47,16 +47,18 @@ function withLock_(fn) {
   if (!lock.tryLock(20000)) failure_('BUSY');
   try { return fn(); } finally { lock.releaseLock(); }
 }
-function rowValues_(sheet) { return sheet.getLastRow() ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : []; }
+function rowValues_(sheet, knownLastRow) { return (knownLastRow === undefined ? sheet.getLastRow() : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : []; }
 function same_(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
-function version_(spreadsheet) {
-  var sheet = spreadsheet.getSheetByName('_Migracoes');
-  if (!sheet || sheet.getLastRow() < 2) return 0;
-  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+function migrationRows_(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? sheet.getLastRow() : 0;
+  return lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+}
+function migrationVersion_(rows) {
   if (rows.some(function (r) { return !Number.isSafeInteger(Number(r[0])) || Number(r[0]) < 1; })) failure_('SCHEMA_INVALID');
   if (new Set(rows.map(function (r) { return Number(r[0]); })).size !== rows.length) failure_('SCHEMA_INVALID');
-  return Math.max.apply(null, rows.map(function (r) { return Number(r[0]); }));
+  return rows.length ? Math.max.apply(null, rows.map(function (r) { return Number(r[0]); })) : 0;
 }
+function version_(spreadsheet) { return migrationVersion_(migrationRows_(spreadsheet)); }
 function preflight_(spreadsheet) {
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
     var sheet = spreadsheet.getSheetByName(table.name);
@@ -64,12 +66,18 @@ function preflight_(spreadsheet) {
   });
 }
 function assertSchema_(spreadsheet) {
-  if (version_(spreadsheet) !== LIVRARIA_SCHEMA.version) failure_('SCHEMA_REQUIRED');
-  var history = spreadsheet.getSheetByName('_Migracoes');
-  var rows = history.getRange(2, 1, history.getLastRow() - 1, 4).getValues();
+  var rows = migrationRows_(spreadsheet);
+  if (migrationVersion_(rows) !== LIVRARIA_SCHEMA.version) failure_('SCHEMA_REQUIRED');
   if (!rows.some(function (r) { return Number(r[0]) === LIVRARIA_SCHEMA.version && r[3] === digest_(JSON.stringify(LIVRARIA_SCHEMA)); })) failure_('SCHEMA_REQUIRED');
-  preflight_(spreadsheet);
-  if (LIVRARIA_SCHEMA.tables.some(function (t) { return !spreadsheet.getSheetByName(t.name) || !same_(rowValues_(spreadsheet.getSheetByName(t.name)), t.columns); })) failure_('SCHEMA_REQUIRED');
+  // Read every header once, on every invocation. No cross-request cache.
+  // Conflicting nonempty headers still take precedence over missing sheets.
+  var missing = false;
+  LIVRARIA_SCHEMA.tables.forEach(function (table) {
+    var sheet = spreadsheet.getSheetByName(table.name), lastRow = sheet ? sheet.getLastRow() : 0;
+    if (!sheet || !lastRow) { missing = true; return; }
+    if (!same_(rowValues_(sheet, lastRow), table.columns)) failure_('SCHEMA_CONFLICT');
+  });
+  if (missing) failure_('SCHEMA_REQUIRED');
 }
 function migrate_(c) {
   var store = storage_(c, true), ss = store.spreadsheet;

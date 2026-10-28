@@ -5,22 +5,27 @@ import { pack, unpack, requestMessage, verifyResponse } from './protocol.mjs';
 import { catalogUuid, normalizeProduct, productFields } from './catalog-model.mjs';
 import { paymentMethods } from './checkout-command.mjs';
 import { validateNotificationResponse } from './notification-model.mjs';
-export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
+export const WORKSPACE_RPC_TIMEOUT_MS = 20_000;
+export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = WORKSPACE_RPC_TIMEOUT_MS, deadlineAt = Infinity, now = () => performance.now() } = {}) {
   async function invoke(action, actor, payload = {}) {
     const request = requestMessage(config, actor);
     request.action = action;
     request.payload = payload;
-    const signal = AbortSignal.timeout(timeoutMs);
+    const remaining = Number.isFinite(deadlineAt) ? Math.floor(deadlineAt - now()) : Infinity;
+    if (remaining <= 0) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
+    const signal = AbortSignal.timeout(Math.min(timeoutMs, remaining));
     let response;
     try {
       response = await fetchImpl(config.scriptUrl, { method: 'POST', redirect: 'manual', signal,
         headers: { 'content-type': 'application/json' }, body: JSON.stringify(pack(request, config.secret, 'request')) });
+      if (signal.aborted || now() >= deadlineAt) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
       // Apps Script ContentService uses a one-time HTTPS redirect. Never forward the
       // signed POST or any credential to a redirected destination.
       if ([302, 303].includes(response.status)) {
         const url = new URL(response.headers.get('location'));
         if (url.protocol !== 'https:' || url.hostname !== 'script.googleusercontent.com' || url.port || url.username || url.password) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
         response = await fetchImpl(url.href, { method: 'GET', redirect: 'manual', signal });
+        if (signal.aborted || now() >= deadlineAt) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
       }
       if (!response.ok) throw new ApiError(502, 'UPSTREAM_UNAVAILABLE');
       const limit = ['insights.source','reports.source','audit.list','audit.export','notifications.report','schedules.list','schedules.people'].includes(action) ? 4_000_000 : ['catalog.niches','niches.list'].includes(action)?1_500_000:180_000;
@@ -30,6 +35,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = 1
         if (reader) { while (true) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength;
           if (size > limit) { await reader.cancel(); throw new ApiError(502,'UPSTREAM_UNTRUSTED'); } text += decoder.decode(value,{stream:true}); } text += decoder.decode(); }
       } else text = await response.text();
+      if (signal.aborted || now() >= deadlineAt) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
       if (text.length > limit) throw new ApiError(502, 'UPSTREAM_UNTRUSTED');
       const signed = unpack(JSON.parse(text), config.secret, 'response', limit);
       const data = verifyResponse(signed, request);

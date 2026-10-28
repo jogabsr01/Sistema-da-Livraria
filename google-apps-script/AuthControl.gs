@@ -20,10 +20,14 @@ function authControlDefinition_(name) {
 function authControlTime_(value) {
   try { return identityTime_(value); } catch (_) { failure_('IDENTITY_UNAVAILABLE'); }
 }
+function authControlShape_(ss, name) {
+  var definition = authControlDefinition_(name), sheet = ss.getSheetByName(name), lastRow = sheet ? sheet.getLastRow() : 0;
+  if (!sheet || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 3001) failure_('IDENTITY_UNAVAILABLE');
+  return { sheet: sheet, definition: definition, lastRow: lastRow };
+}
 function authControlRows_(ss, name) {
-  var definition = authControlDefinition_(name), sheet = ss.getSheetByName(name);
-  if (!sheet || !same_(rowValues_(sheet), definition.columns) || sheet.getLastRow() > 3001) failure_('IDENTITY_UNAVAILABLE');
-  var values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, definition.columns.length).getValues();
+  var shape = authControlShape_(ss, name), definition = shape.definition, sheet = shape.sheet;
+  var values = shape.lastRow < 2 ? [] : sheet.getRange(2, 1, shape.lastRow - 1, definition.columns.length).getValues();
   return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (key, i) { row[key] = values[i]; }); return row;
@@ -49,7 +53,8 @@ function authControlStore_(c) {
   assertMarker_(resourceFile_(id), c, 'identity-controls');
   var ss = resourceSheet_(id);
   if (authControlInstalled_(ss) !== 3) failure_('IDENTITY_UNAVAILABLE');
-  AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { authControlRows_(ss, table.name); });
+  // Migration rows were already validated; remaining store checks need headers and capacity only.
+  AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { if (table.name !== '_Control_Migrations') authControlShape_(ss, table.name); });
   return ss;
 }
 function provisionDevelopmentAuthControls() {

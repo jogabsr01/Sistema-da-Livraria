@@ -38,6 +38,9 @@ class OwnerAccess(unittest.TestCase):
         self.cdp = self.context.new_cdp_session(self.page); self.cdp.send('WebAuthn.enable')
         self.authenticator = self.cdp.send('WebAuthn.addVirtualAuthenticator', {'options': {'protocol': 'ctap2', 'transport': 'internal', 'hasResidentKey': True, 'hasUserVerification': True, 'isUserVerified': True, 'automaticPresenceSimulation': True}})['authenticatorId']
         self.corrupt_signature = False
+        self.session_transport_failure = False
+        self.state_response_invalid = False
+        self.session_request_count = 0
     def tearDown(self):
         self.context.close(); self.server.terminate(); self.server.communicate(timeout=10)
     def local(self, path, body=None, headers=None, method=None):
@@ -46,6 +49,12 @@ class OwnerAccess(unittest.TestCase):
             return json.load(response)
     def relay(self, route):
         request = route.request; path = urlsplit(request.url).path
+        if path == '/api/v1/access/state' and self.state_response_invalid:
+            route.fulfill(status=200, content_type='text/html', body='<html>PRIVATE_RESPONSE_SENTINEL</html>'); return
+        if path == '/api/v1/session':
+            self.session_request_count += 1
+        if path == '/api/v1/session' and self.session_transport_failure:
+            route.abort('failed'); return
         if path.startswith('/api/'):
             body = request.post_data_buffer
             if self.corrupt_signature and path.endswith('/complete'):
@@ -121,6 +130,65 @@ class OwnerAccess(unittest.TestCase):
         self.begin_login(); expect(self.page.locator('#passkey')).to_be_visible(); self.corrupt_signature = True
         self.page.locator('#passkey-button').click(); expect(self.page.locator('#status')).to_contain_text('Não foi possível confirmar os dados')
         self.assertEqual(self.local('/test/state')['sessions'], 1); self.assertEqual(self.local('/test/state')['activeSessions'], 0)
+    def test_session_read_failure_preserves_first_access_form_without_grant(self):
+        self.session_transport_failure = True
+        self.page.goto(ORIGIN + '/acesso-dev.html')
+        expect(self.page.locator('#initial')).to_be_visible()
+        expect(self.page.locator('#status')).to_contain_text('Continue pelo formulário')
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('SESSION / ACCESS_NETWORK_UNAVAILABLE')
+        self.page.screenshot(path=str(ARTIFACTS / 'primeiro-acesso-falha-sessao.png'), full_page=True)
+        self.page.get_by_text('É meu primeiro acesso', exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button', name='Receber código por e-mail').click()
+        expect(self.page.locator('#email-form')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+        self.assertEqual(self.local('/test/state')['outbox'], 1)
+    def test_session_read_failure_on_reload_preserves_email_flow(self):
+        self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.page.get_by_text('É meu primeiro acesso', exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button', name='Receber código por e-mail').click()
+        expect(self.page.locator('#email-form')).to_be_visible()
+        code = self.local('/test/code')['code']
+        self.session_transport_failure = True
+        self.page.reload()
+        expect(self.page.locator('#email-form')).to_be_visible()
+        expect(self.page.locator('#status')).to_contain_text('Continue pelo formulário')
+        self.page.locator('#email-code').fill(code)
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['outbox'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+    def test_complete_flow_never_shows_authenticated_view_when_session_check_fails(self):
+        self.activate()
+        self.session_transport_failure = True
+        self.page.reload()
+        expect(self.page.locator('#initial')).to_be_visible()
+        expect(self.page.locator('#complete')).to_be_hidden()
+        self.session_transport_failure = False
+        self.page.reload()
+        expect(self.page.locator('#complete')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['sessions'], 1)
+
+    def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
+        self.session_transport_failure = True
+        self.page.goto(ORIGIN + '/acesso-dev.html#entrar')
+        expect(self.page.locator('#initial')).to_be_visible()
+        self.assertEqual(self.session_request_count, 0)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+        self.state_response_invalid = True
+        self.page.reload()
+        expect(self.page.locator('#initial')).to_be_hidden()
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('STATE / ACCESS_RESPONSE_INVALID')
+
+    def test_invalid_state_response_shows_only_safe_diagnostic_and_keeps_forms_closed(self):
+        self.state_response_invalid = True
+        self.page.goto(ORIGIN + '/acesso-dev.html')
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('STATE / ACCESS_RESPONSE_INVALID')
+        expect(self.page.locator('#initial')).to_be_hidden()
+        self.assertNotIn('PRIVATE_RESPONSE_SENTINEL', self.page.locator('body').inner_text())
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+
     def test_disabled_installation_and_production_page_expose_no_active_forms(self):
         self.local('/test/disable', {}); self.page.goto(ORIGIN + '/acesso-dev.html')
         expect(self.page.locator('#status')).to_contain_text('ainda não foi habilitado')
