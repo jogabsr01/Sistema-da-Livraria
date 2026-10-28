@@ -54,6 +54,7 @@ function authControlStore_(c) {
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.controls[cacheKey]) return RPC_STORAGE_SCOPE_.controls[cacheKey];
   assertMarker_(resourceFile_(id), c, 'identity-controls');
   var ss = resourceSheet_(id);
+  primeSchemaHeaders_(ss,AUTH_CONTROL_SCHEMA.tables);
   if (authControlInstalled_(ss) !== 3) failure_('IDENTITY_UNAVAILABLE');
   // Migration rows were already validated; remaining store checks need headers and capacity only.
   AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { if (table.name !== '_Control_Migrations') authControlShape_(ss, table.name); });

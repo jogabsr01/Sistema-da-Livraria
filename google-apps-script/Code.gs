@@ -86,6 +86,32 @@ function rowValues_(sheet, knownLastRow) {
   if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.headers.set(sheet, header.slice());
   return header;
 }
+// Advanced Sheets batches the same header rows without caching across RPCs.
+// Bindings are checked before callers invoke this helper. No business bodies,
+// identities or permissions are fetched or cached here.
+function primeSchemaHeaders_(spreadsheet, definitions) {
+  if(!RPC_STORAGE_SCOPE_||typeof Sheets==='undefined')return;
+  var selected=definitions.map(function(definition){var sheet=rpcSheet_(spreadsheet,definition.name);return {name:definition.name,sheet:sheet,width:sheet?sheet.getLastColumn():0};}).filter(function(item){return item.sheet&&!RPC_STORAGE_SCOPE_.headers.has(item.sheet);});
+  if(!selected.length)return;
+  var result;RPC_STORAGE_SCOPE_.batchReads=(RPC_STORAGE_SCOPE_.batchReads||0)+1;
+  try { result=Sheets.Spreadsheets.Values.batchGet(spreadsheet.getId(),{ranges:selected.map(function(item){return "'"+item.name.replace(/'/g,"''")+"'!1:1";}),majorDimension:'ROWS',valueRenderOption:'UNFORMATTED_VALUE'}); }
+  catch(_){failure_('UNAVAILABLE');}
+  if(!result||result.spreadsheetId!==spreadsheet.getId()||!Array.isArray(result.valueRanges)||result.valueRanges.length!==selected.length)failure_('UNAVAILABLE');
+  var pending=[];
+  result.valueRanges.forEach(function(value,index){
+    if(!value||typeof value.range!=='string'||value.majorDimension!=='ROWS')failure_('UNAVAILABLE');
+    var bang=value.range.lastIndexOf('!'),title=value.range.slice(0,bang),range=value.range.slice(bang+1);
+    if(title.charAt(0)==="'"&&title.charAt(title.length-1)==="'")title=title.slice(1,-1).replace(/''/g,"'");
+    if(bang<1||title!==selected[index].name||!/^A1(?::[A-Z]+1)?$|^1:1$/.test(range))failure_('UNAVAILABLE');
+    var rows=value.values===undefined?[]:value.values;
+    if(!Array.isArray(rows)||rows.length>1||rows.length&&(!Array.isArray(rows[0])||rows[0].length>20000))failure_('UNAVAILABLE');
+    var header=rows.length?rows[0]:[],width=selected[index].width;
+    if(!Number.isSafeInteger(width)||width<0||width>20000||header.length>width)failure_('UNAVAILABLE');
+    if(header.some(function(cell){return cell!==null&&!['string','number','boolean'].includes(typeof cell);}))failure_('UNAVAILABLE');
+    pending.push({sheet:selected[index].sheet,header:Array.from({length:width},function(_,i){return header[i]===undefined?'':header[i];})});
+  });
+  pending.forEach(function(item){RPC_STORAGE_SCOPE_.headers.set(item.sheet,item.header);});
+}
 function same_(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function migrationRows_(spreadsheet) {
   var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? sheet.getLastRow() : 0;
@@ -107,6 +133,7 @@ function assertSchema_(spreadsheet) {
   var rows = migrationRows_(spreadsheet);
   if (migrationVersion_(rows) !== LIVRARIA_SCHEMA.version) failure_('SCHEMA_REQUIRED');
   if (!rows.some(function (r) { return Number(r[0]) === LIVRARIA_SCHEMA.version && r[3] === digest_(JSON.stringify(LIVRARIA_SCHEMA)); })) failure_('SCHEMA_REQUIRED');
+  primeSchemaHeaders_(spreadsheet,LIVRARIA_SCHEMA.tables);
   // Read every header once, on every invocation. No cross-request cache.
   // Conflicting nonempty headers still take precedence over missing sheets.
   var missing = false;
@@ -214,7 +241,7 @@ function processRequest_(request, c) {
   return withLock_(function () {
     var acquired=Date.now(),bound=acquired,validated=acquired;
     var previousScope = RPC_STORAGE_SCOPE_;
-    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null };
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, batchReads:0 };
     try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
     var ss;
@@ -301,7 +328,9 @@ function processRequest_(request, c) {
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
-      try { console.info(JSON.stringify({metric:'rpc.duration',lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started})); }
+      var tags={'identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
+      var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
+      try { console.info(JSON.stringify({metric:'rpc.duration',operation:operation,schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started})); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }
     }
   }, 5000);
