@@ -7,7 +7,7 @@ import { catalogUuid } from './catalog-model.mjs';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
 import { loadLoginGuardSettings, createLoginGuard } from './login-guard.mjs';
-import { loadPasskeySettings, createPasskeyService } from './passkey-service.mjs';
+import { loadPasskeySettings, createPasskeyService, preparedAccessOptions } from './passkey-service.mjs';
 import { createPinHasher, createSessionTokens } from './credential-core.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
@@ -87,6 +87,16 @@ export function createOwnerAccessService(settings, { client }) {
     async execute(operation, input, token, ip) {
      try {
       // Trusted platform address only, never body/forwarded HTTP headers.
+      // This fixed command reserves the SAME durable attempt in GAS before
+      // checking the flow, listing keys, storing the challenge and binding it.
+      // Other operations, completion/retry and time budgets remain unchanged.
+      if (operation === 'options' && typeof client.prepareAccessOptions === 'function') {
+        const attempt = guard.attemptKeys({ identifier: 'flow:' + hash(token), originAddress: ip });
+        const prepared = await client.prepareAccessOptions({ ...attempt, tokenHash: hash(token),
+          ceremonyId: randomUUID(), challenge: randomBytes(32).toString('base64url'),
+          allowReplacement: settings.emergencyRecoveryEnabled === true });
+        return await preparedAccessOptions(prepared);
+      }
       let completedRetry=false;if(operation==='complete'){try{const previous=await read(token);completedRetry=previous.state==='COMPLETE'&&previous.proofReady;}catch{}}
       // Releasing the same durable, cookie-bound grant is not another guess.
       if(!completedRetry)await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });

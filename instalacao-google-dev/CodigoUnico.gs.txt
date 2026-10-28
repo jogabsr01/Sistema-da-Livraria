@@ -529,7 +529,7 @@ function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=ffa1f5851e212d6f8856892bcc979bc847a4209dd7c57cd0782725a63e019835
+// BEGIN Code.gs sha256=6497b0c2f1a5ef4d49e48c12aed15116afd79126b46b32354d3027a1bc78d589
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -767,6 +767,7 @@ function processRequest_(request, c) {
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
       var props = scriptProperties_();
       if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      if (request.action === 'identity.access.options') return accessOptions_(request, c);
       return ownerAccessOperation_(request, c);
     }
     if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
@@ -2594,7 +2595,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=01879e7afb24cb520d2c81e3ced3a85fb905a1515eb16dd9f06704be4e8d7d92
+// BEGIN OwnerAccess.gs sha256=6b3d4b3de2dbbf7817d38e2bcd0dc59cc64b284c6fdd97f80654a20d340f377f
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -2860,6 +2861,26 @@ function ownerAccessOperation_(request, c) {
   }
   if (action === 'identity.access.commit') return accessCommit_(ss, c, current, p, now);
   accessReject_();
+}
+
+// Fixed access commands only, signed and gated by processRequest_ under ScriptLock.
+// They preserve the existing validators; no caller-selected arbitrary batch.
+function accessOptions_(request, c) {
+  var p = request.payload;
+  authControlExact_(p, ['tokenHash','accountKey','originKey','ceremonyId','challenge','allowReplacement']);
+  if (typeof p.allowReplacement !== 'boolean' || !identityUuid_(p.ceremonyId) || !/^[A-Za-z0-9_-]{43}$/.test(p.challenge || '')) accessReject_();
+  recoverSecurityIntent_(c);
+  var attempt = authAttempt_(authControlStore_(c), {accountKey:p.accountKey, originKey:p.originKey}, Date.now());
+  if (!attempt.allowed) return {allowed:false, retryAfterSeconds:attempt.retryAfterSeconds};
+  var flow = ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}}, c);
+  if (flow.state !== 'PASSKEY' || flow.replacementAllowed && !p.allowReplacement) accessReject_();
+  var user = {subjectId:flow.subjectId, authorizationVersion:flow.authorizationVersion};
+  var credentials = passkeyOperation_({action:'identity.passkey.list', payload:user}, c).credentials;
+  var kind = flow.purpose === 'ACTIVATE' || flow.replacementAllowed ? 'create' : 'get';
+  if (flow.replacementAllowed) ownerAccessOperation_({action:'identity.access.rescueBegin',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId,challenge:p.challenge}}, c);
+  else passkeyOperation_({action:'identity.passkey.begin',payload:{subjectId:user.subjectId,authorizationVersion:user.authorizationVersion,ceremonyId:p.ceremonyId,purpose:kind === 'create' ? 'REGISTER':'AUTHENTICATE',challenge:p.challenge}}, c);
+  ownerAccessOperation_({action:'identity.access.bind',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId}}, c);
+  return {allowed:true, subjectId:user.subjectId, authorizationVersion:user.authorizationVersion, kind:kind, credentials:credentials, ceremonyId:p.ceremonyId, challenge:p.challenge, replacementAllowed:flow.replacementAllowed};
 }
 
 ;

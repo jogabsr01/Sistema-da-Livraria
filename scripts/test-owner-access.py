@@ -71,7 +71,7 @@ class OwnerAccess(unittest.TestCase):
             if operation == self.lost_step and self.step_failure == 'before':
                 route.abort('failed'); return
             if operation == self.lost_step and self.step_failure == 'html-before':
-                route.fulfill(status=504, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
+                route.fulfill(status=502 if operation == 'options' else 504, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
             result = self.local(path, body=body, headers=headers, method=request.method)
             if operation == self.lost_step:
                 if self.step_failure == 'html':
@@ -385,6 +385,19 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.step_posts['pin'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
         self.page.screenshot(path=str(ARTIFACTS / 'pin-falha-confirmacao.png'), full_page=True)
+
+    def test_options_provider_failure_explains_device_preparation_without_restarting_pin(self):
+        self.activation_until_passkey()
+        self.lost_step = 'options'; self.step_failure = 'html-before'
+        self.page.get_by_role('button', name='Confirmar no meu aparelho', exact=True).click()
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos preparar a confirmação do aparelho')
+        expect(self.page.locator('#access-progress')).to_be_hidden()
+        expect(self.page.locator('#passkey')).to_be_visible()
+        expect(self.page.locator('#pin-form')).to_be_hidden()
+        self.assertEqual(self.step_posts['options'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+        self.page.get_by_text('Informações para o suporte', exact=True).click()
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('etapa: OPTIONS / HTTP: 502')
 
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
         self.session_transport_failure = True

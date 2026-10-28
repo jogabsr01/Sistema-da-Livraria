@@ -45,9 +45,11 @@ export function createLoginGuard(settings, { client }) {
   const key = Buffer.from(guardKey), scope = [config.environment, config.installationId];
   const digest = (kind, ...values) => createHmac('sha256', key).update(JSON.stringify([kind, scope, ...values])).digest('hex');
   const tokenHash = value => digest('challenge.v1', value.challengeId, value.subjectId, value.purpose, value.authorizationVersion, value.rawToken);
+  const attemptKeys = ({identifier, originAddress: address}) => ({accountKey: digest('account.v1', account(identifier)), originKey: digest('origin.v1', originAddress(address))});
   return {
-    async reserveAttempt({ identifier, originAddress: address }) {
-      const result = await client.reserveAuthAttempt({ accountKey: digest('account.v1', account(identifier)), originKey: digest('origin.v1', originAddress(address)) });
+    attemptKeys,
+    async reserveAttempt(input) {
+      const result = await client.reserveAuthAttempt(attemptKeys(input));
       if (!result.allowed) {
         const error = new ApiError(429, 'AUTH_RATE_LIMITED'); error.retryAfterSeconds = result.retryAfterSeconds; throw error;
       }

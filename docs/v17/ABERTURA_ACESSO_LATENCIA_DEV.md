@@ -115,3 +115,22 @@ O painel fechado de suporte acrescenta somente o nome de operação de uma lista
 Cenários: operação suspensa mantém indicador visível, mensagens antigas ocultas, botões desabilitados e movimento reduzido; término apresenta resultado e libera controles; falha HTML504 antes da gravação de PIN oculta indicador, preserva a etapa e expõe somente metadados seguros ao abrir suporte; nenhuma repetição automática de PIN ou concessão de sessão. O novo diagnóstico permitirá distinguir status/tempo no acesso real, ainda pendente.
 
 Validação desta interface: 22 cenários Chromium aprovados, incluindo espera/corpo suspenso, movimento reduzido, resultado final e HTML504 antes de salvar PIN. Capturas do carregamento e erro de PIN inspecionadas. Build, sintaxe JS e diff check aprovados. Serviço emulado; a falha real de PIN permanece pendente de novo detalhe de suporte.
+
+
+## Preparação da confirmação pelo aparelho em uma chamada
+
+Evidência real enviada pelo proprietário em 28/10/2026: OPTIONS recebeu HTTP502 e resposta não JSON após30,2s, antes da janela do aparelho. O fluxo já havia avançado para PASSKEY; isso não é evidência de PIN incorreto nem de confirmação do aparelho concluída. A documentação pública do [Netlify](https://docs.netlify.com/build/functions/configuration/) informa limite síncrono padrão de60s; o502 observado aos30,2s não comprova que esse seja o limite configurado ou a causa exata na instalação.
+
+Antes da janela, o fluxo fazia cinco RPCs: tentativa durável, leitura do fluxo, lista de credenciais, gravação do desafio e vínculo ao fluxo. Um comando fixo **identity.access.options**, assinado e protegido pelas mesmas quatro flags DEV e ScriptLock, executa esses passos dentro de um RPC. Reutiliza authAttempt_, ownerAccessOperation_ e passkeyOperation_ para manter as verificações existentes. O desafio continua criptográfico e vinculado à cerimônia/conta/versão/navegador antes de retornar opções ao navegador. Ele não concede sessão nem aceita identidade, função ou sequência arbitrária fornecida pelo cliente.
+
+Node constrói as opções WebAuthn com os bytes do desafio já persistido, mantendo RP/origem fixos, verificação do usuário obrigatória e algoritmo existente. Recuperação com substituição exige também a autorização da configuração Node enviada na requisição assinada, além das validações Google. Tentativa bloqueada mantém429 e prazo de espera. Uma falha entre gravar cerimônia e vincular fluxo não concede acesso; uma nova tentativa cria outro desafio e o vincula com as validações existentes.
+
+Uma proposta maior de mudar várias etapas, tentativas, conclusão e prazo global foi rejeitada pela revisão automática por concentrar mudanças sensíveis sem validação suficiente. Essa proposta foi retirada. A implementação final é limitada à preparação do aparelho; os fluxos de PIN, e-mail, conclusão, retry de sessão e o orçamento global permanecem iguais. Não afirmar que esta alteração acelera todas as etapas ou resolve definitivamente a falha real antes do novo aceite.
+
+### Aplicação
+
+Atualizar primeiro o arquivo único Código.gs desta versão e a mesma implantação Google por Nova versão, preservando appsscript.json, propriedades, dados e URL/exec. Não executar bootstrap ou provisionamento. O backend antigo continua compatível com o Google atualizado. Só então publicar o backend DEV que usa o comando novo; o script antigo ainda não implementa esse comando.
+
+Casos: um único RPC e uma única tentativa contabilizada; desafio devolvido coincide com o persistido e vinculado; conta desativada/versão alterada/fluxo vencido/PIN não definido/flag desligada recusados sem criar cerimônia; bloqueio respeitado; identidade ou função extra no payload recusada; falha no vínculo não concede acesso e nova tentativa funciona; erro502 na preparação explica tentar o aparelho, sem pedir novo cadastro de PIN. A validação física e a latência reais ainda dependem do proprietário.
+
+Validação final: 392 testes completos aprovados em Node22 com o arquivo único; Node24 aprovou391 na suíte completa antes de acrescentar o último cenário de falha no vínculo e depois os seis contratos específicos. Vinte e três cenários Chromium distintos aprovados (22 completos e um novo de erro502), incluindo assinaturas reais com autenticador virtual. Seis testes do kit, geração atual, build e diff check aprovados. Um ensaio inicial detectou que o SDK recodificava o desafio quando recebido como texto; corrigido para os bytes base64url antes dos resultados finais. Google/MailApp emulados, aceite real ainda pendente.
