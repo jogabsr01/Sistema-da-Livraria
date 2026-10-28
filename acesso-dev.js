@@ -8,8 +8,9 @@
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
-    node.textContent = 'Detalhe do teste: ' + accessPhase + ' / ' + (diagnosticCodes.has(error?.code) ? error.code : 'ACCESS_PAGE_UNAVAILABLE');
+    node.textContent = 'Referência para suporte: ' + accessPhase + ' / ' + (diagnosticCodes.has(error?.code) ? error.code : 'ACCESS_PAGE_UNAVAILABLE');
     node.hidden = false;
+    $('support-details').hidden = false;
   }
   function unavailable(code) { const error = new Error('ACCESS_FAILED'); error.code = code; return error; }
   let csrfToken = '', busy = false, sessionCsrf = '', pendingResponse = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
@@ -22,14 +23,21 @@
     if(stage==='PIN'&&replacementReady){$('use-rescue').checked=true;$('rescue-inputs').hidden=false;$('rescue-status').textContent='Código já validado nesta tentativa. Defina seu PIN novo.';}
     $('restart').hidden = !panel || ['initial', 'complete'].includes(panel);
   }
+  const uncertainCodes = new Set(['ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
   function describe(error) {
     const code = error.code || '';
-    if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE')) return 'O acesso verificado ainda não foi habilitado nesta instalação DEV. Confira a configuração com a administração.';
-    if (code === 'UPSTREAM_TIMEOUT' || code === 'ACCESS_REQUEST_TIMEOUT') return 'O serviço demorou para responder. Aguarde alguns instantes e tente novamente.';
-    if (code === 'AUTH_RATE_LIMITED') return 'Muitas tentativas. Aguarde o prazo indicado e tente novamente.';
-    if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') return 'A passkey não foi confirmada. Tente novamente e siga a janela do navegador; seu aparelho precisa oferecer uma passkey.';
-    if (code.includes('REJECTED')) return 'Não foi possível confirmar os dados. Confira o código ou o PIN; se o prazo venceu, volte ao início.';
-    return 'Não foi possível concluir agora. Confira a conexão e tente novamente.';
+    if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
+    if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
+    if (code === 'INVALID_AUTH_REQUEST' || code === 'INVALID_CPF') return 'Confira se o CPF ou e-mail está completo e se o PIN tem quatro números. Corrija os campos antes de continuar.';
+    if (code === 'AUTH_RATE_LIMITED') return 'Você fez várias tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente. Se precisar, peça ajuda à administração.';
+    if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') return 'A confirmação pelo aparelho não foi concluída. Clique em “Continuar com a passkey” e siga a janela do navegador. Use um aparelho com biometria ou bloqueio de tela configurado.';
+    if (code.includes('REJECTED')) {
+      if (!$('email-form').hidden) return 'Não foi possível validar o código. Confira se copiou o código completo do e-mail mais recente. Ele vale por 10 minutos. Se venceu, volte ao início para solicitar outro.';
+      if (!$('initial').hidden) return 'Não foi possível entrar com os dados informados. Confira o CPF ou e-mail e o PIN. Se ainda não cadastrou seu acesso, escolha “É meu primeiro acesso”.';
+      return 'Não foi possível confirmar sua identidade nesta tentativa. Volte ao início para entrar novamente. Se o problema continuar, peça ajuda à administração.';
+    }
+    if (code === 'FORBIDDEN') return 'Não foi possível validar esta tentativa de acesso. Atualize a página e tente novamente no endereço da livraria. Se continuar, peça ajuda à administração.';
+    return 'Não foi possível concluir esta etapa. Aguarde alguns instantes e tente novamente. Se o problema continuar, peça ajuda à administração da livraria.';
   }
   async function api(operation, body) {
     // Bound both headers and body; a lost acknowledgement must not freeze the form.
@@ -54,9 +62,10 @@
     if (busy) return;
     accessPhase = 'ACCESS';
     busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
-    const detail = document.getElementById('access-diagnostic'); if (detail) detail.hidden = true;
-    const slow = setTimeout(() => message('A confirmação está demorando. Aguarde; estamos conferindo a etapa salva.'), 8000);
-    try { await action(); } catch (error) { diagnostic(error); message(describe(error)); }
+    const detail = document.getElementById('access-diagnostic'); if (detail) { detail.hidden = true; detail.textContent = ''; }
+    $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true;
+    const slow = setTimeout(() => message('Está demorando um pouco mais que o esperado. Aguarde sem clicar novamente; estamos conferindo sua solicitação.'), 8000);
+    try { await action(); } catch (error) { diagnostic(error); message(describe(error)); $('check-step').hidden = !uncertainCodes.has(error.code); }
     finally { clearTimeout(slow); busy = false; document.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
   }
   function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); run(action); }); }
@@ -86,6 +95,13 @@
     await api('complete', { response: pendingResponse }); pendingResponse = null; clearSecrets();
     if (!await current()) throw new Error('SESSION_NOT_CONFIRMED');
   }
+  $('check-step').addEventListener('click', () => run(async () => {
+    const state = await api('state');
+    if (!['INITIAL','EMAIL','PIN','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage)) throw unavailable('ACCESS_RESPONSE_INVALID');
+    show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage);
+    if (state.stage === 'COMPLETE' && await current()) return;
+    message({ INITIAL: 'Escolha como deseja acessar sua conta.', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PIN: 'E-mail confirmado. Crie seu PIN para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Continue com a passkey para confirmar sua identidade.' }[state.stage] || 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
+  }));
   $('recovery-open').addEventListener('click',()=>{$('recovery-form').hidden=!$('recovery-form').hidden;});
   submit('recovery-form',async()=>{const data=await api('recover',{email:$('recovery-email').value});clearSecrets();show(data.stage);message(data.message);});
   submit('start-form', async () => {
@@ -98,7 +114,7 @@
   async function saveAccessStep(operation, body, expectedStage) {
     try { return await api(operation, body); }
     catch (error) {
-      if (!['ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE'].includes(error.code)) throw error;
+      if (!uncertainCodes.has(error.code)) throw error;
       // Read once after an uncertain mutation. Never repeat a code/PIN guess,
       // resend mail, or interpret a local expectation as a verified transition.
       message('Conferindo se a etapa foi salva…');
@@ -153,6 +169,6 @@
     message('Escolha como deseja acessar sua conta.');
     accessPhase = 'SESSION';
     try { await current(); }
-    catch (error) { diagnostic(error); message('Não foi possível conferir uma sessão anterior. Continue pelo formulário de acesso.'); }
+    catch (error) { diagnostic(error); message('Não conseguimos conferir se você já estava conectado. Continue pelo formulário de acesso.'); }
   });
 })();

@@ -6,7 +6,7 @@ Ocorrência real em 27/10/2026, America/Sao_Paulo: o proprietário recebeu INITI
 
 Depois de receber um estado válido do servidor, a página apresenta o formulário correspondente antes de conferir a sessão anterior. Falha nessa consulta separada preserva o formulário não autenticado e seu fluxo, com aviso. Só uma resposta válida da sessão com garantia passkey pode exibir a área autenticada; estado COMPLETE isolado continua exigindo conferência/retomada. Falha no próprio endpoint de estado mantém os formulários fechados.
 
-O detalhe de teste mostra uma fase fixa (STATE, RENDER, SESSION ou ACCESS) e um código permitido. Erros de rede, resposta HTML/JSON inválida e timeout ficam distinguíveis. Mensagem arbitrária, corpo de resposta, endereço de e-mail, PIN, código, cookie e CSRF nunca são colocados nesse detalhe. JS/CSS da tela passam a usar Cache-Control no-store.
+As informações opcionais para suporte mostram uma fase fixa (STATE, RENDER, SESSION ou ACCESS) e um código permitido, dentro de um painel fechado por padrão. A mensagem principal não exibe esses códigos. Erros de rede, resposta HTML/JSON inválida e timeout ficam distinguíveis. Mensagem arbitrária, corpo de resposta, endereço de e-mail, PIN, código, cookie e CSRF nunca são colocados nesse detalhe. JS/CSS da tela passam a usar Cache-Control no-store.
 
 ## Limites e leituras
 
@@ -59,3 +59,14 @@ A tela limita a espera de cada consulta a 60 segundos, incluindo o corpo da resp
 Cenários: resposta perdida depois da confirmação do e-mail retoma PIN com uma única tentativa; resposta HTML depois de salvar PIN retoma PASSKEY sem novo envio; falha antes da confirmação mantém EMAIL, sem acesso ou sessão. Verificar também o prazo no corpo da resposta e aviso de espera. Google real continua sujeito ao aceite manual; os testes locais usam o serviço emulado. Esta alteração da tela não exige nova cópia de Código.gs ou propriedades.
 
 Validação desta correção: 16 cenários Chromium distintos aprovados (14 na execução completa, mais os dois novos casos de corpo sem resposta e consulta de estado indisponível). Estado não conferido não avança, nenhuma tentativa é repetida automaticamente e nenhuma sessão é emitida nesses casos de retomada. Evidência local em serviço emulado; latência e aceite no Google real permanecem pendentes.
+
+
+## Mensagens para quem utiliza a livraria
+
+Falhas apresentam explicação em português e orientação de próximo passo: conferir o código completo e sua validade, revisar os dados de entrada, aguardar após muitas tentativas, seguir a confirmação pelo aparelho ou procurar a administração quando o acesso estiver indisponível. Resposta inválida do serviço não é atribuída à internet ou ao PIN do usuário. Mensagens arbitrárias de exceções e corpos de respostas nunca são exibidos.
+
+Quando o resultado estiver incerto, o botão **Conferir etapa salva** permite consultar o estado sem recarregar, reenviar PIN/código ou reiniciar o cadastro. A consulta não concede acesso: COMPLETE exige conferência da sessão, e os demais estados continuam exigindo suas provas. Os detalhes técnicos permanecem apenas em **Informações para o suporte**, fechado por padrão e limpo no início da próxima operação. Nenhum PIN, código de e-mail, cookie ou token entra nesse painel.
+
+Cenários de aceite: resposta inválida apresenta texto compreensível sem código técnico visível; abrir o painel revela somente a referência segura; conferir a etapa retoma PIN sem repetir a confirmação anterior; sucesso limpa o painel e a ação; código de e-mail errado oferece orientação específica e mantém o usuário na etapa, sem emitir sessão.
+
+Validação das mensagens: 17 cenários Chromium aprovados, incluindo retomada pela ação visível, detalhes fechados por padrão, código errado sem sessão e confirmação final sem duplicação. Captura da mensagem de falha inspecionada; sem códigos técnicos no conteúdo visível padrão. Build, sintaxe JavaScript e diff check aprovados. Serviço Google/MailApp emulado, sem substituir o aceite real.

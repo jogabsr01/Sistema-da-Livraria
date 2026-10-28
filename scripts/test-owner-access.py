@@ -89,7 +89,7 @@ class OwnerAccess(unittest.TestCase):
     def open(self):
         self.page.goto(ORIGIN + '/acesso-dev.html'); expect(self.page.locator('#initial')).to_be_visible()
     def activation_until_passkey(self):
-        self.open(); self.page.locator('summary').click(); self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.open(); self.page.get_by_text('É meu primeiro acesso', exact=True).click(); self.page.locator('#activation-email').fill('owner@example.invalid')
         self.page.get_by_role('button', name='Receber código por e-mail').click()
         expect(self.page.locator('#email-form')).to_be_visible()
         self.page.locator('#email-code').fill(self.local('/test/code')['code']); self.page.get_by_role('button', name='Confirmar código').click()
@@ -130,17 +130,21 @@ class OwnerAccess(unittest.TestCase):
     def recover_commit(self, stage):
         self.activation_until_passkey(); self.local('/test/fault', {'stage': stage, 'after': True})
         self.page.locator('#passkey-button').click()
-        expect(self.page.locator('#status')).to_contain_text('Não foi possível concluir agora')
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
         self.assertFalse(any(c['name'] == '__Host-livraria_session' for c in self.context.cookies()))
-        self.page.reload(); expect(self.page.locator('#retry')).to_be_visible()
+        if stage == 'session':
+            self.page.get_by_role('button', name='Conferir etapa salva', exact=True).click()
+        else:
+            self.page.reload()
+        expect(self.page.locator('#retry')).to_be_visible()
         self.page.locator('#retry-button').click(); expect(self.page.locator('#complete')).to_be_visible()
         self.assertEqual(self.local('/test/state')['sessions'], 1); self.assertEqual(self.errors, [])
     def test_wrong_pin_and_corrupted_signature_never_grant_another_session(self):
         self.activate(); self.logout(); self.begin_login('0193')
-        expect(self.page.locator('#status')).to_contain_text('Não foi possível confirmar os dados')
+        expect(self.page.locator('#status')).to_contain_text('Não foi possível entrar com os dados informados')
         self.assertEqual(self.local('/test/state')['activeSessions'], 0)
         self.begin_login(); expect(self.page.locator('#passkey')).to_be_visible(); self.corrupt_signature = True
-        self.page.locator('#passkey-button').click(); expect(self.page.locator('#status')).to_contain_text('Não foi possível confirmar os dados')
+        self.page.locator('#passkey-button').click(); expect(self.page.locator('#status')).to_contain_text('Não foi possível confirmar sua identidade')
         self.assertEqual(self.local('/test/state')['sessions'], 1); self.assertEqual(self.local('/test/state')['activeSessions'], 0)
     def test_session_read_failure_preserves_first_access_form_without_grant(self):
         self.session_transport_failure = True
@@ -229,7 +233,7 @@ class OwnerAccess(unittest.TestCase):
         self.page.get_by_role('button', name='Confirmar código', exact=True).click()
         self.page.wait_for_function('window.testBodyWaiting === true')
         self.page.clock.fast_forward(8001)
-        expect(self.page.locator('#status')).to_contain_text('está demorando')
+        expect(self.page.locator('#status')).to_contain_text('demorando um pouco')
         self.page.clock.fast_forward(52000)
         expect(self.page.locator('#pin-form')).to_be_visible()
         self.assertEqual(self.step_posts['email'], 1)
@@ -242,8 +246,17 @@ class OwnerAccess(unittest.TestCase):
         expect(self.page.locator('#pin-form')).to_be_hidden()
         expect(self.page.locator('#complete')).to_be_hidden()
         self.assertEqual(self.step_posts['email'], 1)
-        self.state_response_invalid = False; self.page.reload()
+        expect(self.page.locator('#status')).to_contain_text('Conferir etapa salva')
+        expect(self.page.locator('#access-diagnostic')).to_be_hidden()
+        self.assertFalse(self.page.locator('#support-details').evaluate('(node) => node.open'))
+        self.page.get_by_text('Informações para o suporte', exact=True).click()
+        expect(self.page.locator('#access-diagnostic')).to_be_visible()
+        self.state_response_invalid = False
+        self.page.get_by_role('button', name='Conferir etapa salva', exact=True).click()
         expect(self.page.locator('#pin-form')).to_be_visible()
+        expect(self.page.locator('#support-details')).to_be_hidden()
+        expect(self.page.locator('#check-step')).to_be_hidden()
+        self.assertEqual(self.step_posts['email'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
     def test_failed_code_transport_without_commit_does_not_advance(self):
@@ -253,6 +266,17 @@ class OwnerAccess(unittest.TestCase):
         expect(self.page.locator('#email-form')).to_be_visible()
         expect(self.page.locator('#pin-form')).to_be_hidden()
         self.assertEqual(self.step_posts['email'], 1)
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+
+    def test_wrong_email_code_has_specific_guidance_without_visible_technical_code(self):
+        self.begin_email()
+        self.page.locator('#email-code').fill('A' * 43)
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#status')).to_contain_text('Confira se copiou o código completo')
+        expect(self.page.locator('#email-form')).to_be_visible()
+        expect(self.page.locator('#pin-form')).to_be_hidden()
+        expect(self.page.locator('#check-step')).to_be_hidden()
+        expect(self.page.locator('#access-diagnostic')).to_be_hidden()
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
@@ -271,12 +295,16 @@ class OwnerAccess(unittest.TestCase):
         self.page.goto(ORIGIN + '/acesso-dev.html')
         expect(self.page.locator('#access-diagnostic')).to_contain_text('STATE / ACCESS_RESPONSE_INVALID')
         expect(self.page.locator('#initial')).to_be_hidden()
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        expect(self.page.locator('#access-diagnostic')).to_be_hidden()
+        self.assertNotIn('ACCESS_RESPONSE_INVALID', self.page.locator('body').inner_text())
         self.assertNotIn('PRIVATE_RESPONSE_SENTINEL', self.page.locator('body').inner_text())
+        self.page.screenshot(path=str(ARTIFACTS / 'erro-acesso-mensagem-clara.png'), full_page=True)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
     def test_disabled_installation_and_production_page_expose_no_active_forms(self):
         self.local('/test/disable', {}); self.page.goto(ORIGIN + '/acesso-dev.html')
-        expect(self.page.locator('#status')).to_contain_text('ainda não foi habilitado')
+        expect(self.page.locator('#status')).to_contain_text('acesso está indisponível')
         expect(self.page.locator('#initial')).to_be_hidden()
         self.page.goto('https://merry-chimera-49a1f3.netlify.app/acesso-dev.html')
         expect(self.page.locator('#status')).to_contain_text('exclusivamente no endereço DEV')
