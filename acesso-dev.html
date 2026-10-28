@@ -45,9 +45,9 @@
     </section>
     <form id="email-form" hidden>
       <h2>Confirme seu e-mail</h2>
-      <p>Copie o código recebido e cole abaixo. Ele vale por 10 minutos e só funciona neste navegador.</p>
+      <p id="email-code-help">Copie o código recebido e cole abaixo. O novo código tem 7 letras e números, vale por 10 minutos e só funciona neste navegador.</p>
       <label for="email-code">Código do e-mail</label>
-      <input id="email-code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="43" required>
+      <input id="email-code" type="text" aria-describedby="email-code-help" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="43" required>
       <button>Confirmar código</button>
     </form>
     <form id="pin-form" hidden>

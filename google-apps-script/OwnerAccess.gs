@@ -1,3 +1,4 @@
+function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
 function accessReject_() { failure_('ACCESS_REJECTED'); }
@@ -109,7 +110,7 @@ function accessNewFlow_(table, p, owner, purpose, now) {
 function accessStart_(ss, c, p, now, recovery) {
   var purpose=recovery?'RECOVER':'ACTIVATE';if(recovery&&!recoveryEnabled_())failure_('IDENTITY_UNAVAILABLE');
   authControlExact_(p, ['email', 'flowId', 'tokenHash', 'codeHash', 'code']);
-  if (!accessHash_(p.codeHash) || !passkeyText_(p.code, 43, 43)) accessReject_();
+  if (!accessHash_(p.codeHash) || !accessDeliveryCode_(p.code)) accessReject_();
   var owner = accessOwner_(c, p.email), table = accessFlows_(ss);
   if(owner&&owner.row.Primeiro_Acesso_Concluido!==!!recovery)owner=null;
   // Throttle delivery as well as requests. Invalid accounts have the same response.

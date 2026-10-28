@@ -3,7 +3,7 @@
   const DEV = 'dev--merry-chimera-49a1f3.netlify.app';
   const $ = id => document.getElementById(id);
   const message = text => { $('status').textContent = text; };
-  let accessPhase = 'STATE';
+  let accessPhase = 'STATE', actionRevision = 0;
   const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
@@ -63,6 +63,7 @@
   async function run(action) {
     if (busy) return;
     accessPhase = 'ACCESS';
+    actionRevision++;
     maskPins();
     busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
     const detail = document.getElementById('access-diagnostic'); if (detail) { detail.hidden = true; detail.textContent = ''; }
@@ -94,7 +95,7 @@
     else { result.response.authenticatorData = encode(response.authenticatorData); result.response.signature = encode(response.signature); result.response.userHandle = response.userHandle ? encode(response.userHandle) : null; }
     return result;
   }
-  async function current() {
+  async function current(shouldApply = () => true) {
     let response; try { response = await fetch('/api/v1/session', { credentials: 'same-origin', cache: 'no-store' }); }
     catch { throw unavailable('ACCESS_NETWORK_UNAVAILABLE'); }
     if ([401,403].includes(response.status)) return false;
@@ -102,6 +103,7 @@
     let result; try { result = await response.json(); } catch { throw unavailable('ACCESS_RESPONSE_INVALID'); }
     const data = result?.data;
     if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || data.user.assurance !== 'passkey' || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
+    if (!shouldApply()) return false;
     sessionCsrf = data.csrfToken; show('COMPLETE'); message('Acesso verificado com sucesso.');
     $('identity-result').textContent = data.user.role==='SUPER_ADMIN'?'Conta master autenticada com PIN e confirmação pelo aparelho.':data.user.role==='ADMIN'?'Conta administrativa autenticada com PIN e confirmação pelo aparelho.':'Conta de atendente autenticada com PIN e confirmação pelo aparelho.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
@@ -182,8 +184,16 @@
     accessPhase = 'RENDER';
     show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage);
     message('Escolha como deseja acessar sua conta.');
-    accessPhase = 'SESSION';
-    try { await current(); }
-    catch (error) { diagnostic(error); message('Não conseguimos conferir se você já estava conectado. Continue pelo formulário de acesso.'); }
+    // A slow optional lookup must not disable the visible form. Ignore late
+    // results after any user action, so they cannot replace the newer flow.
+    const openingRevision = actionRevision;
+    setTimeout(() => {
+      if (openingRevision !== actionRevision) return;
+      current(() => openingRevision === actionRevision).catch(error => {
+        if (openingRevision !== actionRevision) return;
+        accessPhase = 'SESSION'; diagnostic(error);
+        message('Não conseguimos conferir se você já estava conectado. Continue pelo formulário de acesso.');
+      });
+    }, 0);
   });
 })();

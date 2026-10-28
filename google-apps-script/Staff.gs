@@ -121,7 +121,7 @@ function staffAccessOperation_(request,c) {
   if(['identity.staffAccess.start','identity.staffAccess.recover'].includes(request.action)){
     var recovery=request.action==='identity.staffAccess.recover',purpose=recovery?'RECOVER':'ACTIVATE';if(recovery&&!recoveryEnabled_())failure_('IDENTITY_UNAVAILABLE');
     authControlExact_(p,['subjectId','contactHash','delivery','flowId','tokenHash','codeHash','code']);
-    if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!passkeyText_(p.code,43,43))accessReject_();if([accessEmail_(c.owner),ownerLoginEmail_(c)].includes(accessEmail_(p.delivery)))accessReject_();
+    if(!accessHash_(p.contactHash)||!accessHash_(p.codeHash)||!accessDeliveryCode_(p.code))accessReject_();if([accessEmail_(c.owner),ownerLoginEmail_(c)].includes(accessEmail_(p.delivery)))accessReject_();
     var subject=staffSubject_(c,p.subjectId),table=accessFlows_(ss);
     if(!subject||subject.row.Primeiro_Acesso_Concluido!==recovery||digest_(subject.row.Nome)!==p.contactHash)subject=null;
     if(subject&&table.rows.some(function(r){return r.Subject_ID===subject.row.ID_Usuario&&now-authControlTime_(r.Created_At)<60000;}))subject=null;

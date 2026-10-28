@@ -5,7 +5,7 @@ import { createOwnerAccessService,loadOwnerAccessSettings } from '../../backend/
 export function enableRecovery(s=ownerFixture()){
  s.env.WORKSPACE_RECOVERY_ENABLED='true';s.gas.props.RECOVERY_ENABLED='true';
  const service=()=>createOwnerAccessService(loadOwnerAccessSettings(s.env),{client:s.client});
- const code=()=>s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{43})\n/)[1];
+ const code=()=>s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1];
  const flow=token=>{const rows=s.priv.getSheetByName('_Identity_Flows');return rows.rows.at(-1);};
  const hash=()=>{const rows=s.priv.getSheetByName('_Identity_Flows');return rows.rows.at(-1)[rows.rows[0].indexOf('Token_Hash')];};
  function proof(){const flows=s.priv.getSheetByName('_Identity_Flows'),f=flows.rows.at(-1),cols=flows.rows[0],id=f[cols.indexOf('Subject_ID')],version=f[cols.indexOf('Authorization_Version')],keys=s.priv.getSheetByName('_Passkeys');

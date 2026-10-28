@@ -83,3 +83,22 @@ Na criação ou recuperação de um PIN novo, números iguais adjacentes são re
 Casos acrescentados: alternar os olhos em cada campo e ocultar ao enviar; regra explicada sem envio de PIN inválido; tentativa direta pela API recusada sem avançar ou conceder sessão; PIN válido avança; registro legado com repetição continua sendo verificado. Os testes de outros módulos que entram pela mesma tela acompanham os novos nomes acessíveis. A ocorrência real de resposta inválida ao tentar entrar permanece em investigação; trocar textos ou validar PIN não comprova a causa nem a resolução dessa falha externa.
 
 Validação final incluindo os pedidos de botões, olhos e PIN: 383 testes de backend aprovados (Node 24) e 19 cenários Chromium aprovados, sem falhas. Três contratos novos cobrem política de criação, compatibilidade legada e recusa direta pela API; dois cenários novos de navegador cobrem visualização/ocultação e regra antes do envio. Captura do formulário inspecionada. Ensaios anteriores de mensagens exigiram ajustar seletores de summary e expectativas dos textos alterados; todos foram corrigidos no resultado final. Não houve confirmação adicional de login no Google real.
+
+
+## Desempenho e código de e-mail com sete caracteres
+
+A abertura libera o formulário antes da consulta opcional de sessão. Uma resposta atrasada não pode substituir uma ação mais recente do usuário. O estado obrigatório do fluxo continua sendo consultado.
+
+Dentro de uma única operação HTTP assinada sob ScriptLock, os vínculos dos mesmos arquivos e a estrutura do armazenamento privado são validados uma vez por conjunto de recursos. O escopo é descartado em finally, também em falhas. A próxima requisição revalida marcadores, privacidade e estrutura. Linhas de usuários, sessões, revogações, versões, limites e dados de negócio não são memorizados. Editor/manutenção não usam esse escopo. Não há cache entre solicitações.
+
+Medição no contrato emulado, mesma sequência antes/depois: verificações de marcadores ao solicitar e-mail 19→6, confirmar e-mail 19→6, salvar PIN 33→9 e consultar estado 14→3. Esses números medem chamadas eliminadas, não segundos de Google real. A latência real e respostas inválidas da plataforma ainda exigem medição na instalação. KDF, nonce durável, bloqueios e autorização permanecem intactos.
+
+O código entregue por e-mail passa a sete caracteres aleatórios em um alfabeto de 32 símbolos sem I/O/0/1, gerado com randomBytes sem viés. Letras minúsculas são normalizadas. Continua vinculado ao fluxo/navegador, armazenado somente como HMAC, válido por dez minutos, com uso único e até cinco tentativas de prova, além dos limites de solicitação e origem. Códigos longos já enviados permanecem válidos até o prazo original. Tokens internos de sessão/cookie, chaves de assinatura, pepper, CSRF e desafios do aparelho não são encurtados.
+
+### Ordem de aplicação
+
+1. Antes da publicação do backend, atualizar Código.gs pelo arquivo único desta versão, salvar e atualizar a mesma implantação Google por Nova versão. Preservar appsscript.json, propriedades, dados e URL /exec. Não executar bootstrap/provisionamento. O Google atualizado aceita os códigos longos anteriores e os novos curtos.
+2. Só então publicar o backend DEV que gera sete caracteres. O Google antigo exigia 43 na entrega; não publicar a alteração de geração antes dessa atualização.
+3. Recarregar a tela uma vez e medir abertura, envio/validação de e-mail, PIN e confirmação pelo aparelho. Marcar aceite real somente depois desses resultados.
+
+Cenários: formulário utilizável com consulta de sessão suspensa; sessão atrasada não sobrepõe novo fluxo; código de sete caracteres/minúsculas funciona sem conceder sessão; código legado mantém validade; vínculo/privacidade/cabeçalho alterado entre requisições é recusado e o escopo sempre é limpo.

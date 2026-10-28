@@ -31,7 +31,12 @@ function assertMarker_(resource, c, kind) {
   if (!marker || marker.application !== 'livraria-ipb' || marker.environment !== c.environment || marker.installationId !== c.installationId || marker.kind !== kind) failure_('BINDING_MISMATCH');
   if (resource.getSharingAccess() !== DriveApp.Access.PRIVATE) failure_('BINDING_MISMATCH');
 }
+// Populated only inside one signed HTTP operation under ScriptLock. Never cache
+// users, sessions, permissions, row contents or validation across requests.
+var RPC_STORAGE_SCOPE_ = null;
 function storage_(c, withBackup) {
+  var cacheKey = JSON.stringify([c.environment, c.installationId, c.spreadsheetId, c.driveRootId, c.backupsId || '', !!withBackup]);
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.main[cacheKey]) return RPC_STORAGE_SCOPE_.main[cacheKey];
   if (!c.spreadsheetId || !c.driveRootId) failure_('BINDING_MISMATCH');
   assertMarker_(resourceFile_(c.spreadsheetId), c, 'spreadsheet');
   assertMarker_(resourceFolder_(c.driveRootId), c, 'root');
@@ -40,7 +45,9 @@ function storage_(c, withBackup) {
     if (!c.backupsId) failure_('BINDING_MISMATCH');
     backup = resourceFolder_(c.backupsId); assertMarker_(backup, c, 'backups');
   }
-  return { spreadsheet: resourceSheet_(c.spreadsheetId), backup: backup };
+  var result = { spreadsheet: resourceSheet_(c.spreadsheetId), backup: backup };
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.main[cacheKey] = result;
+  return result;
 }
 function withLock_(fn) {
   var lock = LockService.getScriptLock();
@@ -173,6 +180,9 @@ function registerNonce_(request, spreadsheet) {
 }
 function processRequest_(request, c) {
   return withLock_(function () {
+    var previousScope = RPC_STORAGE_SCOPE_;
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {} };
+    try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('BUSY');
     var ss = storage_(c, false).spreadsheet; assertSchema_(ss);
     registerNonce_(request, ss);
@@ -249,6 +259,7 @@ function processRequest_(request, c) {
     if (actor.id !== principal.id || actor.role !== principal.role || actor.assurance !== principal.assurance || actor.authenticatedAt !== principal.authenticatedAt ||
         !['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
+    } finally { RPC_STORAGE_SCOPE_ = previousScope; }
   });
 }
 function signedResponse_(c, request, ok, data, code) {

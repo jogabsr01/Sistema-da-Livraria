@@ -50,11 +50,14 @@ function authControlStore_(c) {
   storage_(c, false); // Validate public-data bindings as well as the private store.
   var id = scriptProperties_().getProperty('IDENTITY_CONTROL_SPREADSHEET_ID');
   if (!id) failure_('IDENTITY_UNAVAILABLE');
+  var cacheKey = JSON.stringify([c.environment, c.installationId, c.spreadsheetId, c.driveRootId, id]);
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.controls[cacheKey]) return RPC_STORAGE_SCOPE_.controls[cacheKey];
   assertMarker_(resourceFile_(id), c, 'identity-controls');
   var ss = resourceSheet_(id);
   if (authControlInstalled_(ss) !== 3) failure_('IDENTITY_UNAVAILABLE');
   // Migration rows were already validated; remaining store checks need headers and capacity only.
   AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { if (table.name !== '_Control_Migrations') authControlShape_(ss, table.name); });
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.controls[cacheKey] = ss;
   return ss;
 }
 function provisionDevelopmentAuthControls() {
