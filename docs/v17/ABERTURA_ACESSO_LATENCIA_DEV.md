@@ -44,3 +44,7 @@ Resultados locais e real devem permanecer separados. Google/MailApp dos navegado
 380 testes completos aprovados em Node 22.23.4 (emulador carregando a versão única) e Node 24.19.0 (módulos separados), sem falhas/skips/cancelamentos. Onze cenários Chromium aprovados, incluindo cinco novos casos de falha de consulta da sessão, preservação de e-mail, resposta inválida e entrada explícita. Seis testes Python do kit, geração atual, build e diff check aprovados. Captura da tela com falha de sessão inspecionada; continua exibindo os formulários e um diagnóstico sem valores privados. Ensaios iniciais de navegador tiveram seletores incorretos e uma expectativa de estado corrigidos; os resultados finais são os onze casos aprovados.
 
 A latência Google real após atualizar a implantação ainda precisa ser medida. As contagens acima não equivalem ao aceite de entrega de e-mail, PIN/passkey físicos, multiusuário, quotas ou produção.
+
+## Aceite parcial dos formulários
+
+Após a atualização, o proprietário enviou imagem com os campos de acesso e a opção É meu primeiro acesso visíveis. A abertura foi confirmada; e-mail, PIN e passkey reais continuam pendentes. O atalho para a demonstração V15 e as mensagens que apontavam para ela foram removidos desta página de autenticação para evitar confusão entre as entradas. Essa remoção não altera o mecanismo de sessão nem as regras das APIs. Os PINs demonstrativos continuam sem autenticar o backend real.
