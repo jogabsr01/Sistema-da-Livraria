@@ -488,6 +488,80 @@ class OwnerAccess(unittest.TestCase):
         expect(self.page.locator('#complete')).to_be_visible()
         self.assertEqual(self.step_posts.get('options'), 2)
 
+    def test_expired_initial_cookie_renews_once_and_sends_only_one_email(self):
+        self.open()
+        self.context.clear_cookies(name='__Host-livraria_access')
+        self.page.get_by_text('É meu primeiro acesso', exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button', name='Receber código por e-mail').click()
+        expect(self.page.locator('#email-form')).to_be_visible()
+        self.assertEqual(self.step_posts.get('start'), 2)
+        state=self.local('/test/state')
+        self.assertEqual(state['outbox'],1); self.assertEqual(state['sessions'],0)
+        self.assertEqual(state['flowStates'],['EMAIL'])
+        self.assertNotIn('PIN',self.page.locator('#status').inner_text())
+
+    def test_expired_login_cookie_renews_without_skipping_pin_or_device(self):
+        self.activate(); self.logout()
+        self.context.clear_cookies(name='__Host-livraria_access')
+        self.begin_login()
+        expect(self.page.locator('#passkey')).to_be_visible()
+        expect(self.page.locator('#passkey-button')).to_be_enabled()
+        expect(self.page.locator('#complete')).to_be_hidden()
+        self.assertEqual(self.step_posts.get('login'),2)
+        state=self.local('/test/state')
+        self.assertEqual(state['outbox'],1); self.assertEqual(state['activeSessions'],0)
+
+    def test_expired_email_context_does_not_repeat_the_code_guess(self):
+        self.begin_email()
+        self.page.locator('#email-code').fill(self.local('/test/code')['code'])
+        self.context.clear_cookies(name='__Host-livraria_access')
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#status')).to_contain_text('Sua tentativa de acesso expirou')
+        expect(self.page.locator('#pin-form')).to_be_hidden()
+        self.assertEqual(self.step_posts.get('email'),1)
+        self.assertEqual(self.local('/test/state')['sessions'],0)
+
+    def test_missing_cookie_after_renewal_stops_without_an_infinite_loop(self):
+        self.open(); self.context.clear_cookies(name='__Host-livraria_access')
+        self.page.route('**/api/v1/access/state',lambda route:route.fulfill(status=200,json={'data':{'stage':'INITIAL','csrfToken':'A'*43}}))
+        self.page.get_by_text('É meu primeiro acesso',exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button',name='Receber código por e-mail').click()
+        expect(self.page.locator('#first-access-box #status')).to_contain_text('Não conseguimos renovar sua tentativa')
+        expect(self.page.locator('#access-progress')).to_be_hidden()
+        self.assertEqual(self.step_posts.get('start'),2)
+        self.assertEqual(self.local('/test/state')['outbox'],0)
+
+    def test_rejected_start_is_not_a_pin_error_and_is_not_replayed(self):
+        self.open()
+        self.page.route('**/api/v1/access/start',lambda route:route.fulfill(status=401,json={'error':{'code':'ACCESS_REJECTED'}}))
+        self.page.get_by_text('É meu primeiro acesso',exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button',name='Receber código por e-mail').click()
+        expect(self.page.locator('#first-access-box #status')).to_contain_text('Não foi possível iniciar seu acesso')
+        self.assertNotIn('PIN',self.page.locator('#status').inner_text())
+        self.assertEqual(self.local('/test/state')['outbox'],0)
+
+    def test_uncertain_start_does_not_renew_or_repeat_a_command(self):
+        self.open(); self.lost_step='start'; self.step_failure='html-before'
+        self.page.get_by_text('É meu primeiro acesso',exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button',name='Receber código por e-mail').click()
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        self.assertEqual(self.step_posts.get('start'),1)
+        self.assertEqual(self.local('/test/state')['outbox'],0)
+
+    def test_another_flow_after_context_renewal_does_not_start_a_new_command(self):
+        self.open(); self.context.clear_cookies(name='__Host-livraria_access')
+        self.page.route('**/api/v1/access/state',lambda route:route.fulfill(status=200,json={'data':{'stage':'EMAIL','csrfToken':'A'*43}}))
+        self.page.get_by_text('É meu primeiro acesso',exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.page.get_by_role('button',name='Receber código por e-mail').click()
+        expect(self.page.locator('#status')).to_contain_text('A tentativa de acesso foi atualizada')
+        self.assertEqual(self.step_posts.get('start'),1)
+        self.assertEqual(self.local('/test/state')['outbox'],0)
+
     def test_first_access_copy_is_short_and_has_no_internal_account_instructions(self):
         self.open()
         self.page.get_by_text('É meu primeiro acesso', exact=True).click()
