@@ -22,3 +22,8 @@ a { color: #205b43; } summary { cursor: pointer; padding: 18px 0; }
 
 #support-details { margin: 14px 0; border-top: 1px solid #d5e1d9; color: #53645d; font-size: .85rem; }
 #support-details summary { padding: 12px 0; }
+
+.pin-field { position: relative; }
+.pin-field input { padding-right: 58px; }
+button.pin-visibility { position: absolute; top: 0; right: 0; width: 48px; height: 100%; margin: 0; padding: 10px; background: transparent; color: #205b43; display: grid; place-items: center; }
+button.pin-visibility[aria-pressed="true"] { background: #e6eee8; }

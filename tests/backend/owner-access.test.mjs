@@ -219,3 +219,18 @@ test('failed email codes consume a shared durable budget before verification; ra
   const blocked = await call(s, 'email', { token, csrfToken, body: { code: randomBytes(32).toString('base64url') } });
   assert.equal(blocked.response.status, 429); assert.equal(blocked.response.headers.get('retry-after'), '60');
 });
+
+
+test('PIN enrollment API rejects adjacent repeats without advancing or granting a session', async () => {
+  const s = ownerFixture(), service = s.service(), token = randomBytes(32).toString('base64url'), ip = '192.0.2.10';
+  await service.execute('start', {email: properties.OWNER_EMAIL}, token, ip);
+  await service.execute('email', {code: code(s)}, token, ip);
+  const result = await call(s, 'pin', {token, csrfToken: service.csrf(token), body: {pin:'1123'}});
+  assert.equal(result.response.status, 400);
+  assert.equal(result.data.error.code, 'PIN_ADJACENT_REPETITION');
+  assert.equal((await service.state(token)).stage, 'PIN');
+  assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 1);
+  const accepted = await call(s, 'pin', {token, csrfToken: service.csrf(token), body:{pin:fakePin}});
+  assert.equal(accepted.response.status, 200);
+  assert.equal(accepted.data.data.stage, 'PASSKEY');
+});

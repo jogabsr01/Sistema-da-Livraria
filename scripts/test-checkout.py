@@ -255,7 +255,7 @@ class Checkout(qa.Catalog):
         try:
             page.goto(qa.ORIGIN+'/acesso-dev.html');expect(page.locator('#initial')).to_be_visible()
             page.locator('#login-email').fill('owner@example.invalid');page.locator('#login-pin').fill('8274')
-            page.get_by_role('button',name='Continuar com a passkey',exact=True).first.click();expect(page.locator('#passkey')).to_be_visible()
+            page.get_by_role('button',name='Entrar na minha conta',exact=True).first.click();expect(page.locator('#passkey')).to_be_visible()
             page.locator('#passkey-button').click();expect(page.locator('#complete')).to_be_visible()
             page.goto(qa.ORIGIN+'/caixa-dev.html');expect(page.locator('.book')).to_have_count(2)
             expect(page.locator('.book').first).to_contain_text('Estoque: 2')

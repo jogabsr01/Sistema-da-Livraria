@@ -25,6 +25,7 @@ export function createPinHasher(configuration) {
     async hash(pin, subjectId) {
       subject(subjectId);
       if (!validPin(pin)) throw new ApiError(400, 'INVALID_PIN');
+      if (/([0-9])\1/.test(pin)) throw new ApiError(400, 'PIN_ADJACENT_REPETITION');
       const salt = randomBytes(32);
       const hash = await derive(pin, subjectId, salt);
       return { version: 1, algorithm: 'scrypt-N32768-r8-p1', salt: salt.toString('hex'), hash: hash.toString('hex') };

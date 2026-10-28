@@ -102,7 +102,7 @@ class OwnerAccess(unittest.TestCase):
         self.page.locator('#logout-button').click(); expect(self.page.locator('#initial')).to_be_visible()
     def begin_login(self, pin='8274'):
         self.page.locator('#login-email').fill('owner@example.invalid'); self.page.locator('#login-pin').fill(pin)
-        self.page.get_by_role('button', name='Continuar com a passkey', exact=True).first.click()
+        self.page.get_by_role('button', name='Entrar na minha conta', exact=True).first.click()
     def assert_no_secrets_in_browser_storage(self):
         state = self.page.evaluate('({local: {...localStorage}, session: {...sessionStorage}, cookie: document.cookie})')
         self.assertEqual(state, {'local': {}, 'session': {}, 'cookie': ''})
@@ -277,6 +277,40 @@ class OwnerAccess(unittest.TestCase):
         expect(self.page.locator('#pin-form')).to_be_hidden()
         expect(self.page.locator('#check-step')).to_be_hidden()
         expect(self.page.locator('#access-diagnostic')).to_be_hidden()
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+
+    def test_pin_visibility_buttons_are_accessible_and_remask_on_submission(self):
+        self.open(); self.page.locator('#login-pin').fill('8274')
+        toggle = self.page.get_by_role('button', name='Mostrar PIN de entrada', exact=True)
+        toggle.click(); expect(self.page.locator('#login-pin')).to_have_attribute('type', 'text')
+        expect(self.page.get_by_role('button', name='Ocultar PIN de entrada')).to_have_attribute('aria-pressed', 'true')
+        self.page.get_by_role('button', name='Ocultar PIN de entrada').click()
+        expect(self.page.locator('#login-pin')).to_have_attribute('type', 'password')
+        self.page.locator('#login-email').fill('unknown@example.invalid')
+        toggle.click(); self.page.get_by_role('button', name='Entrar na minha conta', exact=True).click()
+        expect(self.page.locator('#status')).to_contain_text('Não foi possível entrar')
+        expect(self.page.locator('#login-pin')).to_have_attribute('type', 'password')
+        self.assertEqual(self.page.locator('#login-pin').input_value(), '')
+        self.assertEqual(self.errors, [])
+
+    def test_new_pin_repeats_are_explained_before_network_and_valid_pin_continues(self):
+        self.begin_email()
+        self.page.get_by_role('button', name='Confirmar código', exact=True).click()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.page.locator('#new-pin').fill('1123'); self.page.locator('#confirm-pin').fill('1123')
+        self.page.get_by_role('button', name='Mostrar novo PIN', exact=True).click()
+        self.page.get_by_role('button', name='Mostrar confirmação do PIN', exact=True).click()
+        expect(self.page.locator('#new-pin')).to_have_attribute('type', 'text')
+        expect(self.page.locator('#confirm-pin')).to_have_attribute('type', 'text')
+        self.page.get_by_role('button', name='Salvar PIN e continuar').click()
+        expect(self.page.locator('#status')).to_contain_text('sem números iguais lado a lado')
+        self.assertEqual(self.step_posts.get('pin', 0), 0)
+        self.page.screenshot(path=str(ARTIFACTS / 'pin-regra-e-olhos.png'), full_page=True)
+        expect(self.page.locator('#new-pin')).to_have_attribute('type', 'password')
+        self.page.locator('#new-pin').fill('8274'); self.page.locator('#confirm-pin').fill('8274')
+        self.page.get_by_role('button', name='Salvar PIN e continuar').click()
+        expect(self.page.get_by_role('button', name='Confirmar no meu aparelho', exact=True)).to_be_visible()
+        self.assertEqual(self.step_posts['pin'], 1)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):

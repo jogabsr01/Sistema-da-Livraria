@@ -29,8 +29,10 @@
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
     if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
     if (code === 'INVALID_AUTH_REQUEST' || code === 'INVALID_CPF') return 'Confira se o CPF ou e-mail está completo e se o PIN tem quatro números. Corrija os campos antes de continuar.';
+    if (code === 'PIN_ADJACENT_REPETITION') return 'Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.';
+    if (code === 'INVALID_PIN') return 'O PIN precisa ter exatamente quatro números. Confira os campos e tente novamente.';
     if (code === 'AUTH_RATE_LIMITED') return 'Você fez várias tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente. Se precisar, peça ajuda à administração.';
-    if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') return 'A confirmação pelo aparelho não foi concluída. Clique em “Continuar com a passkey” e siga a janela do navegador. Use um aparelho com biometria ou bloqueio de tela configurado.';
+    if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') return 'A confirmação pelo aparelho não foi concluída. Clique em “Confirmar no meu aparelho” e siga a janela do navegador. Use um aparelho com biometria ou bloqueio de tela configurado.';
     if (code.includes('REJECTED')) {
       if (!$('email-form').hidden) return 'Não foi possível validar o código. Confira se copiou o código completo do e-mail mais recente. Ele vale por 10 minutos. Se venceu, volte ao início para solicitar outro.';
       if (!$('initial').hidden) return 'Não foi possível entrar com os dados informados. Confira o CPF ou e-mail e o PIN. Se ainda não cadastrou seu acesso, escolha “É meu primeiro acesso”.';
@@ -61,6 +63,7 @@
   async function run(action) {
     if (busy) return;
     accessPhase = 'ACCESS';
+    maskPins();
     busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
     const detail = document.getElementById('access-diagnostic'); if (detail) { detail.hidden = true; detail.textContent = ''; }
     $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true;
@@ -69,7 +72,18 @@
     finally { clearTimeout(slow); busy = false; document.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
   }
   function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); run(action); }); }
-  function clearSecrets() { ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
+  function clearSecrets() { maskPins(); ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
+  function maskPins() {
+    document.querySelectorAll('[data-pin-target]').forEach(button => {
+      $(button.dataset.pinTarget).type = 'password'; button.setAttribute('aria-pressed', 'false');
+      button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^Ocultar /, 'Mostrar '));
+    });
+  }
+  document.querySelectorAll('[data-pin-target]').forEach(button => button.addEventListener('click', () => {
+    const field = $(button.dataset.pinTarget), reveal = field.type === 'password';
+    field.type = reveal ? 'text' : 'password'; button.setAttribute('aria-pressed', String(reveal));
+    button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^(Mostrar|Ocultar) /, reveal ? 'Ocultar ' : 'Mostrar '));
+  }));
   const decode = value => Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), char => char.charCodeAt(0));
   const encode = value => btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   function serialize(credential) {
@@ -89,7 +103,7 @@
     const data = result?.data;
     if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || data.user.assurance !== 'passkey' || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     sessionCsrf = data.csrfToken; show('COMPLETE'); message('Acesso verificado com sucesso.');
-    $('identity-result').textContent = data.user.role==='SUPER_ADMIN'?'Conta master autenticada com PIN e passkey.':data.user.role==='ADMIN'?'Conta administrativa autenticada com PIN e passkey.':'Conta de atendente autenticada com PIN e passkey.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
+    $('identity-result').textContent = data.user.role==='SUPER_ADMIN'?'Conta master autenticada com PIN e confirmação pelo aparelho.':data.user.role==='ADMIN'?'Conta administrativa autenticada com PIN e confirmação pelo aparelho.':'Conta de atendente autenticada com PIN e confirmação pelo aparelho.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
   async function finish() {
     await api('complete', { response: pendingResponse }); pendingResponse = null; clearSecrets();
@@ -100,7 +114,7 @@
     if (!['INITIAL','EMAIL','PIN','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage)) throw unavailable('ACCESS_RESPONSE_INVALID');
     show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage);
     if (state.stage === 'COMPLETE' && await current()) return;
-    message({ INITIAL: 'Escolha como deseja acessar sua conta.', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PIN: 'E-mail confirmado. Crie seu PIN para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Continue com a passkey para confirmar sua identidade.' }[state.stage] || 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
+    message({ INITIAL: 'Escolha como deseja acessar sua conta.', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PIN: 'E-mail confirmado. Crie seu PIN para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Clique em “Confirmar no meu aparelho” para continuar.' }[state.stage] || 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
   }));
   $('recovery-open').addEventListener('click',()=>{$('recovery-form').hidden=!$('recovery-form').hidden;});
   submit('recovery-form',async()=>{const data=await api('recover',{email:$('recovery-email').value});clearSecrets();show(data.stage);message(data.message);});
@@ -108,7 +122,7 @@
     const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);
   });
   submit('login-form', async () => {
-    try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); show(data.stage); message('Confirme sua identidade com a passkey cadastrada.'); }
+    try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); show(data.stage); message('Confirme sua identidade pelo aparelho cadastrado.'); }
     finally { $('login-pin').value = ''; }
   });
   async function saveAccessStep(operation, body, expectedStage) {
@@ -127,15 +141,16 @@
     const data = await saveAccessStep('email', { code: $('email-code').value.trim() }, 'PIN'); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina seu PIN novo.');
   });
   $('use-rescue').addEventListener('change',()=>{$('rescue-inputs').hidden=!$('use-rescue').checked;});
-  $('rescue-confirm').addEventListener('click',()=>run(async()=>{try{await api('rescue',{recoveryCode:$('rescue-code').value});$('rescue-status').textContent='Código confirmado. Defina um PIN novo e cadastre uma passkey nova.';}finally{$('rescue-code').value='';}}));
+  $('rescue-confirm').addEventListener('click',()=>run(async()=>{try{await api('rescue',{recoveryCode:$('rescue-code').value});$('rescue-status').textContent='Código confirmado. Defina um PIN novo e cadastre novamente a confirmação pelo aparelho.';}finally{$('rescue-code').value='';}}));
   submit('pin-form', async () => {
     if(recoveryFlow&&emergencyEnabled&&$('use-rescue').checked&&!replacementReady){message('Valide o código de recuperação antes de continuar.');return;}
+    if (/([0-9])\1/.test($('new-pin').value)) { message('Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.'); return; }
     if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.'); return; }
-    try { const data = await saveAccessStep('pin', { pin: $('new-pin').value }, 'PASSKEY'); show(data.stage); message('Continue com a passkey para proteger sua conta.'); }
+    try { const data = await saveAccessStep('pin', { pin: $('new-pin').value }, 'PASSKEY'); show(data.stage); message('Agora confirme sua identidade pelo aparelho para proteger sua conta.'); }
     finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
   });
   $('passkey-button').addEventListener('click', () => run(async () => {
-    if (!window.PublicKeyCredential || !navigator.credentials) { message('Este navegador não oferece passkeys. Use um navegador atualizado em um aparelho com bloqueio de tela.'); return; }
+    if (!window.PublicKeyCredential || !navigator.credentials) { message('Este navegador não oferece confirmação pelo aparelho. Use um navegador atualizado em um aparelho com biometria ou bloqueio de tela.'); return; }
     const data = await api('options', {}), options = data.options;
     options.challenge = decode(options.challenge);
     if (data.kind === 'create') { options.user.id = decode(options.user.id); options.excludeCredentials = (options.excludeCredentials || []).map(key => ({ ...key, id: decode(key.id) })); }

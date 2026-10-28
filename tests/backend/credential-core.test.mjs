@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, scryptSync, randomBytes, randomUUID } from 'node:crypto';
 import { createPinHasher, createSessionTokens } from '../../backend/credential-core.mjs';
 const config = () => ({ environment: 'dev', installationId: randomUUID(), pepper: randomBytes(32), tokenKey: randomBytes(32) });
 
@@ -47,4 +47,24 @@ test('session tokens are random, hash-only at rest, scoped and canonical', () =>
   assert.notEqual(createSessionTokens({ ...c, tokenKey: randomBytes(32) }).hash(a.rawToken), a.tokenHash);
   assert.notEqual(createSessionTokens({ ...c, installationId: randomUUID() }).hash(a.rawToken), a.tokenHash);
   for (const token of ['', null, 'x'.repeat(42), 'A'.repeat(42) + 'B']) assert.throws(() => service.hash(token), { code: 'INVALID_SESSION_TOKEN' });
+});
+
+
+test('new PINs reject adjacent equal digits in every position and allow separated repeats', async () => {
+  const hasher = createPinHasher(config()), id = randomUUID();
+  for (const pin of ['0012', '1223', '1233', '1111', '4556']) {
+    await assert.rejects(hasher.hash(pin, id), { code: 'PIN_ADJACENT_REPETITION' });
+  }
+  const record = await hasher.hash('1212', id);
+  assert.equal(await hasher.verify('1212', id, record), true);
+});
+
+test('new enrollment policy does not lock out a previously registered repeated PIN', async () => {
+  const c = config(), id = randomUUID(), salt = randomBytes(32), pin = '1123';
+  const scope = JSON.stringify([c.environment, c.installationId]);
+  const input = createHmac('sha256', c.pepper).update(JSON.stringify(['pin.v1', scope, id, pin])).digest();
+  const record = {version: 1, algorithm: 'scrypt-N32768-r8-p1', salt: salt.toString('hex'),
+    hash: scryptSync(input, salt, 32, {N:32768, r:8, p:1, maxmem:64*1024*1024}).toString('hex')};
+  assert.equal(await createPinHasher(c).verify(pin, id, record), true);
+  assert.equal(await createPinHasher(c).verify('1124', id, record), false);
 });
