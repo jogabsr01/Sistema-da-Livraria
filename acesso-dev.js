@@ -4,8 +4,8 @@
   const $ = id => document.getElementById(id);
   let pendingMessage = null;
   const message = (text, tone = 'info') => { if (busy) { pendingMessage = { text, tone }; return; } $('status').textContent = text; $('status').dataset.tone = tone; $('status').hidden = false; };
-  let accessPhase = 'STATE', actionRevision = 0;
-  const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN']);
+  let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
+  const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
@@ -25,6 +25,7 @@
     if (heading) heading.after(feedback); else target.prepend(feedback);
   }
   function show(stage) {
+    preparedDevice = null; preparedAt = 0;
     const panel = { INITIAL: 'initial', EMAIL: 'email-form', PIN: 'pin-form', PASSKEY: 'passkey', COMMITTING: 'retry', COMPLETE: 'complete' }[stage];
     panels.forEach(id => { $(id).hidden = id !== panel; });
     if (panel) feedbackIn(panel === 'initial' ? 'login-form' : panel);
@@ -49,7 +50,12 @@
     if (code === 'PIN_ADJACENT_REPETITION') return 'Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.';
     if (code === 'INVALID_PIN') return 'O PIN precisa ter exatamente quatro números. Confira os campos e tente novamente.';
     if (code === 'AUTH_RATE_LIMITED') return 'Você fez várias tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente. Se precisar, peça ajuda à administração.';
-    if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') return 'A confirmação pelo aparelho não foi concluída. Clique em “Confirmar no meu aparelho” e siga a janela do navegador. Use um aparelho com biometria ou bloqueio de tela configurado.';
+    if (code === 'DEVICE_NOT_ALLOWED') return 'A confirmação do aparelho não abriu, foi cancelada ou expirou. Tente novamente. Se a janela não abrir, confira se o Chrome está atualizado e se o bloqueio de tela está configurado.';
+    if (code === 'DEVICE_NOT_SUPPORTED') return 'Este navegador ou aparelho não oferece a confirmação necessária. Use um navegador atualizado em um aparelho com bloqueio de tela.';
+    if (code === 'DEVICE_SECURITY_ERROR') return 'O navegador bloqueou a confirmação neste endereço. Abra o link da livraria diretamente em uma nova aba e tente novamente.';
+    if (code === 'DEVICE_ALREADY_REGISTERED') return 'Este aparelho já possui uma chave de acesso para a conta. Volte ao início e tente entrar com seu CPF ou e-mail e PIN.';
+    if (code === 'DEVICE_ABORTED') return 'A confirmação do aparelho foi interrompida. Tente novamente.';
+    if (code === 'DEVICE_RESPONSE_INVALID') return 'O aparelho não retornou a confirmação. Tente novamente.';
     if (code.includes('REJECTED')) {
       if (!$('email-form').hidden) return 'Não foi possível validar o código. Confira se copiou o código completo do e-mail mais recente. Ele vale por 10 minutos. Se venceu, volte ao início para solicitar outro.';
       if (!$('initial').hidden) return 'Não foi possível entrar com os dados informados. Confira o CPF ou e-mail e o PIN. Se ainda não cadastrou seu acesso, escolha “É meu primeiro acesso”.';
@@ -97,7 +103,7 @@
     $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true;
     pendingMessage = null; $('status').hidden = true; $('access-progress').hidden = false;
     document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'true'));
-    try { await action(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = !uncertainCodes.has(error.code); }
+    try { await action(); if (!$('passkey').hidden && !preparedDevice) await prepareDevice(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = error.transport?.operation === 'options' ? 'Preparar confirmação novamente' : ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = !uncertainCodes.has(error.code); }
     finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
   }
   function clearFieldError(field) {
@@ -167,7 +173,7 @@
     if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || data.user.assurance !== 'passkey' || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (!shouldApply()) return false;
     sessionCsrf = data.csrfToken; show('COMPLETE'); message('Acesso verificado com sucesso.', 'success');
-    $('identity-result').textContent = data.user.role==='SUPER_ADMIN'?'Conta master autenticada com PIN e confirmação pelo aparelho.':data.user.role==='ADMIN'?'Conta administrativa autenticada com PIN e confirmação pelo aparelho.':'Conta de atendente autenticada com PIN e confirmação pelo aparelho.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
+    $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
   async function finish() {
     await api('complete', { response: pendingResponse }); pendingResponse = null; clearSecrets();
@@ -214,16 +220,36 @@
     try { const data = await saveAccessStep('pin', { pin: $('new-pin').value }, 'PASSKEY'); show(data.stage); message('Agora confirme sua identidade pelo aparelho para proteger sua conta.', 'success'); }
     finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
   });
-  $('passkey-button').addEventListener('click', () => run(async () => {
-    if (!window.PublicKeyCredential || !navigator.credentials) { message('Este navegador não oferece confirmação pelo aparelho. Use um navegador atualizado em um aparelho com biometria ou bloqueio de tela.'); return; }
+  async function prepareDevice() {
+    accessPhase = 'PREPARE';
+    if (!window.PublicKeyCredential || !navigator.credentials) throw unavailable('DEVICE_NOT_SUPPORTED');
     const data = await api('options', {}), options = data.options;
+    if (!['create', 'get'].includes(data.kind) || !options || typeof options.challenge !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     options.challenge = decode(options.challenge);
     if (data.kind === 'create') { options.user.id = decode(options.user.id); options.excludeCredentials = (options.excludeCredentials || []).map(key => ({ ...key, id: decode(key.id) })); }
     else options.allowCredentials = (options.allowCredentials || []).map(key => ({ ...key, id: decode(key.id) }));
-    const credential = await navigator.credentials[data.kind]({ publicKey: options });
+    preparedDevice = {kind:data.kind, options}; preparedAt = performance.now();
+  }
+  $('passkey-button').addEventListener('click', () => run(async () => {
+    // The Google round trip happens before this button is enabled. Call the
+    // native browser API in the click turn, before any await loses activation.
+    if (!preparedDevice || performance.now() - preparedAt > 120000) {
+      preparedDevice = null; await prepareDevice();
+      message('Tudo pronto. Clique em “Confirmar no meu aparelho” para continuar.'); return;
+    }
+    const prepared = preparedDevice; preparedDevice = null; accessPhase = 'DEVICE';
+    let credential;
+    try { credential = await navigator.credentials[prepared.kind]({ publicKey: prepared.options }); }
+    catch (error) {
+      const code = {NotAllowedError:'DEVICE_NOT_ALLOWED',NotSupportedError:'DEVICE_NOT_SUPPORTED',SecurityError:'DEVICE_SECURITY_ERROR',InvalidStateError:'DEVICE_ALREADY_REGISTERED',AbortError:'DEVICE_ABORTED'}[error?.name];
+      // Retain an unconsumed challenge for a new explicit click; no automatic
+      // retry of a ceremony or mutation, and never expose browser error text.
+      preparedDevice = prepared;
+      throw unavailable(code || 'DEVICE_RESPONSE_INVALID');
+    }
+    if (!credential) { preparedDevice = prepared; throw unavailable('DEVICE_RESPONSE_INVALID'); }
     pendingResponse = serialize(credential);
-    // A transport failure can happen after a durable commit; offer a safe retry.
-    show('COMMITTING'); message('Confirmando e salvando o acesso…'); await finish();
+    show('COMMITTING'); accessPhase = 'COMPLETE'; await finish();
   }));
   $('retry-button').addEventListener('click', () => run(finish));
   $('restart').addEventListener('click', () => { clearSecrets(); pendingResponse = null; show('INITIAL'); message('Solicite um novo código ou entre na conta já ativada.'); });
@@ -249,6 +275,7 @@
     message('Escolha como deseja acessar sua conta.');
     // A slow optional lookup must not disable the visible form. Ignore late
     // results after any user action, so they cannot replace the newer flow.
+    if (!['INITIAL','COMPLETE'].includes(state.stage)) return;
     const openingRevision = actionRevision;
     setTimeout(() => {
       if (openingRevision !== actionRevision) return;

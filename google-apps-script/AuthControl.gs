@@ -27,7 +27,7 @@ function authControlShape_(ss, name) {
 }
 function authControlRows_(ss, name) {
   var shape = authControlShape_(ss, name), definition = shape.definition, sheet = shape.sheet;
-  var values = shape.lastRow < 2 ? [] : sheet.getRange(2, 1, shape.lastRow - 1, definition.columns.length).getValues();
+  var values = rpcRows_(sheet, shape.lastRow, definition.columns.length);
   return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (key, i) { row[key] = values[i]; }); return row;
@@ -102,6 +102,7 @@ function authControlExact_(payload, keys) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !same_(Object.keys(payload).sort(), keys.slice().sort())) failure_('CHALLENGE_REJECTED');
 }
 function authControlSave_(table, row) {
+  invalidateRpcRows_(table.sheet);
   var values = table.columns.map(function (key) { return row[key]; });
   if (row.number) table.sheet.getRange(row.number, 1, 1, values.length).setValues([values]);
   else {

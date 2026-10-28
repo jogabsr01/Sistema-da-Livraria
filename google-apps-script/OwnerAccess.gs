@@ -8,6 +8,7 @@ function accessEmail_(value) {
   return value.toLowerCase();
 }
 function accessSaveMain_(table, row) {
+  invalidateRpcRows_(table.sheet);
   if (!row.number && table.rows.length >= 5000) failure_('IDENTITY_UNAVAILABLE');
   var values = table.columns.map(function (key) { return row[key] === undefined ? '' : row[key]; });
   if (row.number) table.sheet.getRange(row.number, 1, 1, values.length).setValues([values]);
