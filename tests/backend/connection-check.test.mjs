@@ -72,7 +72,7 @@ test('diagnostic build output contains only fixed result codes, never private ex
 });
 
 
-test('build diagnostic has a bounded 60-second budget while operational clients retain ten seconds', async t => {
+test('build diagnostic has a bounded 60-second budget while operational clients use a separate twenty-second limit', async t => {
   const s = setup(), budgets = [], controller = new AbortController();
   t.mock.method(AbortSignal, 'timeout', ms => { budgets.push(ms); return controller.signal; });
   let calls = 0;
@@ -86,7 +86,7 @@ test('build diagnostic has a bounded 60-second budget while operational clients 
   assert.equal((await checkDevelopmentConnection(s.env, { createWorkspaceClient: factory })).checked, true);
   assert.deepEqual(budgets, [60_000]);
   await createWorkspaceClient(s.config, { fetchImpl: transport }).ping();
-  assert.deepEqual(budgets, [60_000, 10_000]);
+  assert.deepEqual(budgets, [60_000, 20_000]);
   assert.equal(calls, 2, 'one request per explicit check, without automatic retry');
   assert.deepEqual(s.env, snapshot);
 });

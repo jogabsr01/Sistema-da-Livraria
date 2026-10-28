@@ -137,9 +137,10 @@ export function createOwnerAccessService(settings, { client }) {
   };
 }
 const shapes = { rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
+export const OWNER_ACCESS_BUDGET_MS = 55_000;
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
-    const requestId = randomUUID();
+    const requestId = randomUUID(), deadlineAt = performance.now() + OWNER_ACCESS_BUDGET_MS;
     let operation, settingsLoaded = false;
     try {
       if (new URL(request.url).origin !== ACCESS_ORIGIN) throw new ApiError(403, 'FORBIDDEN');
@@ -149,7 +150,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       if (request.method !== method) { const result = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); result.headers.set('allow', method); return result; }
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
       settingsLoaded = true;
-      const service = createOwnerAccessService(settings, { client: (dependencies.createClient || createWorkspaceClient)(settings.config) });
+      const service = createOwnerAccessService(settings, { client: (dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt }) });
       let token;
       if (operation === 'state') {
         let fresh = false;

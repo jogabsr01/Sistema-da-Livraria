@@ -27,6 +27,6 @@ Testes locais usam GAS e transporte simulado; não comprovam rede, IAM, quotas, 
 
 O handshake executado no build tem prazo total de 60 segundos para POST, redirecionamento permitido e leitura da resposta. A margem atende a partida do Apps Script e à espera do lock (até 20 segundos). O prazo anterior de 10 segundos podia encerrar antes de uma inspeção legítima, como a execução manual observada de aproximadamente 13 segundos.
 
-Esse prazo é exclusivo do diagnóstico DEV com backend desligado; o padrão dos clientes operacionais permanece em 10 segundos. Assinaturas, nonce, correlação, ambiente e allowlist de redirecionamento continuam obrigatórios. Não há repetição automática do pedido.
+Esse prazo é exclusivo do diagnóstico DEV com backend desligado; o prazo operacional foi posteriormente ajustado para 20 segundos por RPC e um orçamento compartilhado de 55 segundos no handler de acesso; ver [abertura e latência](ABERTURA_ACESSO_LATENCIA_DEV.md). Assinaturas, nonce, correlação, ambiente e allowlist de redirecionamento continuam obrigatórios. Não há repetição automática do pedido.
 
 `UPSTREAM_TIMEOUT` informa somente que o cliente esgotou seu prazo; não prova falha de chave ou indisponibilidade definitiva do Google. Conferir as Execuções de `doPost` no Apps Script para distinguir execução lenta, ausência de chamada e erro. Se persistir após 60 segundos, investigar a execução e a rede antes de alterar configurações. Medir a latência dos módulos reais antes de ativar operação; sucesso no handshake não homologa tempo de atendimento do login/caixa.

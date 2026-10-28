@@ -45,7 +45,7 @@ function auditOperation_(request,c){
 ;
 // END Audit.gs
 
-// BEGIN AuthControl.gs sha256=57239d541046b0cad155644b126de022a167c3843ffdadfa1ef7607c84a9036a
+// BEGIN AuthControl.gs sha256=1d5a9611208b274a1ef018d9b8985078e6498c160089f99bfee14f26b910ddcd
 /* DEV-only private identity controls. Public callers never access this store.
  * All operations run under the installation ScriptLock in processRequest_. */
 var AUTH_CONTROL_SCHEMA = {
@@ -68,10 +68,14 @@ function authControlDefinition_(name) {
 function authControlTime_(value) {
   try { return identityTime_(value); } catch (_) { failure_('IDENTITY_UNAVAILABLE'); }
 }
+function authControlShape_(ss, name) {
+  var definition = authControlDefinition_(name), sheet = ss.getSheetByName(name), lastRow = sheet ? sheet.getLastRow() : 0;
+  if (!sheet || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 3001) failure_('IDENTITY_UNAVAILABLE');
+  return { sheet: sheet, definition: definition, lastRow: lastRow };
+}
 function authControlRows_(ss, name) {
-  var definition = authControlDefinition_(name), sheet = ss.getSheetByName(name);
-  if (!sheet || !same_(rowValues_(sheet), definition.columns) || sheet.getLastRow() > 3001) failure_('IDENTITY_UNAVAILABLE');
-  var values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, definition.columns.length).getValues();
+  var shape = authControlShape_(ss, name), definition = shape.definition, sheet = shape.sheet;
+  var values = shape.lastRow < 2 ? [] : sheet.getRange(2, 1, shape.lastRow - 1, definition.columns.length).getValues();
   return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (key, i) { row[key] = values[i]; }); return row;
@@ -97,7 +101,8 @@ function authControlStore_(c) {
   assertMarker_(resourceFile_(id), c, 'identity-controls');
   var ss = resourceSheet_(id);
   if (authControlInstalled_(ss) !== 3) failure_('IDENTITY_UNAVAILABLE');
-  AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { authControlRows_(ss, table.name); });
+  // Migration rows were already validated; remaining store checks need headers and capacity only.
+  AUTH_CONTROL_SCHEMA.tables.forEach(function (table) { if (table.name !== '_Control_Migrations') authControlShape_(ss, table.name); });
   return ss;
 }
 function provisionDevelopmentAuthControls() {
@@ -521,7 +526,7 @@ function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=560d6dfc80ee53049c7881dcce104f809523ba11535a798c0066f7b1b6459b3c
+// BEGIN Code.gs sha256=44fede43b7641d2aeb69b7aa85674da9f31458d1c27515c163964ede9c77237f
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -571,16 +576,18 @@ function withLock_(fn) {
   if (!lock.tryLock(20000)) failure_('BUSY');
   try { return fn(); } finally { lock.releaseLock(); }
 }
-function rowValues_(sheet) { return sheet.getLastRow() ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : []; }
+function rowValues_(sheet, knownLastRow) { return (knownLastRow === undefined ? sheet.getLastRow() : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : []; }
 function same_(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
-function version_(spreadsheet) {
-  var sheet = spreadsheet.getSheetByName('_Migracoes');
-  if (!sheet || sheet.getLastRow() < 2) return 0;
-  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+function migrationRows_(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? sheet.getLastRow() : 0;
+  return lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+}
+function migrationVersion_(rows) {
   if (rows.some(function (r) { return !Number.isSafeInteger(Number(r[0])) || Number(r[0]) < 1; })) failure_('SCHEMA_INVALID');
   if (new Set(rows.map(function (r) { return Number(r[0]); })).size !== rows.length) failure_('SCHEMA_INVALID');
-  return Math.max.apply(null, rows.map(function (r) { return Number(r[0]); }));
+  return rows.length ? Math.max.apply(null, rows.map(function (r) { return Number(r[0]); })) : 0;
 }
+function version_(spreadsheet) { return migrationVersion_(migrationRows_(spreadsheet)); }
 function preflight_(spreadsheet) {
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
     var sheet = spreadsheet.getSheetByName(table.name);
@@ -588,12 +595,18 @@ function preflight_(spreadsheet) {
   });
 }
 function assertSchema_(spreadsheet) {
-  if (version_(spreadsheet) !== LIVRARIA_SCHEMA.version) failure_('SCHEMA_REQUIRED');
-  var history = spreadsheet.getSheetByName('_Migracoes');
-  var rows = history.getRange(2, 1, history.getLastRow() - 1, 4).getValues();
+  var rows = migrationRows_(spreadsheet);
+  if (migrationVersion_(rows) !== LIVRARIA_SCHEMA.version) failure_('SCHEMA_REQUIRED');
   if (!rows.some(function (r) { return Number(r[0]) === LIVRARIA_SCHEMA.version && r[3] === digest_(JSON.stringify(LIVRARIA_SCHEMA)); })) failure_('SCHEMA_REQUIRED');
-  preflight_(spreadsheet);
-  if (LIVRARIA_SCHEMA.tables.some(function (t) { return !spreadsheet.getSheetByName(t.name) || !same_(rowValues_(spreadsheet.getSheetByName(t.name)), t.columns); })) failure_('SCHEMA_REQUIRED');
+  // Read every header once, on every invocation. No cross-request cache.
+  // Conflicting nonempty headers still take precedence over missing sheets.
+  var missing = false;
+  LIVRARIA_SCHEMA.tables.forEach(function (table) {
+    var sheet = spreadsheet.getSheetByName(table.name), lastRow = sheet ? sheet.getLastRow() : 0;
+    if (!sheet || !lastRow) { missing = true; return; }
+    if (!same_(rowValues_(sheet, lastRow), table.columns)) failure_('SCHEMA_CONFLICT');
+  });
+  if (missing) failure_('SCHEMA_REQUIRED');
 }
 function migrate_(c) {
   var store = storage_(c, true), ss = store.spreadsheet;
