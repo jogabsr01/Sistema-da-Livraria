@@ -325,3 +325,35 @@ function accessPinReadGuarded_(request,c) {
   if(result.state!=='PIN')accessReject_();
   result.allowed=true;return result;
 }
+
+// One bounded preparation command replaces repeated flow reads, a separate
+// limiter RPC and a separate challenge take. Crypto verification stays in Node.
+// A previously persisted proof can commit/release the SAME session directly.
+function accessPrepareCompletion_(request,c) {
+  var p=request.payload;
+  authControlExact_(p,['tokenHash','sessionTokenHash','accountKey','originKey','credentialId','hasResponse','allowReplacement','handleSubjectId']);
+  if(!accessHash_(p.tokenHash)||!accessHash_(p.sessionTokenHash)||typeof p.hasResponse!=='boolean'||typeof p.allowReplacement!=='boolean'||typeof p.credentialId!=='string'||p.credentialId.length>1400||typeof p.handleSubjectId!=='string'||p.handleSubjectId!==''&&!identityUuid_(p.handleSubjectId))accessReject_();
+  recoverSecurityIntent_(c);
+  var flow;
+  try { flow=ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}},c); }
+  catch(error){
+    if(error.message==='ACCESS_REJECTED'){
+      var failed=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+      if(!failed.allowed)return {allowed:false,retryAfterSeconds:failed.retryAfterSeconds};
+    }
+    throw error;
+  }
+  if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)accessReject_();
+  if(flow.proofReady){
+    // This is acknowledgement/recovery of an already verified proof, not a new
+    // guess. commit rechecks key, epoch, flow binding and durable projections.
+    var principal=ownerAccessOperation_({action:'identity.access.commit',payload:{tokenHash:p.tokenHash,sessionTokenHash:p.sessionTokenHash}},c);
+    return {allowed:true,done:true,flow:flow,principal:principal};
+  }
+  var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  if(p.handleSubjectId!==''&&p.handleSubjectId!==flow.subjectId)accessReject_();
+  if(flow.state!=='PASSKEY'||!p.hasResponse||!passkeyText_(p.credentialId,2,1400)||flow.replacementAllowed&&!p.allowReplacement)accessReject_();
+  var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion,ceremonyId:flow.ceremonyId,credentialId:flow.purpose==='ACTIVATE'||flow.replacementAllowed?'':p.credentialId}},c);
+  return {allowed:true,done:false,flow:flow,ceremony:ceremony};
+}

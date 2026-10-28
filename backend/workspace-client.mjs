@@ -126,6 +126,26 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       if (action.startsWith('identity.access.')) {
         const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
         const untrusted = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
+        const flowResult=value=>{
+          if(!uuid(value?.flowId)||!uuid(value.subjectId)||!Number.isSafeInteger(value.authorizationVersion)||value.authorizationVersion<1||!['ACTIVATE','LOGIN','RECOVER'].includes(value.purpose)||!['EMAIL','PIN','PASSKEY','COMMITTING','COMPLETE'].includes(value.state)||value.ceremonyId!==''&&!uuid(value.ceremonyId)||typeof value.proofReady!=='boolean'||typeof value.replacementAllowed!=='boolean')untrusted();
+          return {flowId:value.flowId,subjectId:value.subjectId,authorizationVersion:value.authorizationVersion,purpose:value.purpose,state:value.state,ceremonyId:value.ceremonyId,proofReady:value.proofReady,replacementAllowed:value.replacementAllowed};
+        };
+        if(action==='identity.access.prepareCompletion'){
+          if(data?.allowed===false&&Number.isSafeInteger(data.retryAfterSeconds)&&data.retryAfterSeconds>0&&data.retryAfterSeconds<=3600){const error=new ApiError(429,'AUTH_RATE_LIMITED');error.retryAfterSeconds=data.retryAfterSeconds;throw error;}
+          if(data?.allowed!==true||typeof data.done!=='boolean')untrusted();
+          const flow=flowResult(data.flow);
+          if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)untrusted();
+          if(data.done){
+            const p=data.principal;
+            if(!flow.proofReady||p?.id!==flow.subjectId||p.sessionId!==flow.flowId||p.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(p.role)||p.assurance!=='passkey'||!Number.isSafeInteger(p.authenticatedAt)||!Number.isSafeInteger(p.expiresAt))untrusted();
+            return {done:true,flow,principal:{id:p.id,sessionId:p.sessionId,authorizationVersion:p.authorizationVersion,role:p.role,assurance:p.assurance,authenticatedAt:p.authenticatedAt,expiresAt:p.expiresAt}};
+          }
+          const ceremony=data.ceremony,register=flow.purpose==='ACTIVATE'||flow.replacementAllowed;
+          if(flow.state!=='PASSKEY'||flow.proofReady||payload.hasResponse!==true||typeof ceremony?.challenge!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(ceremony.challenge)||ceremony.purpose!==(register?'REGISTER':'AUTHENTICATE'))untrusted();
+          const k=ceremony.credential;
+          if(register&&k!==null||!register&&(!k||k.id!==payload.credentialId||typeof k.publicKey!=='string'||!/^[A-Za-z0-9_-]{20,4096}$/.test(k.publicKey)||!Number.isSafeInteger(k.counter)||k.counter<0||k.counter>4294967295||!Array.isArray(k.transports)||k.transports.some(t=>!['ble','cable','hybrid','internal','nfc','smart-card','usb'].includes(t))))untrusted();
+          return {done:false,flow,ceremony:{challenge:ceremony.challenge,purpose:ceremony.purpose,credential:k?{id:k.id,publicKey:k.publicKey,counter:k.counter,transports:k.transports}:null}};
+        }
         if (['identity.access.start','identity.access.recover', 'identity.access.login'].includes(action)) {
           if (data?.accepted !== true || data.outcome!==undefined&&!['SENT','NOT_FOUND','ALREADY_ACTIVE','THROTTLED','DELIVERY_UNAVAILABLE'].includes(data.outcome)) untrusted(); return { accepted: true,...(data.outcome?{outcome:data.outcome}:{}) };
         }
@@ -248,6 +268,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     verifyAccessEmail: payload => invoke('identity.access.emailGuarded', null, payload),
     readAccessForPin: payload => invoke('identity.access.pinReadGuarded', null, payload),
     prepareAccessOptions: payload => invoke('identity.access.options', null, payload),
+    prepareAccessCompletion: payload => invoke('identity.access.prepareCompletion', null, payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
     createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),
     consumeAuthChallenge: payload => invoke('identity.challenge.consume', null, payload),
