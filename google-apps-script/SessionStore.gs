@@ -6,10 +6,10 @@ function identityUuid_(value) {
   return typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 }
 function identityRows_(spreadsheet, name) {
-  var sheet = spreadsheet.getSheetByName(name);
+  var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? sheet.getLastRow() : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
-  if (!sheet || !definition || !same_(rowValues_(sheet), definition.columns) || sheet.getLastRow() > 5001) failure_('IDENTITY_UNAVAILABLE');
-  var values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, definition.columns.length).getValues();
+  if (!sheet || !definition || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 5001) failure_('IDENTITY_UNAVAILABLE');
+  var values = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, definition.columns.length).getValues();
   return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (column, columnIndex) { row[column] = values[columnIndex]; });

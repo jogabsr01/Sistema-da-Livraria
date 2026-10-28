@@ -16,7 +16,7 @@ Incremento do v17, iniciado a partir da árvore de `dev/2528ca0636976d4d5c6833ce
 
 A página existente `/acesso-dev.html` passa a aceitar CPF ou e-mail de funcionários previamente cadastrados. O código de uso único é entregue ao e-mail já cadastrado, nunca a um destino fornecido no formulário de acesso. A conta permanece pendente até comprovar o e-mail, definir PIN e cadastrar uma passkey. O login exige PIN **e** passkey para todos os papéis, inclusive atendentes. A conta proprietária conserva seu fluxo e endereço privados.
 
-Respostas públicas não confirmam a existência da conta. Limites persistentes por identificador/origem, cooldown de entrega, tentativas do código, validade de dez minutos, CSRF, cookies HttpOnly e idempotência do commit permanecem aplicados. O CPF passa pelo mesmo orçamento de login que o e-mail, com validação de dígitos no servidor.
+Login e recuperação não confirmam publicamente a existência da conta. No primeiro acesso, as respostas distinguem identificador não cadastrado, cadastro já ativado, entrega recente e falha de envio, conforme a revisão documentada em [Mensagens e desempenho](MENSAGENS_PERFORMANCE_DEV.md). Limites persistentes por identificador/origem, cooldown de entrega, tentativas do código, validade de dez minutos, CSRF, cookies HttpOnly e idempotência do commit permanecem aplicados. O CPF passa pelo mesmo orçamento de login que o e-mail, com validação de dígitos no servidor.
 
 A recuperação de PIN/passkey, perfil/avatar e troca autônoma de e-mail **não** fazem parte deste incremento. A nova entrada aceita funcionários; a home com escolha de perfis será construída na etapa posterior solicitada pelo proprietário.
 

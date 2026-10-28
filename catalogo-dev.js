@@ -39,7 +39,7 @@
       const response = await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal,
         headers:body?{'content-type':'application/json','x-csrf-token':csrf}:{},body:body?JSON.stringify(body):undefined});
       const value = await response.json();
-      if (!response.ok) throw Object.assign(Error('CATALOG_FAILED'),{status:response.status,code:value.error?.code});
+      if (!response.ok) throw Object.assign(Error('CATALOG_FAILED'),{status:response.status,code:value.error?.code,field:value.error?.field,readOnly:!body});
       return value.data;
     } catch(error) { if (!error.status || error.status===401 || error.status===403) invalidate(); throw error; }
     finally { clearTimeout(timeout); }
@@ -50,7 +50,7 @@
     csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); $('niche-admin-link').hidden = !canDelete;
   }
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
-  function explain(error) {
+  function explain(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     if (error.code === 'OFFLINE') return 'Sem conexão. Mantenha a aba aberta e confira a conexão antes de tentar novamente.';
     if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
     if (error.code === 'UNAUTHENTICATED') return 'Entre na conta verificada para usar o catálogo.';
@@ -69,7 +69,7 @@
   }
   async function run(action, form = false) {
     if (busy) return; busy = true; controls();
-    try { await action(); } catch (error) { const text = explain(error); if (form) { $('form-status').textContent = text; $('reload-book').hidden = !editing || !error.code?.includes('CONFLICT'); } else message(text); }
+    try { await action(); } catch (error) { const text = explain(error); if (form) { $('form-status').textContent = text; globalThis.LivrariaMessages?.highlight($('book-form'),error,'form-status'); $('reload-book').hidden = !editing || !error.code?.includes('CONFLICT'); } else message(text); }
     finally { busy = false; controls(); if (reconnectQueued) { reconnectQueued = false; reconnect(); } }
   }
   function cover(url, parent, preview = false) {

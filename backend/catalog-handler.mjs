@@ -33,7 +33,7 @@ export function createCatalogHandler(dependencies = {}) {
       const principal = await sessions.authenticate(request);
       requirePermission(principal, operation === 'remove' ? 'products.delete' : operation === 'receive' ? 'stock.receive' : ['save','isbn'].includes(operation) ? 'products.write' : 'products.read');
       // Resolve CSRF against the same authoritative cookie, never a caller role.
-      if (method === 'POST') requireCsrfToken(request, (await sessions.current(request)).csrfToken);
+      if (method === 'POST') requireCsrfToken(request, sessions.csrfFor(request,principal));
       const actor = { sessionTokenHash: principal.sessionTokenHash };
       let payload;
       const query = new URL(request.url).searchParams;

@@ -1,8 +1,8 @@
-import { ApiError } from './errors.mjs';
+import { ApiError,invalidInput } from './errors.mjs';
 import { catalogUuid,normalizedIsbn } from './catalog-model.mjs';
 import { normalizeCpf } from './staff-model.mjs';
 import { normalizeCustomer } from './customer-model.mjs';
-export const reportInvalid=()=>{throw new ApiError(400,'INVALID_REPORT');};
+export const reportInvalid=field=>invalidInput('INVALID_REPORT',field);
 export const reportFold=v=>String(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 export const reportFields=['kind','from','to','employeeId','customerId','cpf','productId','query','isbn','author','publisher','supplier','nicheId','category','city','minCents','maxCents','paymentMethod','stock','activity','movementType'];
 const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString()===v;
@@ -12,7 +12,7 @@ export function normalizeReportFilters(p){
  if(!['SALES','STOCK','MOVEMENTS'].includes(f.kind)||!['ALL','ZERO','LOW','POSITIVE'].includes(f.stock)||!['ALL','ACTIVE','INACTIVE'].includes(f.activity)||!['','PIX','DINHEIRO','DEBITO','CREDITO'].includes(f.paymentMethod)||!['','ENTRADA','SAIDA','AJUSTE','ESTORNO'].includes(f.movementType)||['employeeId','customerId','productId','nicheId'].some(k=>f[k]&&!catalogUuid(f[k]))||f.minCents!==null&&f.maxCents!==null&&f.maxCents<f.minCents)reportInvalid();
  if(f.kind==='STOCK'){if(f.from||f.to||f.employeeId)reportInvalid();}else if(!time(f.from)||!time(f.to)||f.to<f.from||Date.parse(f.to)-Date.parse(f.from)>366*86400000)reportInvalid();
  if(f.kind!=='SALES'&&(f.customerId||f.cpf||f.city||f.paymentMethod)||f.kind!=='MOVEMENTS'&&f.movementType||f.kind==='MOVEMENTS'&&(f.minCents!==null||f.maxCents!==null))reportInvalid();
- if(f.cpf){try{f.cpf=normalizeCpf(f.cpf);}catch{reportInvalid();}}if(f.isbn){try{f.isbn=normalizedIsbn(f.isbn);}catch{reportInvalid();}}return f;
+ if(f.cpf){try{f.cpf=normalizeCpf(f.cpf);}catch{reportInvalid('cpf');}}if(f.isbn){try{f.isbn=normalizedIsbn(f.isbn);}catch{reportInvalid('isbn');}}return f;
 }
 export function reportSourceFilters(f,vault){const {cpf,city,...rest}=f;return {...rest,cpfIndex:cpf?vault.index('customer.cpf',cpf):''};}
 export function reportProductMatches(p,f,title=''){return (!f.productId||p.id===f.productId)&&(!f.query||reportFold(p.title+' '+title).includes(reportFold(f.query)))&&(!f.isbn||p.isbn===f.isbn)&&['author','publisher','supplier','category'].every(k=>!f[k]||reportFold(p[k]).includes(reportFold(f[k])))&&(!f.nicheId||p.nicheIds.includes(f.nicheId))&&(f.activity==='ALL'||p.active===(f.activity==='ACTIVE'))&&(f.stock==='ALL'||f.stock==='ZERO'&&p.stock===0||f.stock==='LOW'&&p.stock>0&&p.stock<=p.minimumStock||f.stock==='POSITIVE'&&p.stock>0);}

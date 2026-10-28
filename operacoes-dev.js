@@ -10,9 +10,9 @@
   const online = () => navigator.onLine !== false;
   const recent = at => performance.now() - at < 90000;
   const fresh = () => ready && online() && accessValid && recent(checkedAt);
-  function describe(error) {
+  function describe(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     if(error.code==='OFFLINE')return 'Sem conexão. Mantenha esta aba aberta e confira novamente ao reconectar.';
-    if(error.status===401)return 'Confirme novamente seu acesso com PIN e passkey para continuar.';
+    if(error.status===401)return 'Confirme novamente seu acesso com PIN e confirmação pelo aparelho para continuar.';
     if(error.status===403)return 'Seu perfil não permite esta operação.';
     if(error.code?.includes('CONFLICT')||error.code?.includes('NO_CHANGE'))return 'O registro mudou ou a operação já foi realizada. Atualize a consulta e confira o resultado.';
     if(error.code?.includes('NOT_ACTIVATED')||error.code?.includes('UNAVAILABLE'))return 'Este módulo ainda não está disponível nesta instalação.';
@@ -54,7 +54,7 @@
     try {
       const response=await fetch(path,{credentials:'same-origin',cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify(body)}:{})});
       const out=await response.json();
-      if(!response.ok)throw Object.assign(Error('OPERATION_FAILED'),{status:response.status,code:out.error?.code});
+      if(!response.ok)throw Object.assign(Error('OPERATION_FAILED'),{status:response.status,code:out.error?.code,field:out.error?.field,readOnly:!body});
       return out.data;
     } catch(error) {
       if(error.status===401||error.status===403)accessValid=false;

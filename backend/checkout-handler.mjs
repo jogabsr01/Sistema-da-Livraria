@@ -25,7 +25,7 @@ export function createCheckoutHandler(dependencies = {}) {
       requireSameOriginMutation(request, ORIGIN);
       const principal = await sessions.authenticate(request);
       requirePermission(principal, 'sales.create');
-      requireCsrfToken(request, (await sessions.current(request)).csrfToken);
+      requireCsrfToken(request, sessions.csrfFor(request,principal));
       const reader = request.body?.getReader(); let content = '', size = 0;
       if (reader) {
         const decoder = new TextDecoder('utf-8', { fatal: true });

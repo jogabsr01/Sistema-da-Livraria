@@ -41,6 +41,7 @@ test("RPC budget supports observed slow reads and shrinks against one monotonic 
   clock = 56_000;
   await assert.rejects(client.ping(), { code: "UPSTREAM_TIMEOUT" });
   assert.equal(calls, 4);
+  assert.deepEqual(client.timings(),{calls:4,durationMs:48_000});
 });
 test("remaining request time is shared by POST and approved GET redirect", async (t) => {
   const s = ownerFixture(),

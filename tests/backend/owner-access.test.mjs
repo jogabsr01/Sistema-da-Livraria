@@ -69,15 +69,19 @@ test('activation delivers only to the private owner address; raw code, email and
   assert.equal(s.gas.outbox[0].body.includes('/acesso-dev.html'), true);
 });
 
-test('unknown account, repeated delivery within sixty seconds and MailApp failure return the same generic acceptance without an active proof', async () => {
-  const s = ownerFixture(), start = async email => s.service().execute('start', { email }, randomBytes(32).toString('base64url'), '192.0.2.1');
-  const unknown = await start('unknown@example.invalid'), known = await start(properties.OWNER_EMAIL), repeated = await start(properties.OWNER_EMAIL);
-  assert.deepEqual(unknown, known); assert.deepEqual(repeated, known); assert.equal(s.gas.outbox.length, 1);
-  for (const mode of ['failure', 'quota']) {
-    const f = ownerFixture(); if (mode === 'failure') f.gas.mailFailure = true; else f.gas.mailQuota = 0;
-    const token = randomBytes(32).toString('base64url');
-    assert.deepEqual(await f.service().execute('start', { email: properties.OWNER_EMAIL }, token, '192.0.2.2'), known);
-    assert.equal(f.gas.outbox.length, 0); await assert.rejects(f.service().execute('email', { code: randomBytes(32).toString('base64url') }, token, '192.0.2.2'), { code: 'WORKSPACE_ACCESS_REJECTED' });
+test('first access reports unknown email, recent delivery and mail failure without granting proof or session', async () => {
+  const s=ownerFixture(), start=email=>s.service().execute('start',{email},randomBytes(32).toString('base64url'),'192.0.2.1');
+  await assert.rejects(start('unknown@example.invalid'),{status:404,code:'ACCESS_EMAIL_NOT_REGISTERED'});
+  assert.equal((await start(properties.OWNER_EMAIL)).stage,'EMAIL');
+  await assert.rejects(start(properties.OWNER_EMAIL),{status:429,code:'AUTH_DELIVERY_RATE_LIMITED',retryAfterSeconds:60});
+  assert.equal(s.gas.outbox.length,1);
+  for(const mode of ['failure','quota']){
+    const f=ownerFixture();if(mode==='failure')f.gas.mailFailure=true;else f.gas.mailQuota=0;
+    const token=randomBytes(32).toString('base64url');
+    await assert.rejects(f.service().execute('start',{email:properties.OWNER_EMAIL},token,'192.0.2.2'),{status:503,code:'ACCESS_EMAIL_DELIVERY_UNAVAILABLE'});
+    assert.equal(f.gas.outbox.length,0);
+    await assert.rejects(f.service().execute('email',{code:randomBytes(32).toString('base64url')},token,'192.0.2.2'),{code:'WORKSPACE_ACCESS_REJECTED'});
+    assert.equal(f.main.getSheetByName('Sessoes').getLastRow(),1);
   }
 });
 
@@ -98,7 +102,7 @@ test('email verification is one-use, cookie-bound, expires in ten minutes and ne
 test('five wrong email codes revoke the proof and a PIN cannot be set before email confirmation', async () => {
   const s = ownerFixture(), token = randomBytes(32).toString('base64url'), service = s.service(), ip = '192.0.2.2';
   await service.execute('start', { email: properties.OWNER_EMAIL }, token, ip); const rawCode = code(s), hash = flowHash(s);
-  await assert.rejects(service.execute('pin', { pin: fakePin }, token, ip), { code: 'ACCESS_REJECTED' });
+  await assert.rejects(service.execute('pin', { pin: fakePin }, token, ip), { code: 'WORKSPACE_ACCESS_REJECTED' });
   // Storage-side five-attempt limit, independent of Node instances/IP limits.
   for (let i = 0; i < 5; i++) assert.equal((await s.client.access('email', { tokenHash: hash, codeHash: 'ff'.repeat(32) })).verified, false);
   await assert.rejects(service.execute('email', { code: rawCode }, token, ip), { code: 'WORKSPACE_ACCESS_REJECTED' });

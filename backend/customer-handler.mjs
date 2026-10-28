@@ -15,7 +15,7 @@ export function createCustomerHandler(dependencies={}){return async request=>{co
  const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['find','get','save','postal-code'].includes(op)||url.search)throw new ApiError(404,'NOT_FOUND');
  if(request.method!=='POST'){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow','POST');return r;}
  const settings=(dependencies.loadSettings||loadCustomerSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),vault=createPersonalDataVault(settings),sessions=createSessionService(settings,{client});
- requireSameOriginMutation(request,ORIGIN);const principal=await sessions.authenticate(request);requirePermission(principal,op==='save'?'customers.write':'customers.read');requireCsrfToken(request,(await sessions.current(request)).csrfToken);
+ requireSameOriginMutation(request,ORIGIN);const principal=await sessions.authenticate(request);requirePermission(principal,op==='save'?'customers.write':'customers.read');requireCsrfToken(request,sessions.csrfFor(request,principal));
  const actor={sessionTokenHash:principal.sessionTokenHash},reader=request.body?.getReader(),decoder=new TextDecoder('utf-8',{fatal:true});let text='',size=0;if(reader){try{while(true){const{value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>8000){await reader.cancel();throw new ApiError(413,'INVALID_CUSTOMER');}text+=decoder.decode(value,{stream:true});}text+=decoder.decode();}catch(e){if(e instanceof ApiError)throw e;customerInvalid();}}
  let p;try{p=JSON.parse(text);}catch{customerInvalid();}
  if(op==='postal-code'){

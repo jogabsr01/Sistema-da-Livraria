@@ -880,6 +880,15 @@ function onlineStatus() {
   $('pendingBadge').textContent = 'Pendentes: ' + state.queue.length;
 }
 
+function demoUserMessage(error) {
+  if (typeof error?.userMessage==='string') return error.userMessage;
+  if (error?.code==='DEMO_STORAGE_FAILED') return 'Não foi possível salvar: o armazenamento deste navegador está indisponível ou cheio. Mantenha o formulário aberto e tente novamente.';
+  if (error?.code==='DEMO_NOT_READY') return 'A demonstração não ficou pronta. Recarregue a página. Se continuar, peça ajuda à administração.';
+  if (error?.name==='AbortError') return 'A consulta demorou mais que o esperado. Aguarde alguns instantes e tente novamente.';
+  if (['A capa não carregou. Escolha outra imagem ou remova o link para salvar sem capa.','Endereço HTTPS obrigatório.'].includes(error?.message)) return error.message;
+  return 'Não foi possível concluir esta ação. Confira os dados e tente novamente. Se continuar, peça ajuda à administração.';
+}
+
 /* =========================== API (RPC) ================================ */
 const Api = {
   call(action,payload={}) {
@@ -889,10 +898,10 @@ const Api = {
       if (typeof DemoRPC === 'undefined') {const e=new Error('A demonstração local não inicializou. Copie o diagnóstico para verificar a falha.');e.code='DEMO_NOT_READY';reject(e);return;}
       DemoRPC.withSuccessHandler(res=>{
         if (!res || !res.ok) {
-          const e=new Error(res?.error || 'Erro do servidor.'); e.code=res?.code || 'INTERNAL'; reject(e);
+          const e=new Error('DEMO_REQUEST_FAILED'); e.code=res?.code || 'INTERNAL'; if(['VALIDATION','DUPLICATE','NOT_FOUND','PRICE_CHANGED','INSUFFICIENT_STOCK'].includes(e.code)&&typeof res.error==='string'&&res.error.length<=500)e.userMessage=res.error; reject(e);
         } else resolve(res.data);
       }).withFailureHandler(err=>{
-        const e=new Error(err?.message || 'Não foi possível comunicar com o servidor.');
+        const e=new Error('Não foi possível comunicar com o serviço. Aguarde alguns instantes e tente novamente.');e.userMessage='Não foi possível comunicar com o serviço. Aguarde alguns instantes e tente novamente.';
         e.code='NETWORK';reject(e);
       }).api(action,payload,state.pin);
     });
@@ -1191,7 +1200,7 @@ const UI = {
       toast('Sistema pronto para atendimento.');
       if (state.queue.length) Sync.run();
     } catch(e){
-      state.pin='';$('loginError').textContent=e.message;
+      state.pin='';$('loginError').textContent=demoUserMessage(e);
     } finally {btn.disabled=false;btn.textContent='Entrar no sistema';}
   },
   logout(){
@@ -1214,7 +1223,7 @@ const UI = {
   },
   clearNicho(){state.catalogNicho='';View.render();},
   openPending(){if(state.data) View.modalPending();else toast('Desbloqueie o sistema para sincronizar.','warn');},
-  async refresh(){try{await Api.refresh();toast('Dados atualizados.');}catch(e){toast(e.message,'error');}},
+  async refresh(){try{await Api.refresh();toast('Dados atualizados.');}catch(e){toast(demoUserMessage(e),'error');}},
   search(value,target){
     if(target==='inventory')state.inventorySearch=value;
     else if(target==='catalog')state.catalogSearch=value;
@@ -1284,7 +1293,7 @@ const UI = {
       state.busy=false; // A consulta bibliográfica é cancelável e não bloqueia o formulário.
       if(found)View.modalStock(found,isbn,false);
       else await this.openAutofillForm(isbn);
-    }catch(e){toast('Não foi possível consultar o código. Tente novamente: '+e.message,'error');}
+    }catch(e){toast('Não foi possível consultar o código. Tente novamente: '+demoUserMessage(e),'error');}
     finally {state.busy=false;}
   },
   async openAutofillForm(isbn){
@@ -1426,7 +1435,7 @@ const UI = {
       const hint=$('stockCoverHint');
       if(hint)hint.textContent='Foto da capa preparada. Confira a imagem e salve o cadastro para mantê-la.';
       toast('Foto da capa adicionada. Confira a prévia antes de salvar.');
-    }catch(e){toast('Não foi possível usar esta foto: '+e.message,'error');}
+    }catch(e){toast('Não foi possível usar esta foto: '+demoUserMessage(e),'error');}
     finally{URL.revokeObjectURL(tempUrl);}
   },
   async coverInput(value){
@@ -1502,7 +1511,7 @@ const UI = {
     try{
       await Api.call('updateProductNiches',{isbn:ev.target.elements.isbn.value,nichos});
       View.closeModal(true);await Api.refresh();toast('Nichos do livro atualizados.');
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   async scan(code,mode){
@@ -1547,7 +1556,7 @@ const UI = {
       }
       const input=$(mode==='estoque'?'stockBarcode':mode==='catalogo'?'catalogSearch':'barcode');
       if(input && mode!=='catalogo'){input.value='';input.focus();}
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
   },
   scanner(mode){
     let url=String(readStore(KEYS.scanner,'')||'').trim();
@@ -1563,7 +1572,7 @@ const UI = {
       if(!windowRef){toast('Permita pop-ups para abrir o leitor da câmera.','warn');return;}
       state.scannerWindow=windowRef;state.scannerNonce=nonce;state.scannerOrigin=parsed.origin;
       toast('Leitor aberto em outra guia.');
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
   },
   saveScanner(ev,mode){
     ev.preventDefault();
@@ -1610,7 +1619,7 @@ const UI = {
           toast('Livro cadastrado e adicionado ao carrinho.');
         }else toast('Livro cadastrado e estoque atualizado.');
       }catch(_){toast('Cadastro salvo; atualize o catálogo quando houver conexão.','warn');}
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   async metadataSubmit(ev){
@@ -1633,7 +1642,7 @@ const UI = {
       View.closeModal(true);
       await Api.refresh();
       toast('Dados editoriais atualizados.');
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   async stockAdd(ev){
@@ -1644,7 +1653,7 @@ const UI = {
     try {
       await Api.call('addStock',p);View.closeModal(true);toast('Entrada de estoque registrada.');
       try{await Api.refresh();}catch(_){toast('Entrada salva; atualize o estoque quando houver conexão.','warn');}
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   stockSearchEnter(ev){if(ev.key==='Enter'){ev.preventDefault();this.scan(ev.target.value,'estoque');}},
@@ -1724,7 +1733,7 @@ const UI = {
         form.elements.nome.focus();
       }
     }catch(e){
-      info.className='cpf-feedback error'; info.textContent=e.message||'Não foi possível consultar o CPF.';
+      info.className='cpf-feedback error'; info.textContent=demoUserMessage(e)||'Não foi possível consultar o CPF.';
     }finally{if(button)button.disabled=false;}
   },
   async checkout(ev) {
@@ -1781,7 +1790,7 @@ const UI = {
         state.queue=state.queue.filter(q=>q.payload.idVenda!==payload.idVenda);
         queueSave();onlineStatus();
         if(e.code==='PRICE_CHANGED') {try{await Api.refresh();}catch(_){}}
-        toast(e.message,'error');
+        toast(demoUserMessage(e),'error');
       }else{
         // Timeout ou falha depois de persistir remotamente: status incerto.
         // Reenvio com o MESMO ID evita cobrar/baixar duas vezes.
@@ -1847,11 +1856,11 @@ const Sync = {
         success++;
       }catch(e){
         if(e.code==='INSUFFICIENT_STOCK' || e.code==='PRICE_CHANGED' || e.code==='VALIDATION' || e.code==='NOT_FOUND'){
-          item.status='revisar';item.error=e.message;queueSave();blocked++;
+          item.status='revisar';item.error=demoUserMessage(e);queueSave();blocked++;
           continue;
         }
         // Credenciais, rede e erro incerto: não apagar registro pendente.
-        item.status='aguardando';item.error=e.message;queueSave();break;
+        item.status='aguardando';item.error=demoUserMessage(e);queueSave();break;
       }
     }
     state.syncing=false;onlineStatus();
@@ -2794,7 +2803,7 @@ const ReportUI={
       state.tab='dashboard'; View.render();toast('Área administrativa de demonstração liberada.');
     }catch(e){
       window.DemoAdminSession.active=false;
-      toast('Falha ao carregar os dados: '+e.message,'error');
+      toast('Falha ao carregar os dados: '+demoUserMessage(e),'error');
     }
   },
   async lock(){
@@ -3145,7 +3154,7 @@ const ReportUI={
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(url),12000);
       toast('Arquivo Excel exportado. Contém os filtros aplicados.');
-    }catch(e){toast('Falha ao gerar Excel: '+e.message,'error');}
+    }catch(e){toast('Falha ao gerar Excel: '+demoUserMessage(e),'error');}
   }
 };
 const ExcelLite={

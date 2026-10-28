@@ -25,7 +25,7 @@ export function createNotificationHandler(dependencies = {}) {
       if (mutation) requireSameOriginMutation(request, ORIGIN);
       const principal = await sessions.authenticate(request);
       requirePermission(principal, operation === 'report' ? 'reports.read' : operation === 'state' ? 'notifications.manage' : 'notifications.self.read');
-      if (mutation) requireCsrfToken(request, (await sessions.current(request)).csrfToken);
+      if (mutation) requireCsrfToken(request, sessions.csrfFor(request,principal));
       let payload = {};
       if (operation === 'list') {
         if ([...url.searchParams.keys()].some(k => !['offset', 'history'].includes(k) || url.searchParams.getAll(k).length !== 1)) throw new ApiError(400, 'INVALID_NOTIFICATION');

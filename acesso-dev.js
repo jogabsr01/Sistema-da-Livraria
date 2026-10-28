@@ -18,16 +18,23 @@
   function unavailable(code) { const error = new Error('ACCESS_FAILED'); error.code = code; return error; }
   let csrfToken = '', busy = false, sessionCsrf = '', pendingResponse = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
   const panels = ['initial', 'email-form', 'pin-form', 'passkey', 'retry', 'complete'];
+  function feedbackIn(id) {
+    const target = $(id), feedback = $('access-feedback');
+    if (!target || !feedback || target.contains(feedback)) return;
+    const heading = target.querySelector('h2');
+    if (heading) heading.after(feedback); else target.prepend(feedback);
+  }
   function show(stage) {
     const panel = { INITIAL: 'initial', EMAIL: 'email-form', PIN: 'pin-form', PASSKEY: 'passkey', COMMITTING: 'retry', COMPLETE: 'complete' }[stage];
     panels.forEach(id => { $(id).hidden = id !== panel; });
+    if (panel) feedbackIn(panel === 'initial' ? 'login-form' : panel);
     if(stage!=='COMPLETE')$('identity-result').textContent='';
     $('rescue-choice').hidden=stage!=='PIN'||!recoveryFlow||!emergencyEnabled;
     if(stage==='PIN'&&replacementReady){$('use-rescue').checked=true;$('rescue-inputs').hidden=false;$('rescue-status').textContent='Código já validado nesta tentativa. Defina seu PIN novo.';}
     $('restart').hidden = !panel || ['initial', 'complete'].includes(panel);
   }
   const uncertainCodes = new Set(['ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
-  function describe(error) {
+  function describe(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common && !uncertainCodes.has(error.code)) return common;
     const code = error.code || '';
     if (uncertainCodes.has(code) && ['state','session'].includes(error.transport?.operation)) return 'Não conseguimos carregar seu acesso agora. Aguarde alguns instantes e clique em “Tentar carregar novamente”. Se continuar, peça ajuda à administração.';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
@@ -79,8 +86,9 @@
     if(result.data.recoveryEnabled!==undefined)$('recovery-choice').hidden=!result.data.recoveryEnabled;
     return result.data;
   }
-  async function run(action) {
+  async function run(action, scope) {
     if (busy) return;
+    if (scope) feedbackIn(scope);
     accessPhase = 'ACCESS';
     actionRevision++;
     maskPins();
@@ -127,7 +135,7 @@
       clearFieldError(field); if (!busy) { $('status').hidden = true; $('status').textContent = ''; }
     }
   }));
-  function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); if (!busy && validateAccessForm(id)) run(action); }); }
+  function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); if (busy) return; feedbackIn(id); if (validateAccessForm(id)) run(action, id); }); }
   function clearSecrets() { ['login-email','login-pin','activation-email','recovery-email'].forEach(clearFieldError); maskPins(); ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
   function maskPins() {
     document.querySelectorAll('[data-pin-target]').forEach(button => {
@@ -172,7 +180,8 @@
     if (state.stage === 'COMPLETE' && await current()) return;
     message({ INITIAL: 'Escolha como deseja acessar sua conta.', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PIN: 'E-mail confirmado. Crie seu PIN para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Clique em “Confirmar no meu aparelho” para continuar.' }[state.stage] || 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
   }));
-  $('recovery-open').addEventListener('click',()=>{$('recovery-form').hidden=!$('recovery-form').hidden;});
+  $('recovery-open').addEventListener('click',()=>{if(busy)return;$('recovery-form').hidden=!$('recovery-form').hidden;if(!$('recovery-form').hidden){feedbackIn('recovery-form');$('status').hidden=true;}});
+  $('first-access-box').addEventListener('toggle',()=>{if(!busy&&$('first-access-box').open){feedbackIn('start-form');$('status').hidden=true;}});
   submit('recovery-form',async()=>{const data=await api('recover',{email:$('recovery-email').value});clearSecrets();show(data.stage);message(data.message);});
   submit('start-form', async () => {
     const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);

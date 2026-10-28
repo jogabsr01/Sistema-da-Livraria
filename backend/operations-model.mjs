@@ -1,11 +1,11 @@
-import { ApiError } from './errors.mjs';
+import { ApiError,invalidInput } from './errors.mjs';
 import { catalogUuid } from './catalog-model.mjs';
-const invalid=()=>{throw new ApiError(400,'INVALID_OPERATION');};
+const invalid=field=>invalidInput('INVALID_OPERATION',field);
 export function normalizeOperation(operation,p){
  const keys=operation==='adjust'?['commandId','expectedVersion','id','newStock','reason']:['commandId','reason','saleId'];
  if(!p||typeof p!=='object'||Array.isArray(p)||Object.keys(p).sort().join()!==keys.sort().join()||!catalogUuid(p.commandId)||!catalogUuid(operation==='adjust'?p.id:p.saleId)||typeof p.reason!=='string')invalid();
- const reason=p.reason.normalize('NFC').trim();if(!reason||reason.length>300||/[\x00-\x1f\x7f]/.test(reason)||/^[=+@-]/.test(reason))invalid();
- if(operation==='adjust'){if(!Number.isSafeInteger(p.expectedVersion)||p.expectedVersion<1||p.expectedVersion>=1000000000||!Number.isSafeInteger(p.newStock)||p.newStock<0||p.newStock>1000000)invalid();return {commandId:p.commandId,id:p.id,expectedVersion:p.expectedVersion,newStock:p.newStock,reason};}
+ const reason=p.reason.normalize('NFC').trim();if(!reason||reason.length>300||/[\x00-\x1f\x7f]/.test(reason)||/^[=+@-]/.test(reason))invalid('reason');
+ if(operation==='adjust'){if(!Number.isSafeInteger(p.expectedVersion)||p.expectedVersion<1||p.expectedVersion>=1000000000)invalid();if(!Number.isSafeInteger(p.newStock)||p.newStock<0||p.newStock>1000000)invalid('newStock');return {commandId:p.commandId,id:p.id,expectedVersion:p.expectedVersion,newStock:p.newStock,reason};}
  if(operation!=='reverse')invalid();return {commandId:p.commandId,saleId:p.saleId,reason};
 }
 export function validateOperationData(operation,data,payload){
