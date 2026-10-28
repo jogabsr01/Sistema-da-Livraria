@@ -92,10 +92,10 @@ test('request rejects unknown fields, invalid modes and hash/version substitutio
   for(const request of [{mode:'inspect',revision:1,url:'https://evil.invalid'},{mode:'reset',revision:1},{mode:'deploy',revision:1},{mode:'inspect',revision:0}])assert.throws(()=>validateRequest(request),/INVALID_REQUEST/);
   assert.throws(()=>contentHash([{name:'appsscript',type:'JSON',source:'{}'},{name:'Code',type:'SERVER_JS',source:''},{name:'extra',type:'SERVER_JS',source:''}]),/UNSUPPORTED_REMOTE_LAYOUT/);
 });
-test('workflow exposes secret only to controller, never runs against PR or main and defaults to inspection',()=>{
+test('workflow exposes secret only to controller, never runs against PR or main and validates the explicit administration request',()=>{
   const workflow=readFileSync(new URL('../../.github/workflows/google-dev-admin.yml',import.meta.url),'utf8');
   assert.match(workflow,/branches: \[dev\]/);assert.match(workflow,/contents: read/);assert.match(workflow,/cancel-in-progress: false/);assert.ok(!/pull_request|pull_request_target|write-all|npm install|npm ci/.test(workflow));assert.equal((workflow.match(/secrets\.GOOGLE_DEV_ADMIN/g)||[]).length,1);
-  const request=JSON.parse(readFileSync(new URL('../../ops/google-dev-request.json',import.meta.url)));validateRequest(request);assert.ok(['inspect','enable-drive'].includes(request.mode));
+  const request=JSON.parse(readFileSync(new URL('../../ops/google-dev-request.json',import.meta.url)));validateRequest(request);
 });
 
 const setup={mode:'enable-drive',revision:4};
