@@ -238,3 +238,41 @@ test('PIN enrollment API rejects adjacent repeats without advancing or granting 
   assert.equal(accepted.response.status, 200);
   assert.equal(accepted.data.data.stage, 'PASSKEY');
 });
+
+test('expired pre-auth cookie is distinguished from credentials before any Google command or mail delivery',async()=>{
+ const s=ownerFixture();let calls=0;
+ const original=s.gas.post;s.gas.post=(...args)=>{calls++;return original(...args);};
+ const response=await call(s,'start',{body:{email:properties.OWNER_EMAIL},csrfToken:'stale'});
+ assert.equal(response.response.status,401);
+ assert.equal(response.data.error.code,'ACCESS_CONTEXT_EXPIRED');
+ assert.equal(calls,0);assert.equal(s.gas.outbox.length,0);
+});
+
+test('invalid or duplicate access cookies fail before commands while origin and CSRF remain mandatory',async()=>{
+ const s=ownerFixture();let calls=0;
+ const original=s.gas.post;s.gas.post=(...args)=>{calls++;return original(...args);};
+ const t=randomBytes(32).toString('base64url'),csrf=s.service().csrf(t);
+ for(const cookie of ['',ACCESS_COOKIE+'=invalid',ACCESS_COOKIE+'='+t+'; '+ACCESS_COOKIE+'='+t]){
+  for(const operation of ['start','login','recover','email','pin','options','complete']){
+   const r=await call(s,operation,{headers:{cookie},csrfToken:csrf});
+   assert.equal(r.response.status,401);assert.equal(r.data.error.code,'ACCESS_CONTEXT_EXPIRED');
+   assert.equal(r.response.headers.get('set-cookie'),null);
+  }
+ }
+ assert.equal((await call(s,'start',{headers:{origin:'https://evil.invalid'}})).response.status,403);
+ const mismatch=await call(s,'start',{token:t,csrfToken:'invalid'});
+ assert.equal(mismatch.response.status,403);assert.equal(mismatch.data.error.code,'CSRF_REJECTED');
+ assert.equal(calls,0);assert.equal(s.gas.outbox.length,0);
+});
+test('fresh context after a preflight rejection still requires its new CSRF and delivers exactly one code',async()=>{
+ const s=ownerFixture();let calls=0;
+ const original=s.gas.post;s.gas.post=(...args)=>{calls++;return original(...args);};
+ assert.equal((await call(s,'start',{body:{email:properties.OWNER_EMAIL}})).data.error.code,'ACCESS_CONTEXT_EXPIRED');
+ const state=await call(s,'state',{method:'GET'});
+ assert.equal(calls,0);assert.equal(state.data.data.stage,'INITIAL');
+ const cookie=state.response.headers.get('set-cookie'),token=cookie.split('=')[1].split(';')[0];
+ assert.match(cookie,/Secure; HttpOnly; SameSite=Strict; Max-Age=600/);
+ const r=await call(s,'start',{body:{email:properties.OWNER_EMAIL},token,csrfToken:state.data.data.csrfToken});
+ assert.equal(r.response.status,202);assert.equal(calls,1);
+ assert.equal(s.gas.outbox.length,1);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
+});

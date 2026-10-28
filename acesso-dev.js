@@ -5,7 +5,7 @@
   let pendingMessage = null;
   const message = (text, tone = 'info') => { if (busy) { pendingMessage = { text, tone }; return; } $('status').textContent = text; $('status').dataset.tone = tone; $('status').hidden = false; };
   let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
-  const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID']);
+  const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
@@ -56,7 +56,11 @@
     if (code === 'DEVICE_ALREADY_REGISTERED') return 'Este aparelho já possui uma chave de acesso para a conta. Volte ao início e tente entrar com seu CPF ou e-mail e PIN.';
     if (code === 'DEVICE_ABORTED') return 'A confirmação do aparelho foi interrompida. Tente novamente.';
     if (code === 'DEVICE_RESPONSE_INVALID') return 'O aparelho não retornou a confirmação. Tente novamente.';
+    if (code === 'ACCESS_CONTEXT_EXPIRED') return ['start','login','recover'].includes(error.transport?.operation) ? 'Não conseguimos renovar sua tentativa de acesso. Atualize a página e tente novamente.' : 'Sua tentativa de acesso expirou. Volte ao início e solicite um novo código.';
+    if (code === 'ACCESS_CONTEXT_CHANGED') return 'A tentativa de acesso foi atualizada. Recarregue a página para continuar.';
     if (code.includes('REJECTED')) {
+      if (error.transport?.operation === 'start') return 'Não foi possível iniciar seu acesso. Atualize a página e tente novamente.';
+      if (error.transport?.operation === 'recover') return 'Não foi possível iniciar a recuperação. Atualize a página e tente novamente.';
       if (!$('email-form').hidden) return 'Não foi possível validar o código. Confira se copiou o código completo do e-mail mais recente. Ele vale por 10 minutos. Se venceu, volte ao início para solicitar outro.';
       if (!$('initial').hidden) return 'Não foi possível entrar com os dados informados. Confira o CPF ou e-mail e o PIN. Se ainda não cadastrou seu acesso, escolha “É meu primeiro acesso”.';
       return 'Não foi possível confirmar sua identidade nesta tentativa. Volte ao início para entrar novamente. Se o problema continuar, peça ajuda à administração.';
@@ -82,10 +86,19 @@
       return {response, result, failure};
     } finally { clearTimeout(timer); }
   }
-  async function api(operation, body) {
+  async function api(operation, body, canRenew = true) {
     const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
       headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) });
-    if (!response.ok) throw failure(typeof result?.error?.code === 'string' ? result.error.code : 'ACCESS_RESPONSE_INVALID');
+    if (!response.ok) {
+      // Renew only a server-confirmed preflight rejection: no command ran.
+      // Never replay a timeout, invalid response, PIN/code guess or ceremony.
+      if (canRenew && response.status === 401 && result?.error?.code === 'ACCESS_CONTEXT_EXPIRED' && ['start','login','recover'].includes(operation)) {
+        const fresh = await api('state', undefined, false);
+        if (fresh.stage !== 'INITIAL') throw failure('ACCESS_CONTEXT_CHANGED');
+        return api(operation, body, false);
+      }
+      throw failure(typeof result?.error?.code === 'string' ? result.error.code : 'ACCESS_RESPONSE_INVALID');
+    }
     if (!result?.data || typeof result.data.csrfToken !== 'string') throw failure('ACCESS_RESPONSE_INVALID');
     if (result.data.csrfToken) csrfToken = result.data.csrfToken;
     if(operation==='recover'){recoveryFlow=true;replacementReady=false;$('use-rescue').checked=false;$('rescue-status').textContent='';$('rescue-inputs').hidden=true;}if(operation==='start'||operation==='login'){recoveryFlow=false;replacementReady=false;}if(result.data.purpose)recoveryFlow=result.data.purpose==='RECOVER';if(result.data.replacementAllowed!==undefined)replacementReady=result.data.replacementAllowed===true;if(result.data.emergencyRecoveryEnabled!==undefined)emergencyEnabled=result.data.emergencyRecoveryEnabled;

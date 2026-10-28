@@ -213,7 +213,11 @@ export function createOwnerAccessHandler(dependencies = {}) {
         const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId });
         if (fresh) result.headers.set('set-cookie', accessCookie(token)); return timed(result);
       }
-      requireSameOriginMutation(request, ACCESS_ORIGIN); token = readCookie(request);
+      requireSameOriginMutation(request, ACCESS_ORIGIN);
+      // A missing/expired/invalid pre-auth cookie is not a rejected account or
+      // PIN. This code is emitted only before body parsing, guard/KDF or RPC.
+      try { token = readCookie(request); }
+      catch { throw new ApiError(401, 'ACCESS_CONTEXT_EXPIRED'); }
       requireCsrfToken(request, service.csrf(token));
       const declared = request.headers.get('content-length');
       if (declared && (!/^\d+$/.test(declared) || Number(declared) > 20000)) throw new ApiError(413, 'INVALID_AUTH_REQUEST');
