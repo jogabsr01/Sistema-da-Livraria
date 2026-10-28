@@ -7,7 +7,7 @@ import { catalogUuid } from './catalog-model.mjs';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
 import { loadLoginGuardSettings, createLoginGuard } from './login-guard.mjs';
-import { loadPasskeySettings, createPasskeyService, preparedAccessOptions } from './passkey-service.mjs';
+import { loadPasskeySettings, createPasskeyService, preparedAccessOptions, validatePasskeyResponse } from './passkey-service.mjs';
 import { createPinHasher, createSessionTokens } from './credential-core.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
@@ -60,7 +60,7 @@ function readCookie(request) {
   if (found.length !== 1 || !canonical(found[0].slice(ACCESS_COOKIE.length + 1))) rejected();
   return found[0].slice(ACCESS_COOKIE.length + 1);
 }
-export function createOwnerAccessService(settings, { client }) {
+export function createOwnerAccessService(settings, { client, stagedCompletion = false }) {
   const { config, guardKey, tokenKey, pepper } = settings;
   if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   const vault=settings.cpfEnabled||settings.staffEnabled?createPersonalDataVault(settings):null;
@@ -94,10 +94,47 @@ export function createOwnerAccessService(settings, { client }) {
   // Fixed fake record still performs the same KDF for unknown account/wrong PIN.
   const dummy = { version: 1, algorithm: 'scrypt-N32768-r8-p1', salt: '00'.repeat(32), hash: '00'.repeat(32) };
   async function read(token) { return client.access('read', { tokenHash: hash(token) }); }
+  function completedOutput(flow, value, rawToken) {
+    const principal=validateSessionPrincipal(value);
+    if(principal.id!==flow.subjectId||principal.sessionId!==flow.flowId||principal.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role)||principal.assurance!=='passkey')rejected();
+    const sessionCsrfToken=createHmac('sha256',tokenKey).update(JSON.stringify(['csrf.v1',config.environment,config.installationId,rawToken])).digest('base64url');
+    return {stage:'COMPLETE',user:{role:principal.role,assurance:principal.assurance},cookie:sessionCookie(rawToken),sessionCsrfToken};
+  }
+  async function completePrepared(input,token,ip) {
+    const response=input.response;
+    const hasResponse=response!==null&&response!==undefined&&!(typeof response==='object'&&!Array.isArray(response)&&Object.keys(response).length===0);
+    let handleSubjectId='';
+    if(hasResponse){
+      validatePasskeyResponse(response);
+      const handle=response.response?.userHandle;
+      if(handle!==null&&handle!==undefined){
+        if(typeof handle!=='string'||Buffer.from(handle,'base64url').toString('base64url')!==handle)rejected();
+        handleSubjectId=Buffer.from(handle,'base64url').toString('utf8');if(!catalogUuid(handleSubjectId))rejected();
+      }
+    }
+    const rawToken=digest('access.session.v1',token,'base64url',tokenKey),sessionTokenHash=tokens.hash(rawToken);
+    const prepared=await client.prepareAccessCompletion({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token),sessionTokenHash,credentialId:hasResponse&&typeof response.id==='string'?response.id:'',hasResponse,allowReplacement:settings.emergencyRecoveryEnabled===true,handleSubjectId});
+    const flow=prepared.flow;
+    if(prepared.done)return completedOutput(flow,prepared.principal,rawToken);
+    const user={subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion};
+    const provider=createPasskeyService(settings,{client:{...client,
+      takePasskey:async supplied=>{
+        if(supplied.subjectId!==flow.subjectId||supplied.authorizationVersion!==flow.authorizationVersion||supplied.ceremonyId!==flow.ceremonyId||supplied.credentialId!==(flow.purpose==='ACTIVATE'||flow.replacementAllowed?'':response.id))rejected();
+        return prepared.ceremony;
+      },
+      ...(flow.replacementAllowed?{registerPasskey:({ceremonyId,credentialId,publicKey,counter,transports})=>client.access('rescueKey',{tokenHash:hash(token),sessionTokenHash,ceremonyId,credentialId,publicKey,counter,transports})}:{})
+    }});
+    await provider[flow.purpose==='ACTIVATE'||flow.replacementAllowed?'verifyRegistration':'verifyAuthentication']({...user,ceremonyId:flow.ceremonyId},response);
+    // Positive acknowledgement only: proof is durable, but no session/cookie is
+    // granted until a subsequent authoritative commit succeeds.
+    if(stagedCompletion)return {stage:'COMMITTING',proofSaved:true};
+    return completedOutput(flow,await client.access('commit',{tokenHash:hash(token),sessionTokenHash}),rawToken);
+  }
+
   return {
     csrf,
     async state(token) {
-      try { const f=await read(token);return {stage:f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
+      try { const f=await read(token);return {stage:f.state==='PASSKEY'&&f.proofReady?'COMMITTING':f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
       catch (error) { if (error?.code === 'WORKSPACE_ACCESS_REJECTED') return { stage: 'INITIAL' }; throw error; }
     },
     async execute(operation, input, token, ip) {
@@ -126,6 +163,7 @@ export function createOwnerAccessService(settings, { client }) {
           allowReplacement: settings.emergencyRecoveryEnabled === true });
         return await preparedAccessOptions(prepared);
       }
+      if(operation==='complete'&&typeof client.prepareAccessCompletion==='function')return await completePrepared(input,token,ip);
       let completedRetry=false;if(operation==='complete'){try{const previous=await read(token);completedRetry=previous.state==='COMPLETE'&&previous.proofReady;}catch{}}
       // Releasing the same durable, cookie-bound grant is not another guess.
       if(!completedRetry&&!pinFlow)await guard.reserveAttempt({ identifier: ['start', 'login','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
@@ -178,7 +216,7 @@ export function createOwnerAccessService(settings, { client }) {
         const rawToken = digest('access.session.v1', token, 'base64url', tokenKey), tokenHash = tokens.hash(rawToken);
         const principal = validateSessionPrincipal(await client.access('commit', { tokenHash: hash(token), sessionTokenHash: tokenHash }));
         if (principal.id !== flow.subjectId || principal.sessionId !== flow.flowId || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role) || principal.assurance !== 'passkey') rejected();
-        return { stage: 'COMPLETE', user: { role: principal.role, assurance: principal.assurance }, cookie: sessionCookie(rawToken) };
+        return completedOutput(flow,principal,rawToken);
       }
       throw new ApiError(404, 'NOT_FOUND');
      } catch(error) {
@@ -190,9 +228,12 @@ export function createOwnerAccessService(settings, { client }) {
 }
 const shapes = { rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
 export const OWNER_ACCESS_BUDGET_MS = 55_000;
+export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
-    const requestId = randomUUID(), startedAt = performance.now(), deadlineAt = startedAt + OWNER_ACCESS_BUDGET_MS;
+    const requestId = randomUUID(), startedAt = performance.now();
+    const completionRequest=new URL(request.url).pathname.split('/').at(-1)==='complete'&&request.headers.get('x-access-completion-version')==='2';
+    const deadlineAt=startedAt+(completionRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
     let operation, settingsLoaded = false, client;
     const timed=response=>{const metrics=client?.timings?.();response.headers.set('server-timing',`app;dur=${Math.round(performance.now()-startedAt)}`+(metrics?`, google;dur=${metrics.durationMs}, rpc;desc="${metrics.calls}"`:''));return response;};
     try {
@@ -204,7 +245,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
       settingsLoaded = true;
       client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt });
-      const service = createOwnerAccessService(settings, { client });
+      const service = createOwnerAccessService(settings, { client, stagedCompletion:request.headers.get('x-access-completion-version')==='2' });
       let token;
       if (operation === 'state') {
         let fresh = false;
@@ -231,7 +272,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       // Rotate the flow bearer for every new request/login, after CSRF validation.
       if (['start', 'login','recover'].includes(operation)) token = randomBytes(32).toString('base64url');
       const output = await service.execute(operation, input, token, context.ip), { cookie, ...data } = output;
-      const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation) ? 202 : 200);
+      const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation)||data.stage==='COMMITTING' ? 202 : 200);
       if (cookie) {
         result.headers.append('set-cookie', cookie);
         result.headers.append('set-cookie', `${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);

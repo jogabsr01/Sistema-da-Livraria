@@ -71,3 +71,9 @@ test('combined completion honors the intentional recovery epoch increment and re
  const done=await s.client.prepareAccessCompletion(payload);assert.equal(done.done,true);assert.equal(done.principal.authorizationVersion,done.flow.authorizationVersion+1);
  assert.deepEqual((await s.client.prepareAccessCompletion(payload)).principal,done.principal);
 });
+
+test('out-of-order completion requests still consume the durable guessing budget before rejection',async()=>{
+ const s=await setup();s.row[s.cols.indexOf('State')]='PIN';s.row[s.cols.indexOf('Ceremony_ID')]='';let limited=false;
+ for(let i=0;i<8;i++)try{await s.client.prepareAccessCompletion(s.payload);assert.fail('early flow cannot complete');}catch(error){if(error.code==='AUTH_RATE_LIMITED'){limited=true;break;}assert.equal(error.code,'WORKSPACE_ACCESS_REJECTED');}
+ assert.equal(limited,true);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
+});
