@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {ownerFixture,injectAccessFault} from '../helpers/owner-access-fixture.mjs';
 import {properties} from './fixtures.mjs';
+import {enableRecovery} from '../helpers/recovery-fixture.mjs';
 import {createLoginGuard} from '../../backend/login-guard.mjs';
 async function setup(proof=false){
  const s=ownerFixture(),token=randomBytes(32).toString('base64url'),ip='192.0.2.164',svc=s.service();
@@ -60,4 +61,13 @@ test('a revoked verified key or changed owner epoch cannot release the stored pr
   if(mode==='disabled'){const u=s.main.getSheetByName('Usuarios');u.rows[1][u.rows[0].indexOf('Status')]='INATIVO';}
   await assert.rejects(s.client.prepareAccessCompletion(s.payload));assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
  }
+});
+
+test('combined completion honors the intentional recovery epoch increment and replays the same replacement session',async()=>{
+ const s=enableRecovery();await s.activateOwner();const pending=await s.pendingRecovery();s.proof();
+ const rows=s.priv.getSheetByName('_Identity_Flows'),cols=rows.rows[0],f=rows.rows.at(-1),tokenHash=f[cols.indexOf('Token_Hash')];
+ const keys=createLoginGuard(s.settings,{client:s.client}).attemptKeys({identifier:'flow:'+tokenHash,originAddress:pending.ip});
+ const payload={...keys,tokenHash,sessionTokenHash:randomBytes(32).toString('hex'),hasResponse:false,credentialId:'',handleSubjectId:'',allowReplacement:false};
+ const done=await s.client.prepareAccessCompletion(payload);assert.equal(done.done,true);assert.equal(done.principal.authorizationVersion,done.flow.authorizationVersion+1);
+ assert.deepEqual((await s.client.prepareAccessCompletion(payload)).principal,done.principal);
 });

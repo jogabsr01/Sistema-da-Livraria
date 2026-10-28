@@ -137,7 +137,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
           if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)untrusted();
           if(data.done){
             const p=data.principal;
-            if(!flow.proofReady||p?.id!==flow.subjectId||p.sessionId!==flow.flowId||p.authorizationVersion!==flow.authorizationVersion||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(p.role)||p.assurance!=='passkey'||!Number.isSafeInteger(p.authenticatedAt)||!Number.isSafeInteger(p.expiresAt))untrusted();
+            if(!flow.proofReady||p?.id!==flow.subjectId||p.sessionId!==flow.flowId||p.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(p.role)||p.assurance!=='passkey'||!Number.isSafeInteger(p.authenticatedAt)||!Number.isSafeInteger(p.expiresAt))untrusted();
             return {done:true,flow,principal:{id:p.id,sessionId:p.sessionId,authorizationVersion:p.authorizationVersion,role:p.role,assurance:p.assurance,authenticatedAt:p.authenticatedAt,expiresAt:p.expiresAt}};
           }
           const ceremony=data.ceremony,register=flow.purpose==='ACTIVATE'||flow.replacementAllowed;
