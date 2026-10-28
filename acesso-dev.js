@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
   const message = text => { $('status').textContent = text; };
   let accessPhase = 'STATE';
-  const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN']);
+  const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
@@ -25,16 +25,24 @@
   function describe(error) {
     const code = error.code || '';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE')) return 'O acesso verificado ainda não foi habilitado nesta instalação DEV. Confira a configuração com a administração.';
-    if (code === 'UPSTREAM_TIMEOUT') return 'O serviço demorou para responder. Aguarde alguns instantes e tente novamente.';
+    if (code === 'UPSTREAM_TIMEOUT' || code === 'ACCESS_REQUEST_TIMEOUT') return 'O serviço demorou para responder. Aguarde alguns instantes e tente novamente.';
     if (code === 'AUTH_RATE_LIMITED') return 'Muitas tentativas. Aguarde o prazo indicado e tente novamente.';
     if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') return 'A passkey não foi confirmada. Tente novamente e siga a janela do navegador; seu aparelho precisa oferecer uma passkey.';
     if (code.includes('REJECTED')) return 'Não foi possível confirmar os dados. Confira o código ou o PIN; se o prazo venceu, volte ao início.';
     return 'Não foi possível concluir agora. Confira a conexão e tente novamente.';
   }
   async function api(operation, body) {
-    let response; try { response = await fetch('/api/v1/access/' + operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-      headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) }); } catch { throw unavailable('ACCESS_NETWORK_UNAVAILABLE'); }
-    let result; try { result = await response.json(); } catch { throw unavailable('ACCESS_RESPONSE_INVALID'); }
+    // Bound both headers and body; a lost acknowledgement must not freeze the form.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    let response, result;
+    try {
+      try { response = await fetch('/api/v1/access/' + operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+        headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) }); }
+      catch { throw unavailable(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_NETWORK_UNAVAILABLE'); }
+      try { result = await response.json(); }
+      catch { throw unavailable(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
+    } finally { clearTimeout(timer); }
     if (!response.ok) throw unavailable(typeof result?.error?.code === 'string' ? result.error.code : 'ACCESS_RESPONSE_INVALID');
     if (!result?.data || typeof result.data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (result.data.csrfToken) csrfToken = result.data.csrfToken;
@@ -47,8 +55,9 @@
     accessPhase = 'ACCESS';
     busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
     const detail = document.getElementById('access-diagnostic'); if (detail) detail.hidden = true;
+    const slow = setTimeout(() => message('A confirmação está demorando. Aguarde; estamos conferindo a etapa salva.'), 8000);
     try { await action(); } catch (error) { diagnostic(error); message(describe(error)); }
-    finally { busy = false; document.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
+    finally { clearTimeout(slow); busy = false; document.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
   }
   function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); run(action); }); }
   function clearSecrets() { ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
@@ -86,15 +95,27 @@
     try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); show(data.stage); message('Confirme sua identidade com a passkey cadastrada.'); }
     finally { $('login-pin').value = ''; }
   });
+  async function saveAccessStep(operation, body, expectedStage) {
+    try { return await api(operation, body); }
+    catch (error) {
+      if (!['ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE'].includes(error.code)) throw error;
+      // Read once after an uncertain mutation. Never repeat a code/PIN guess,
+      // resend mail, or interpret a local expectation as a verified transition.
+      message('Conferindo se a etapa foi salva…');
+      let state; try { state = await api('state'); } catch { throw error; }
+      if (state.stage !== expectedStage) throw error;
+      return state;
+    }
+  }
   submit('email-form', async () => {
-    const data = await api('email', { code: $('email-code').value.trim() }); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina seu PIN novo.');
+    const data = await saveAccessStep('email', { code: $('email-code').value.trim() }, 'PIN'); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina seu PIN novo.');
   });
   $('use-rescue').addEventListener('change',()=>{$('rescue-inputs').hidden=!$('use-rescue').checked;});
   $('rescue-confirm').addEventListener('click',()=>run(async()=>{try{await api('rescue',{recoveryCode:$('rescue-code').value});$('rescue-status').textContent='Código confirmado. Defina um PIN novo e cadastre uma passkey nova.';}finally{$('rescue-code').value='';}}));
   submit('pin-form', async () => {
     if(recoveryFlow&&emergencyEnabled&&$('use-rescue').checked&&!replacementReady){message('Valide o código de recuperação antes de continuar.');return;}
     if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.'); return; }
-    try { const data = await api('pin', { pin: $('new-pin').value }); show(data.stage); message('Continue com a passkey para proteger sua conta.'); }
+    try { const data = await saveAccessStep('pin', { pin: $('new-pin').value }, 'PASSKEY'); show(data.stage); message('Continue com a passkey para proteger sua conta.'); }
     finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
   });
   $('passkey-button').addEventListener('click', () => run(async () => {
