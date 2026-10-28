@@ -15,8 +15,8 @@ export function contentHash(files) {
   return sha256(JSON.stringify(files.map(({name,type,source})=>({name,type,source})).sort((a,b)=>a.name.localeCompare(b.name,'en'))));
 }
 export function validateRequest(request) {
-  const keys = request?.mode === 'inspect' ? ['mode','revision'] : ['mode','revision','expectedEditorHash','expectedDeploymentVersion','candidateHash'];
-  if (!exact(request,keys) || !['inspect','deploy'].includes(request.mode) || !Number.isSafeInteger(request.revision) || request.revision < 1) fail('INVALID_REQUEST');
+  const keys = request?.mode === 'deploy' ? ['mode','revision','expectedEditorHash','expectedDeploymentVersion','candidateHash'] : ['mode','revision'];
+  if (!exact(request,keys) || !['inspect','deploy','enable-drive'].includes(request.mode) || !Number.isSafeInteger(request.revision) || request.revision < 1) fail('INVALID_REQUEST');
   if (request.mode === 'deploy' && (!hex(request.expectedEditorHash) || !hex(request.candidateHash) || !Number.isSafeInteger(request.expectedDeploymentVersion) || request.expectedDeploymentVersion < 1)) fail('INVALID_REQUEST');
 }
 function configuration(env,pins) {
@@ -40,7 +40,7 @@ export function safeTimings(entries) {
     return [result];
   });
 }
-export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,pins=TARGET_PINS}) {
+export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,pins=TARGET_PINS,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
   validateRequest(request);
   const config=configuration(env,pins);
   if (!config) return {state:'CONFIGURATION_REQUIRED',mode:request.mode};
@@ -59,6 +59,24 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
     body:new URLSearchParams({client_id:config.credentials.client_id,client_secret:config.credentials.client_secret,refresh_token:config.credentials.refresh_token,grant_type:'refresh_token'}).toString()
   },'OAUTH_REFRESH_FAILED');
   if (typeof token.access_token !== 'string' || !/^[\x21-\x7e]{10,10000}$/.test(token.access_token)) fail('OAUTH_REFRESH_FAILED');
+  if (request.mode === 'enable-drive') {
+    // Fixed service and project number, belonging to the pinned Cloud project.
+    // No caller-supplied service, billing, IAM, code or deployment changes.
+    const endpoint='https://serviceusage.googleapis.com/v1/projects/590183543759/services/drive.googleapis.com';
+    const headers={authorization:'Bearer '+token.access_token,'content-type':'application/json'};
+    const readState=async()=>{
+      const service=await requestJson(endpoint,{headers},'DRIVE_API_STATUS_UNAVAILABLE');
+      if(!['ENABLED','DISABLED'].includes(service.state))fail('DRIVE_API_STATUS_UNAVAILABLE');
+      return service.state;
+    };
+    if(await readState()==='ENABLED')return {state:'DRIVE_API_ENABLED',mode:request.mode};
+    await requestJson(endpoint+':enable',{method:'POST',headers,body:'{}'},'DRIVE_API_ENABLE_UNCONFIRMED');
+    for(let attempt=0;attempt<5;attempt++){
+      if(attempt)await wait(1000);
+      if(await readState()==='ENABLED')return {state:'DRIVE_API_ENABLED',mode:request.mode};
+    }
+    return {state:'DRIVE_API_ENABLE_PENDING',mode:request.mode};
+  }
   const api=(path,method='GET',body)=>requestJson('https://script.googleapis.com/v1/projects/'+encodeURIComponent(config.scriptId)+path,{
     method,headers:{authorization:'Bearer '+token.access_token,'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})
   });

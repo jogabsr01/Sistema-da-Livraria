@@ -12,7 +12,7 @@ function fixture() {
   const versions=new Map([[7,structuredClone(files)]]);
   let deployment={deploymentId:target.deploymentId,deploymentConfig:{scriptId:target.scriptId,versionNumber:7,manifestFileName:'appsscript',description:'keep-description'},entryPoints:[{entryPointType:'WEB_APP'}]};
   const calls=[];
-  const state={calls,versions,logs:{entries:[]},get files(){return files;},get deployment(){return deployment;},fault:null};
+  const state={calls,versions,logs:{entries:[]},driveStatus:'DISABLED',drivePending:false,get files(){return files;},get deployment(){return deployment;},fault:null};
   const fetchImpl=async(url,options)=>{
     const path=new URL(url).pathname,method=options.method||'GET';
     calls.push({url,path,method,body:options.body,redirect:options.redirect});
@@ -20,6 +20,8 @@ function fixture() {
     let value;
     if(path==='/token')value={access_token:'access-marker-123456789'};
     else if(path==='/v2/entries:list')value=state.logs;
+    else if(path==='/v1/projects/590183543759/services/drive.googleapis.com')value={state:state.driveStatus};
+    else if(path==='/v1/projects/590183543759/services/drive.googleapis.com:enable'){if(!state.drivePending)state.driveStatus='ENABLED';value={name:'private-operation-marker'};}
     else if(path.endsWith('/content') && method==='GET')value={files:structuredClone(new URL(url).searchParams.has('versionNumber')?versions.get(Number(new URL(url).searchParams.get('versionNumber'))):files)};
     else if(path.endsWith('/content') && method==='PUT'){files=JSON.parse(options.body).files;value={files};}
     else if(path.endsWith('/versions') && method==='POST'){const versionNumber=Math.max(...versions.keys())+1;versions.set(versionNumber,structuredClone(files));value={versionNumber};}
@@ -27,7 +29,7 @@ function fixture() {
     else throw Error('unexpected route with secret-marker');
     return {ok:true,text:async()=>JSON.stringify(value)};
   };
-  const run=request=>runAdmin({env,pins,source,fetchImpl,request});
+  const run=request=>runAdmin({env,pins,source,fetchImpl,request,wait:async()=>{}});
   const inspect=()=>run({mode:'inspect',revision:1});
   const deployRequest=report=>({mode:'deploy',revision:2,expectedEditorHash:report.editorHash,expectedDeploymentVersion:report.deploymentVersion,candidateHash:report.candidateHash});
   return {env,pins,state,run,inspect,deployRequest};
@@ -93,5 +95,27 @@ test('request rejects unknown fields, invalid modes and hash/version substitutio
 test('workflow exposes secret only to controller, never runs against PR or main and defaults to inspection',()=>{
   const workflow=readFileSync(new URL('../../.github/workflows/google-dev-admin.yml',import.meta.url),'utf8');
   assert.match(workflow,/branches: \[dev\]/);assert.match(workflow,/contents: read/);assert.match(workflow,/cancel-in-progress: false/);assert.ok(!/pull_request|pull_request_target|write-all|npm install|npm ci/.test(workflow));assert.equal((workflow.match(/secrets\.GOOGLE_DEV_ADMIN/g)||[]).length,1);
-  assert.equal(JSON.parse(readFileSync(new URL('../../ops/google-dev-request.json',import.meta.url))).mode,'inspect');
+  const request=JSON.parse(readFileSync(new URL('../../ops/google-dev-request.json',import.meta.url)));validateRequest(request);assert.ok(['inspect','enable-drive'].includes(request.mode));
+});
+
+const setup={mode:'enable-drive',revision:4};
+test('Drive setup enables only the fixed DEV API, reads back its state and never writes Apps Script or IAM',async()=>{
+  const f=fixture();const result=await f.run(setup);assert.deepEqual(result,{state:'DRIVE_API_ENABLED',mode:'enable-drive'});
+  const posts=f.state.calls.filter(c=>c.method==='POST'&&!c.path.endsWith('/token'));
+  assert.deepEqual(posts.map(c=>c.url),['https://serviceusage.googleapis.com/v1/projects/590183543759/services/drive.googleapis.com:enable']);
+  assert.equal(f.state.calls.some(c=>c.url.includes('script.googleapis.com')),false);
+  assert.ok(!/secret-marker|private-operation-marker/.test(JSON.stringify(result)));
+  f.state.calls.length=0;assert.equal((await f.run(setup)).state,'DRIVE_API_ENABLED');assert.equal(f.state.calls.filter(c=>c.path.endsWith(':enable')).length,0);
+});
+test('pending activation polls reads at most five times, returns pending honestly and never repeats enable POST',async()=>{
+  const f=fixture();f.state.drivePending=true;assert.equal((await f.run(setup)).state,'DRIVE_API_ENABLE_PENDING');
+  assert.equal(f.state.calls.filter(c=>c.path.endsWith(':enable')).length,1);assert.equal(f.state.calls.filter(c=>c.path.endsWith('drive.googleapis.com')).length,6);
+});
+test('Drive setup rejects scope substitution or non-DEV context before IO and reports uncertain enable without retry',async()=>{
+  const f=fixture();await assert.rejects(f.run({...setup,service:'other.googleapis.com'}),/INVALID_REQUEST/);assert.equal(f.state.calls.length,0);
+  f.env.GITHUB_REF='refs/heads/main';await assert.rejects(f.run(setup),/DEV_CONTEXT_REQUIRED/);assert.equal(f.state.calls.length,0);
+  const g=fixture();g.state.fault=({path})=>{if(path.endsWith(':enable'))throw Error('secret-marker');};await assert.rejects(g.run(setup),/DRIVE_API_ENABLE_UNCONFIRMED/);assert.equal(g.state.calls.filter(c=>c.path.endsWith(':enable')).length,1);
+});
+test('untrusted service state cannot claim enabled or trigger any mutation',async()=>{
+  const f=fixture();f.state.driveStatus='secret-marker';await assert.rejects(f.run(setup),/DRIVE_API_STATUS_UNAVAILABLE/);assert.equal(f.state.calls.filter(c=>c.path.endsWith(':enable')).length,0);
 });
