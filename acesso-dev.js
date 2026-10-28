@@ -32,7 +32,12 @@
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
     if (uncertainCodes.has(code) && error.transport?.operation === 'options') return 'Não conseguimos preparar a confirmação do aparelho agora. Aguarde alguns instantes e tente novamente em “Confirmar no meu aparelho”. Se continuar, peça ajuda à administração.';
     if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
-    if (code === 'INVALID_AUTH_REQUEST' || code === 'INVALID_CPF') return 'Confira se o CPF ou e-mail está completo e se o PIN tem quatro números. Corrija os campos antes de continuar.';
+    if (code === 'INVALID_CPF') return 'CPF inválido. Confira os números digitados.';
+    if (code === 'INVALID_AUTH_REQUEST') {
+      const field = {login:'login-email',start:'activation-email',recover:'recovery-email'}[error.transport?.operation];
+      if (field && !$(field).value.includes('@')) return 'Não conseguimos iniciar o acesso com este CPF. Tente usar seu e-mail cadastrado. Se não conseguir, peça ajuda à administração.';
+      return 'Não conseguimos iniciar o acesso agora. Tente novamente. Se continuar, peça ajuda à administração.';
+    }
     if (code === 'PIN_ADJACENT_REPETITION') return 'Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.';
     if (code === 'INVALID_PIN') return 'O PIN precisa ter exatamente quatro números. Confira os campos e tente novamente.';
     if (code === 'AUTH_RATE_LIMITED') return 'Você fez várias tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente. Se precisar, peça ajuda à administração.';
@@ -86,8 +91,43 @@
     try { await action(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').hidden = !uncertainCodes.has(error.code); }
     finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
   }
-  function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); run(action); }); }
-  function clearSecrets() { maskPins(); ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
+  function clearFieldError(field) {
+    $(field).removeAttribute('aria-invalid');
+    const node = $(field + '-error'); if (node) {node.hidden = true; node.textContent = '';}
+  }
+  function identifierError(value) {
+    const text = value.trim();
+    if (!text) return 'Digite seu CPF ou e-mail.';
+    if (text.includes('@')) return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) && text.length <= 254 ? '' : 'E-mail inválido. Confira o endereço digitado.';
+    if (!/^[0-9.\-\s]+$/.test(text)) return 'Digite um CPF ou um endereço de e-mail completo.';
+    const cpf = text.replace(/[.\-\s]/g, '');
+    if (cpf.length !== 11) return 'Digite os 11 números do CPF.';
+    if (/^(\d)\1+$/.test(cpf)) return 'CPF inválido. Confira os números digitados.';
+    for (let size = 9; size < 11; size++) {
+      let sum = 0; for (let i = 0; i < size; i++) sum += Number(cpf[i]) * (size + 1 - i);
+      if (Number(cpf[size]) !== ((sum * 10) % 11) % 10) return 'CPF inválido. Confira os números digitados.';
+    }
+    return '';
+  }
+  function validateAccessForm(id) {
+    const field = {'login-form':'login-email','start-form':'activation-email','recovery-form':'recovery-email'}[id];
+    if (!field) return true;
+    const fields = id === 'login-form' ? [field, 'login-pin'] : [field]; fields.forEach(clearFieldError);
+    let error = identifierError($(field).value), target = field;
+    if (!error && id === 'login-form' && !/^[0-9]{4}$/.test($('login-pin').value)) { target = 'login-pin'; error = 'Digite seu PIN de quatro números.'; }
+    if (!error) return true;
+    const node = $(target + '-error'); node.textContent = error; node.hidden = false;
+    $(target).setAttribute('aria-invalid','true'); $(target).focus();
+    $('support-details').hidden = true; $('check-step').hidden = true;
+    message(error, 'error'); return false;
+  }
+  ['login-email','login-pin','activation-email','recovery-email'].forEach(field => $(field).addEventListener('input', () => {
+    if ($(field).getAttribute('aria-invalid') === 'true') {
+      clearFieldError(field); if (!busy) { $('status').hidden = true; $('status').textContent = ''; }
+    }
+  }));
+  function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); if (!busy && validateAccessForm(id)) run(action); }); }
+  function clearSecrets() { ['login-email','login-pin','activation-email','recovery-email'].forEach(clearFieldError); maskPins(); ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
   function maskPins() {
     document.querySelectorAll('[data-pin-target]').forEach(button => {
       $(button.dataset.pinTarget).type = 'password'; button.setAttribute('aria-pressed', 'false');
