@@ -17,15 +17,20 @@
     <p>Livraria IPB Jardim Bonfiglioli</p>
     <nav><a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a></nav>
     <p id="status" role="status" aria-live="polite">Conferindo disponibilidade…</p>
-    <p id="access-diagnostic" class="diagnostic" hidden></p>
+    <button id="check-step" type="button" class="secondary" hidden>Conferir etapa salva</button>
+    <details id="support-details" hidden>
+      <summary>Informações para o suporte</summary>
+      <p>Se precisar de ajuda, informe à administração o detalhe abaixo. Não envie seu PIN nem o código do e-mail.</p>
+      <p id="access-diagnostic" class="diagnostic" hidden></p>
+    </details>
     <section id="initial" hidden>
       <form id="login-form">
         <h2>Entrar</h2>
         <label for="login-email">CPF ou e-mail cadastrado</label>
         <input id="login-email" type="text" autocomplete="username" maxlength="254" required>
         <label for="login-pin">PIN de 4 números</label>
-        <input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{4}" maxlength="4" required>
-        <button>Continuar com a passkey</button>
+        <div class="pin-field"><input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="login-pin" aria-controls="login-pin" aria-label="Mostrar PIN de entrada" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+        <button>Entrar na minha conta</button>
       </form>
       <details>
         <summary>É meu primeiro acesso</summary>
@@ -36,7 +41,7 @@
           <button>Receber código por e-mail</button>
         </form>
       </details>
-      <section id="recovery-choice" hidden><button id="recovery-open" type="button" class="secondary">Alterar ou recuperar meu PIN</button><form id="recovery-form" hidden><h2>Recuperar seu PIN</h2><p>Confirme o e-mail cadastrado e sua passkey existente. As sessões antigas serão encerradas ao concluir. Sem as passkeys, use um código de recuperação que tenha guardado. Sem esse código, solicite verificação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" autocomplete="username" maxlength="254" required><button>Enviar código de recuperação</button></form></section>
+      <section id="recovery-choice" hidden><button id="recovery-open" type="button" class="secondary">Alterar ou recuperar meu PIN</button><form id="recovery-form" hidden><h2>Recuperar seu PIN</h2><p>Confirme o e-mail cadastrado e a confirmação pelo aparelho já cadastrado. As sessões antigas serão encerradas ao concluir. Sem acesso aos aparelhos cadastrados, use um código de recuperação que tenha guardado. Sem esse código, solicite verificação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" autocomplete="username" maxlength="254" required><button>Enviar código de recuperação</button></form></section>
     </section>
     <form id="email-form" hidden>
       <h2>Confirme seu e-mail</h2>
@@ -48,16 +53,16 @@
     <form id="pin-form" hidden>
       <h2>Crie seu PIN</h2>
       <p>Escolha um PIN novo. Não reutilize um PIN enviado por mensagem.</p>
-      <fieldset id="rescue-choice" hidden><legend>Perdeu todas as passkeys?</legend><label><input id="use-rescue" type="checkbox"> Usar um código de recuperação guardado</label><div id="rescue-inputs" hidden><label for="rescue-code">Código de recuperação</label><input id="rescue-code" type="password" autocomplete="off" maxlength="80" spellcheck="false"><button id="rescue-confirm" type="button">Validar código de recuperação</button><p id="rescue-status" role="status"></p></div></fieldset><label for="new-pin">PIN de 4 números</label>
-      <input id="new-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required>
+      <fieldset id="rescue-choice" hidden><legend>Não consegue confirmar pelo aparelho?</legend><label><input id="use-rescue" type="checkbox"> Usar um código de recuperação guardado</label><div id="rescue-inputs" hidden><label for="rescue-code">Código de recuperação</label><input id="rescue-code" type="password" autocomplete="off" maxlength="80" spellcheck="false"><button id="rescue-confirm" type="button">Validar código de recuperação</button><p id="rescue-status" role="status"></p></div></fieldset><p id="pin-rules">Use quatro números, sem repetir números iguais lado a lado.</p><label for="new-pin">PIN de 4 números</label>
+      <div class="pin-field"><input id="new-pin" aria-describedby="pin-rules" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="new-pin" aria-controls="new-pin" aria-label="Mostrar novo PIN" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
       <label for="confirm-pin">Repita o PIN</label>
-      <input id="confirm-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required>
+      <div class="pin-field"><input id="confirm-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="confirm-pin" aria-controls="confirm-pin" aria-label="Mostrar confirmação do PIN" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
       <button>Salvar PIN e continuar</button>
     </form>
     <section id="passkey" hidden>
       <h2>Proteja sua conta</h2>
-      <p>Uma passkey confirma sua identidade usando a biometria ou o bloqueio do aparelho. Siga a janela aberta pelo navegador.</p>
-      <button id="passkey-button" type="button">Continuar com a passkey</button>
+      <p>Confirme sua identidade com a biometria ou o bloqueio do seu aparelho. O navegador abrirá uma janela para orientar você.</p>
+      <button id="passkey-button" type="button">Confirmar no meu aparelho</button>
     </section>
     <section id="retry" hidden>
       <p>A confirmação pode ter sido salva. Tente concluir novamente para conferir o resultado.</p>
