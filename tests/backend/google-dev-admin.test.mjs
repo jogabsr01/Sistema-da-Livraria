@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {runAdmin,contentHash,safeTimings,sha256,validateRequest} from '../../scripts/google-dev-admin.mjs';
+import {runAdmin,contentHash,safeTimings,sha256,validateRequest,withSheetsBatch} from '../../scripts/google-dev-admin.mjs';
 const source='// GENERATED: npm run google:single.\nfunction doPost() {}\n';
 function fixture() {
   const target={scriptId:'synthetic-script',deploymentId:'synthetic-deployment',cloudProjectId:'synthetic-cloud'};
@@ -20,8 +20,8 @@ function fixture() {
     let value;
     if(path==='/token')value={access_token:'access-marker-123456789'};
     else if(path==='/v2/entries:list')value=state.logs;
-    else if(path==='/v1/projects/590183543759/services/drive.googleapis.com')value={state:state.driveStatus};
-    else if(path==='/v1/projects/590183543759/services/drive.googleapis.com:enable'){if(!state.drivePending)state.driveStatus='ENABLED';value={name:'private-operation-marker'};}
+    else if(['/v1/projects/590183543759/services/drive.googleapis.com','/v1/projects/590183543759/services/sheets.googleapis.com'].includes(path))value={state:state.driveStatus};
+    else if(['/v1/projects/590183543759/services/drive.googleapis.com:enable','/v1/projects/590183543759/services/sheets.googleapis.com:enable'].includes(path)){if(!state.drivePending)state.driveStatus='ENABLED';value={name:'private-operation-marker'};}
     else if(path.endsWith('/content') && method==='GET')value={files:structuredClone(new URL(url).searchParams.has('versionNumber')?versions.get(Number(new URL(url).searchParams.get('versionNumber'))):files)};
     else if(path.endsWith('/content') && method==='PUT'){files=JSON.parse(options.body).files;value={files};}
     else if(path.endsWith('/versions') && method==='POST'){const versionNumber=Math.max(...versions.keys())+1;versions.set(versionNumber,structuredClone(files));value={versionNumber};}
@@ -124,4 +124,35 @@ test('Apps Script message and text metric formats retain numeric timings without
   const expected={lockMs:8,bindingsMs:9,schemaMs:10,workMs:11,totalMs:38};
   assert.deepEqual(safeTimings([{jsonPayload:{message:JSON.stringify(metric)}},{textPayload:JSON.stringify(metric)},{textPayload:'rpc.duration secret-marker'},{jsonPayload:{message:'{broken secret-marker'}},{textPayload:JSON.stringify({...metric,totalMs:'secret-marker'})}]),[expected,expected]);
   assert.deepEqual(safeTimings([{textPayload:' '.repeat(4097)+JSON.stringify(metric)}]),[]);
+});
+
+test('Sheets activation is restricted to the fixed API and existing pinned DEV project',async()=>{
+ const f=fixture();assert.equal((await f.run({mode:'enable-sheets',revision:14})).state,'SHEETS_API_ENABLED');
+ assert.equal(f.state.calls.filter(c=>c.path.endsWith(':enable')).length,1);assert.equal(f.state.calls.find(c=>c.path.endsWith(':enable')).url,'https://serviceusage.googleapis.com/v1/projects/590183543759/services/sheets.googleapis.com:enable');
+ await assert.rejects(f.run({mode:'enable-sheets',revision:14,sheetsBatch:true}),/INVALID_REQUEST/);
+});
+test('explicit Sheets manifest preparation preserves existing scopes, runtime, libraries and other settings, and never adds authorization scopes',async()=>{
+ const f=fixture(),manifest={timeZone:'America/Sao_Paulo',exceptionLogging:'NONE',runtimeVersion:'V8',oauthScopes:['https://www.googleapis.com/auth/spreadsheets','private-scope'],dependencies:{libraries:[{userSymbol:'Legacy',libraryId:'private-library',version:'1'}]}};
+ f.state.files.find(x=>x.type==='JSON').source=JSON.stringify(manifest);
+ const r=await f.run({mode:'inspect',revision:15,sheetsBatch:true});assert.equal(writes(f).length,0);
+ const request={...f.deployRequest(r),sheetsBatch:true};assert.equal((await f.run(request)).state,'DEPLOYED');
+ const saved=JSON.parse(f.state.files.find(x=>x.type==='JSON').source);assert.deepEqual(saved.oauthScopes,manifest.oauthScopes);assert.deepEqual(saved.dependencies.libraries,manifest.dependencies.libraries);assert.equal(saved.exceptionLogging,manifest.exceptionLogging);assert.equal(saved.timeZone,manifest.timeZone);
+ assert.deepEqual(saved.dependencies.enabledAdvancedServices,[{userSymbol:'Sheets',serviceId:'sheets',version:'v4'}]);
+ assert.equal(withSheetsBatch(JSON.stringify(saved)),withSheetsBatch(JSON.stringify(saved)));
+});
+test('implicit manifest changes, missing spreadsheet scope and conflicting service symbols cannot be deployed',()=>{
+ for(const manifest of [null,[],{oauthScopes:[]}, {oauthScopes:['private-scope']},{oauthScopes:['https://www.googleapis.com/auth/spreadsheets'],dependencies:{enabledAdvancedServices:[{userSymbol:'Sheets',serviceId:'other',version:'v4'}]}}])assert.throws(()=>withSheetsBatch(JSON.stringify(manifest)),/INVALID_MANIFEST|MANIFEST_SERVICE_CONFLICT/);
+ assert.throws(()=>validateRequest({mode:'inspect',revision:1,sheetsBatch:false}),/INVALID_REQUEST/);
+ assert.throws(()=>validateRequest({mode:'inspect',revision:1,services:['other']}),/INVALID_REQUEST/);
+});
+
+test('auto-inferred Apps Script scopes remain auto-inferred when enabling only the Sheets service',()=>{
+ const before={timeZone:'America/Sao_Paulo',runtimeVersion:'V8',exceptionLogging:'STACKDRIVER'};
+ const after=JSON.parse(withSheetsBatch(JSON.stringify(before)));assert.equal(Object.hasOwn(after,'oauthScopes'),false);assert.equal(after.timeZone,before.timeZone);assert.equal(after.exceptionLogging,before.exceptionLogging);assert.equal(after.dependencies.enabledAdvancedServices.length,1);
+});
+
+test('timing operation tags and schema batch counts are optional closed metadata, never arbitrary provider strings',()=>{
+ const metric={metric:'rpc.duration',lockMs:1,bindingsMs:2,schemaMs:3,workMs:4,totalMs:10,operation:'START',schemaBatchReads:2};
+ assert.deepEqual(safeTimings([{jsonPayload:metric}]),[{lockMs:1,bindingsMs:2,schemaMs:3,workMs:4,totalMs:10,operation:'START',schemaBatchReads:2}]);
+ const result=safeTimings([{jsonPayload:{...metric,operation:'PRIVATE_EMAIL',schemaBatchReads:999}}]);assert.equal(Object.hasOwn(result[0],'operation'),false);assert.equal(Object.hasOwn(result[0],'schemaBatchReads'),false);
 });

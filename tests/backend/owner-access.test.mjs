@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { ownerFixture, injectAccessFault } from '../helpers/owner-access-fixture.mjs';
 import { createGasEmulator } from './gas-emulator.mjs';
 import { properties, environment } from './fixtures.mjs';
+import {ApiError} from '../../backend/errors.mjs';
 import { ACCESS_COOKIE, ACCESS_ORIGIN, accessCookie, createOwnerAccessHandler, loadOwnerAccessSettings } from '../../backend/owner-access.mjs';
 
 const fakePin = '8274';
@@ -286,4 +287,21 @@ test('prepared completion rejects embedded origin and foreign user handle before
   await assert.rejects(svc.execute('complete',{response},token,ip));
   const c=s.priv.getSheetByName('_Passkey_Ceremonies');assert.equal(c.rows.at(-1)[c.rows[0].indexOf('Consumed_At')],'');assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),2);
  }
+});
+
+test('START timeout after persistence delivers only the new pre-auth cookie so state resumes EMAIL without a second delivery',async()=>{
+ const s=ownerFixture(),fresh=await call(s,'state',{method:'GET'}),cookie=fresh.response.headers.get('set-cookie').split(';')[0],token=cookie.split('=')[1],csrfToken=fresh.data.data.csrfToken;
+ const original=s.client.startOwnerAccess;
+ s.client.startOwnerAccess=async p=>{await original(p);throw new ApiError(502,'UPSTREAM_TIMEOUT');};
+ const failed=await call(s,'start',{token,csrfToken,body:{email:properties.OWNER_EMAIL}});assert.equal(failed.response.status,502);assert.equal(failed.data.error.code,'UPSTREAM_TIMEOUT');
+ const renewed=failed.response.headers.get('set-cookie');assert.match(renewed,/^__Host-livraria_access=.*Secure; HttpOnly; SameSite=Strict/);assert.ok(!renewed.includes('__Host-livraria_session'));assert.notEqual(renewed.split(';')[0],cookie);
+ const currentToken=renewed.split(';')[0].split('=')[1],state=await call(s,'state',{method:'GET',token:currentToken});assert.equal(state.data.data.stage,'EMAIL');assert.equal(s.gas.outbox.length,1);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
+ const proof=await call(s,'email',{token:currentToken,csrfToken:state.data.data.csrfToken,body:{code:code(s)}});assert.equal(proof.data.data.stage,'PIN');assert.equal(s.gas.outbox.length,1);
+});
+test('uncertain START before persistence keeps a usable INITIAL context and rejected origin/CSRF cannot rotate cookies',async()=>{
+ const s=ownerFixture(),fresh=await call(s,'state',{method:'GET'}),token=fresh.response.headers.get('set-cookie').split(';')[0].split('=')[1],csrfToken=fresh.data.data.csrfToken;
+ s.client.startOwnerAccess=async()=>{throw new ApiError(502,'UPSTREAM_TIMEOUT');};
+ for(const headers of [{origin:'https://other.invalid'},{'x-csrf-token':'bad'}]){const r=await call(s,'start',{token,csrfToken,headers,body:{email:properties.OWNER_EMAIL}});assert.equal(r.response.status,403);assert.equal(r.response.headers.get('set-cookie'),null);}
+ const failed=await call(s,'start',{token,csrfToken,body:{email:properties.OWNER_EMAIL}}),currentToken=failed.response.headers.get('set-cookie').split(';')[0].split('=')[1];
+ assert.equal((await call(s,'state',{method:'GET',token:currentToken})).data.data.stage,'INITIAL');assert.equal(s.gas.outbox.length,0);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
 });

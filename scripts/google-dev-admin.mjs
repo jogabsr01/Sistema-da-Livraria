@@ -14,9 +14,22 @@ export function contentHash(files) {
   if (!Array.isArray(files) || files.length !== 2 || files.filter(f => f.name === 'appsscript' && f.type === 'JSON').length !== 1 || files.filter(f => f.type === 'SERVER_JS').length !== 1 || files.some(f => typeof f.name !== 'string' || typeof f.source !== 'string')) fail('UNSUPPORTED_REMOTE_LAYOUT');
   return sha256(JSON.stringify(files.map(({name,type,source})=>({name,type,source})).sort((a,b)=>a.name.localeCompare(b.name,'en'))));
 }
+export function withSheetsBatch(source) {
+  let manifest;try{manifest=JSON.parse(source);}catch{fail('INVALID_MANIFEST');}
+  if(!manifest||typeof manifest!=='object'||Array.isArray(manifest)||manifest.oauthScopes!==undefined&&(!Array.isArray(manifest.oauthScopes)||!manifest.oauthScopes.includes('https://www.googleapis.com/auth/spreadsheets')))fail('INVALID_MANIFEST');
+  const dependencies=manifest.dependencies===undefined?{}:manifest.dependencies;
+  if(!dependencies||typeof dependencies!=='object'||Array.isArray(dependencies))fail('INVALID_MANIFEST');
+  const services=dependencies.enabledAdvancedServices===undefined?[]:dependencies.enabledAdvancedServices;
+  if(!Array.isArray(services)||services.some(x=>!x||typeof x!=='object'))fail('INVALID_MANIFEST');
+  const existing=services.filter(x=>x.serviceId==='sheets'||x.userSymbol==='Sheets');
+  if(existing.length>1||existing.some(x=>x.serviceId!=='sheets'||x.userSymbol!=='Sheets'||x.version!=='v4'))fail('MANIFEST_SERVICE_CONFLICT');
+  manifest.dependencies={...dependencies,enabledAdvancedServices:existing.length?services:[...services,{userSymbol:'Sheets',serviceId:'sheets',version:'v4'}]};
+  return JSON.stringify(manifest,null,2)+'\n';
+}
 export function validateRequest(request) {
   const keys = request?.mode === 'deploy' ? ['mode','revision','expectedEditorHash','expectedDeploymentVersion','candidateHash'] : ['mode','revision'];
-  if (!exact(request,keys) || !['inspect','deploy','enable-drive'].includes(request.mode) || !Number.isSafeInteger(request.revision) || request.revision < 1) fail('INVALID_REQUEST');
+  if(Object.hasOwn(request||{},'sheetsBatch')){if(!['inspect','deploy'].includes(request.mode)||request.sheetsBatch!==true)fail('INVALID_REQUEST');keys.push('sheetsBatch');}
+  if (!exact(request,keys) || !['inspect','deploy','enable-drive','enable-sheets'].includes(request.mode) || !Number.isSafeInteger(request.revision) || request.revision < 1) fail('INVALID_REQUEST');
   if (request.mode === 'deploy' && (!hex(request.expectedEditorHash) || !hex(request.candidateHash) || !Number.isSafeInteger(request.expectedDeploymentVersion) || request.expectedDeploymentVersion < 1)) fail('INVALID_REQUEST');
 }
 function configuration(env,pins) {
@@ -44,6 +57,8 @@ export function safeTimings(entries) {
       if (!Number.isSafeInteger(p[key]) || p[key]<0 || p[key]>3600000) return [];
       result[key]=p[key];
     }
+    if(['START','STATE','EMAIL','PIN_READ','PIN_SAVE','OPTIONS','COMPLETE_PREPARE','COMMIT','PASSKEY_TAKE','PASSKEY_REGISTER','PASSKEY_COUNTER','GUARD','OTHER'].includes(p.operation))result.operation=p.operation;
+    if(Number.isSafeInteger(p.schemaBatchReads)&&p.schemaBatchReads>=0&&p.schemaBatchReads<=2)result.schemaBatchReads=p.schemaBatchReads;
     return [result];
   });
 }
@@ -66,23 +81,25 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
     body:new URLSearchParams({client_id:config.credentials.client_id,client_secret:config.credentials.client_secret,refresh_token:config.credentials.refresh_token,grant_type:'refresh_token'}).toString()
   },'OAUTH_REFRESH_FAILED');
   if (typeof token.access_token !== 'string' || !/^[\x21-\x7e]{10,10000}$/.test(token.access_token)) fail('OAUTH_REFRESH_FAILED');
-  if (request.mode === 'enable-drive') {
+  if (['enable-drive','enable-sheets'].includes(request.mode)) {
+    const serviceName=request.mode==='enable-drive'?'drive.googleapis.com':'sheets.googleapis.com';
+    const prefix=request.mode==='enable-drive'?'DRIVE':'SHEETS';
     // Fixed service and project number, belonging to the pinned Cloud project.
     // No caller-supplied service, billing, IAM, code or deployment changes.
-    const endpoint='https://serviceusage.googleapis.com/v1/projects/590183543759/services/drive.googleapis.com';
+    const endpoint='https://serviceusage.googleapis.com/v1/projects/590183543759/services/'+serviceName;
     const headers={authorization:'Bearer '+token.access_token,'content-type':'application/json'};
     const readState=async()=>{
-      const service=await requestJson(endpoint,{headers},'DRIVE_API_STATUS_UNAVAILABLE');
-      if(!['ENABLED','DISABLED'].includes(service.state))fail('DRIVE_API_STATUS_UNAVAILABLE');
+      const service=await requestJson(endpoint,{headers},prefix+'_API_STATUS_UNAVAILABLE');
+      if(!['ENABLED','DISABLED'].includes(service.state))fail(prefix+'_API_STATUS_UNAVAILABLE');
       return service.state;
     };
-    if(await readState()==='ENABLED')return {state:'DRIVE_API_ENABLED',mode:request.mode};
-    await requestJson(endpoint+':enable',{method:'POST',headers,body:'{}'},'DRIVE_API_ENABLE_UNCONFIRMED');
+    if(await readState()==='ENABLED')return {state:prefix+'_API_ENABLED',mode:request.mode};
+    await requestJson(endpoint+':enable',{method:'POST',headers,body:'{}'},prefix+'_API_ENABLE_UNCONFIRMED');
     for(let attempt=0;attempt<5;attempt++){
       if(attempt)await wait(1000);
-      if(await readState()==='ENABLED')return {state:'DRIVE_API_ENABLED',mode:request.mode};
+      if(await readState()==='ENABLED')return {state:prefix+'_API_ENABLED',mode:request.mode};
     }
-    return {state:'DRIVE_API_ENABLE_PENDING',mode:request.mode};
+    return {state:prefix+'_API_ENABLE_PENDING',mode:request.mode};
   }
   const api=(path,method='GET',body)=>requestJson('https://script.googleapis.com/v1/projects/'+encodeURIComponent(config.scriptId)+path,{
     method,headers:{authorization:'Bearer '+token.access_token,'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})
@@ -92,9 +109,11 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
   if (deployment.deploymentId !== config.deploymentId || deployment.deploymentConfig?.scriptId !== config.scriptId || !Number.isSafeInteger(deployment.deploymentConfig.versionNumber) || deployment.deploymentConfig.versionNumber<1 || !deployment.entryPoints?.some(p=>p.entryPointType==='WEB_APP')) fail('DEPLOYMENT_MISMATCH');
   const version=deployment.deploymentConfig.versionNumber;
   const deployed=await api('/content?versionNumber='+version), deployedHash=contentHash(deployed.files);
-  const candidateFiles=editor.files.map(f=>({name:f.name,type:f.type,source:f.type==='SERVER_JS'?source:f.source}));
+  const candidateFiles=editor.files.map(f=>({name:f.name,type:f.type,source:f.type==='SERVER_JS'?source:request.sheetsBatch?withSheetsBatch(f.source):f.source}));
   const candidateHash=contentHash(candidateFiles);
   const report={state:'INSPECTED',mode:request.mode,editorHash,deployedHash,deploymentVersion:version,candidateHash,candidateMatchesEditor:candidateHash===editorHash};
+  let manifest;try{manifest=JSON.parse(editor.files.find(f=>f.type==='JSON').source);}catch{fail('INVALID_MANIFEST');}
+  report.manifestMode=Array.isArray(manifest.oauthScopes)?'EXPLICIT':'INFERRED';report.sheetsEnabled=Array.isArray(manifest.dependencies?.enabledAdvancedServices)&&manifest.dependencies.enabledAdvancedServices.some(s=>s.userSymbol==='Sheets'&&s.serviceId==='sheets'&&s.version==='v4');
   if (request.mode === 'inspect') {
     try {
       const logs=await requestJson('https://logging.googleapis.com/v2/entries:list',{

@@ -171,6 +171,25 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['passkeys'], 1)
         self.assertEqual(self.errors, [])
 
+    def test_start_timeout_recovers_delivered_code_with_rotated_cookie_without_resending(self):
+        self.open(); self.page.get_by_text('É meu primeiro acesso',exact=True).click()
+        self.page.locator('#activation-email').fill('owner@example.invalid')
+        self.local('/test/start-timeout', {'after': True})
+        self.page.get_by_role('button',name='Receber código por e-mail').click()
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        self.assertEqual(self.step_posts.get('start'),1)
+        self.assertEqual(self.local('/test/state')['outbox'],1)
+        self.assertFalse(any(c['name']=='__Host-livraria_session' for c in self.context.cookies()))
+        self.page.get_by_role('button',name='Conferir etapa salva',exact=True).click()
+        expect(self.page.locator('#email-form')).to_be_visible()
+        self.page.locator('#email-code').fill(self.local('/test/code')['code'])
+        self.page.get_by_role('button',name='Confirmar código',exact=True).click()
+        expect(self.page.locator('#pin-form')).to_be_visible()
+        self.assertEqual(self.step_posts.get('start'),1)
+        self.assertEqual(self.local('/test/state')['outbox'],1)
+        self.assertEqual(self.local('/test/state')['sessions'],0)
+        self.assertEqual(self.errors,[])
+
     def test_mobile_activation_has_no_horizontal_overflow_and_preserves_verified_session(self):
         self.activate(); self.assert_no_secrets_in_browser_storage()
         self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))

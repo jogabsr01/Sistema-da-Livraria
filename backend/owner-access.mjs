@@ -234,7 +234,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
     const requestId = randomUUID(), startedAt = performance.now();
     const completionRequest=new URL(request.url).pathname.split('/').at(-1)==='complete'&&request.headers.get('x-access-completion-version')==='2';
     const deadlineAt=startedAt+(completionRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
-    let operation, settingsLoaded = false, client;
+    let operation, settingsLoaded = false, client, token, rotatedFlow = false;
     const timed=response=>{const metrics=client?.timings?.();response.headers.set('server-timing',`app;dur=${Math.round(performance.now()-startedAt)}`+(metrics?`, google;dur=${metrics.durationMs}, rpc;desc="${metrics.calls}"`:''));return response;};
     try {
       if (new URL(request.url).origin !== ACCESS_ORIGIN) throw new ApiError(403, 'FORBIDDEN');
@@ -246,7 +246,6 @@ export function createOwnerAccessHandler(dependencies = {}) {
       settingsLoaded = true;
       client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt });
       const service = createOwnerAccessService(settings, { client, stagedCompletion:request.headers.get('x-access-completion-version')==='2' });
-      let token;
       if (operation === 'state') {
         let fresh = false;
         try { token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }
@@ -270,7 +269,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       let input; try { input = JSON.parse(text); } catch { throw new ApiError(400, 'INVALID_AUTH_REQUEST'); }
       if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify(shapes[operation].slice().sort())) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       // Rotate the flow bearer for every new request/login, after CSRF validation.
-      if (['start', 'login','recover'].includes(operation)) token = randomBytes(32).toString('base64url');
+      if (['start', 'login','recover'].includes(operation)) { token = randomBytes(32).toString('base64url'); rotatedFlow = true; }
       const output = await service.execute(operation, input, token, context.ip), { cookie, ...data } = output;
       const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation)||data.stage==='COMMITTING' ? 202 : 200);
       if (cookie) {
@@ -287,6 +286,11 @@ export function createOwnerAccessHandler(dependencies = {}) {
         if (configurationIssues.length) return json({ error: { code: error.code, requestId, configurationIssues } }, 503);
       }
       const result = safeFailure(error, requestId);
+      // An uncertain upstream result may have persisted the new cookie-bound
+      // flow. Deliver its pre-auth cookie even on error so state can recover it.
+      // This is never a session grant; malformed/origin/CSRF denials reach no
+      // rotation and no cookie, and completed flows retain Google expiry checks.
+      if(rotatedFlow&&result.status>=500)result.headers.set('set-cookie',accessCookie(token));
       if (['AUTH_RATE_LIMITED','AUTH_DELIVERY_RATE_LIMITED'].includes(error?.code)) result.headers.set('retry-after', String(error.retryAfterSeconds));
       return timed(result);
     }

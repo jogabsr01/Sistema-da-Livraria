@@ -1,6 +1,7 @@
 // LOCAL TEST ONLY: fake owner, fake MailApp/Sheets. Never packaged as a function.
 import { createServer } from 'node:http';
 import { ownerFixture, injectAccessFault } from './owner-access-fixture.mjs';
+import { ApiError } from '../../backend/errors.mjs';
 import { ACCESS_ORIGIN } from '../../backend/owner-access.mjs';
 const fixture = ownerFixture();
 const server = createServer(async (req, res) => {
@@ -9,6 +10,11 @@ const server = createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) { body += chunk; if (body.length > 25000) throw Error('TEST_BODY_LIMIT'); }
     if (req.url === '/test/code') { res.end(JSON.stringify({ code: fixture.gas.outbox.at(-1)?.body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1] })); return; }
     if (req.url === '/test/fault') { const input = JSON.parse(body); injectAccessFault(fixture, input.stage, input.after); res.end('{}'); return; }
+    if (req.url === '/test/start-timeout') {
+      const input=JSON.parse(body),original=fixture.client.startOwnerAccess;
+      fixture.client.startOwnerAccess=async p=>{fixture.client.startOwnerAccess=original;if(input.after)await original(p);throw new ApiError(502,'UPSTREAM_TIMEOUT');};
+      res.end('{}');return;
+    }
     if (req.url === '/test/disable') { fixture.env.WORKSPACE_IDENTITY_ACCESS_ENABLED = 'false'; res.end('{}'); return; }
     if (req.url === '/test/state') {
       const sessions = fixture.main.getSheetByName('Sessoes'), columns = sessions.rows[0];
