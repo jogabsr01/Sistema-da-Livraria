@@ -54,6 +54,8 @@ Os testes usam dados sintéticos, Google/MailApp emulados e autenticação WebAu
 | Salvar PIN | 3 RPCs Google | 2 RPCs; leitura/guarda reunidas antes do hash |
 | Validação de sessão numa alteração autenticada | 2 RPCs idênticos de sessão | 1 RPC; CSRF derivado somente do principal/cookie desta instância de serviço |
 | Cabeçalhos numa consulta de estado | 30 leituras no cenário de controle | 24 leituras, todas as tabelas ainda validadas |
+| Leituras de dados para preparar confirmação do aparelho | 23 leituras no controle sem snapshots | 8 leituras no mesmo comando com exclusividade e invalidação nas escritas |
+| Consulta opcional de sessão ao retomar código/PIN/aparelho | 1 consulta concorrente com a etapa | 0 consultas concorrentes; só confere sessão ao concluir acesso |
 | Menu da conta ao carregar a página | 3 consultas HTTP automáticas | 0 consultas automáticas |
 | Abrir o menu sem dados de perfil carregados | 3 consultas HTTP | 1 consulta autorizada de perfil |
 | Menu dentro de Meu perfil | Outra sequência de consultas | Reutiliza o DTO que a página acabou de carregar, somente para apresentação |
@@ -74,3 +76,15 @@ Solicitações de runtime aguardam no máximo cinco segundos pelo bloqueio, reto
 4. Publicar o backend/frontend na branch DEV, validar os tempos reais e concluir o primeiro acesso com aparelho físico. O master inicial continua por e-mail até autenticar e vincular seu CPF.
 
 Os números acima medem requisições/leituras eliminadas, não uma latência de produção em milissegundos. A inicialização do Apps Script, as chamadas Drive/Sheets e o tempo do autenticador continuam sujeitos ao provedor. A meta de resposta visual imediata é coberta pelo estado de carregamento; conclusão instantânea de uma operação remota não é garantida. Esta revisão exige homologação na implantação real antes de declarar a lentidão resolvida.
+
+## Confirmação do aparelho sem espera de rede no clique
+
+A preparação do desafio ocorre ao chegar à etapa do aparelho, antes de habilitar seu botão. O clique chama `navigator.credentials.create/get` antes de qualquer `await`, preservando a ativação do usuário. A preparação vale no navegador por no máximo dois minutos; depois disso é renovada e exige novo clique explícito. Nenhum diálogo de biometria é aberto automaticamente. A renovação não estende o prazo do fluxo, não dispensa PIN/e-mail e não cria sessão.
+
+Cancelamento/expiração/diálogo que não abriu (`NotAllowedError`), falta de suporte, bloqueio de origem, chave existente e interrupção possuem mensagens distintas. Não atribuir cancelamento ou bloqueio do navegador a PIN errado. A referência de suporte utiliza códigos fixos, sem texto de exceções. Ausência de janela não identifica sozinha a causa no aparelho físico.
+
+Snapshots de linhas são cópias restritas a uma única operação assinada de identidade com `ScriptLock`. `accessSaveMain_`, `authControlSave_` e atualização de atividade invalidam antes de gravar, inclusive em falhas. Não aplicar snapshots aos comandos de negócio. Não reaproveitar usuário, epoch, guarda, sessão ou chave entre requisições. Todos os cabeçalhos continuam validados. Testes: `tests/backend/identity-row-snapshots.test.mjs` e regressões de identidade/recuperação.
+
+Cenários adicionais do navegador: chamada nativa no turno do clique com ativação presente e nenhuma nova consulta de opções; preparação expirada exige novo clique; cancelamento sem criar sessão nem refazer PIN; falha de preparação permanece na etapa certa; texto curto de primeiro acesso sem instruções de conta proprietária. CPF de funcionário busca o contato cifrado e envia o código somente ao e-mail vinculado (`tests/backend/staff.test.mjs`, `scripts/test-staff.py`). Um CPF ausente não é associado a uma conta apenas porque foi digitado na entrada pública. A instalação continua permitindo somente o proprietário configurado como SUPER_ADMIN; a interface pública não descreve esse procedimento administrativo.
+
+Os números acima medem trabalho eliminado no contrato emulado, não segundos de Google real. Validar duração por etapa via Server-Timing e métricas numéricas do Google após atualizar a implantação. Acesso público do executor pode retornar 401 da proteção da hospedagem; isso não comprova uma falha do login da aplicação nem autoriza contornar a proteção.

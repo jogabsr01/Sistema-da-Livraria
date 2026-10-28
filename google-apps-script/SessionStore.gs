@@ -9,7 +9,7 @@ function identityRows_(spreadsheet, name) {
   var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? sheet.getLastRow() : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
   if (!sheet || !definition || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 5001) failure_('IDENTITY_UNAVAILABLE');
-  var values = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, definition.columns.length).getValues();
+  var values = rpcRows_(sheet, lastRow, definition.columns.length);
   return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (column, columnIndex) { row[column] = values[columnIndex]; });
@@ -75,6 +75,7 @@ function identitySessionOperation_(request, c) {
   if (request.action === 'identity.session.read') {
     // Reduce Sheets writes while keeping the idle window bounded and shared.
     if (now - resolved.activity >= 60 * 1000) {
+      invalidateRpcRows_(table.sheet);
       table.sheet.getRange(resolved.session.number, table.columns.indexOf('Ultima_Atividade') + 1, 1, 1).setValues([[new Date(now).toISOString()]]);
       SpreadsheetApp.flush();
     }

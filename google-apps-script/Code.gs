@@ -34,6 +34,21 @@ function assertMarker_(resource, c, kind) {
 // Populated only inside one signed HTTP operation under ScriptLock. Never cache
 // users, sessions, permissions, row contents or validation across requests.
 var RPC_STORAGE_SCOPE_ = null;
+// Read snapshots exist only while one signed identity command holds ScriptLock.
+// Copy on read so callers cannot mutate a cached row before a durable save.
+// Every identity write invalidates before touching Sheets, including failures.
+function rpcRows_(sheet, lastRow, width) {
+  var cache = RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.identityRows;
+  var values = cache && cache.get(sheet);
+  if (!values) {
+    values = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, width).getValues();
+    if (cache) cache.set(sheet, values);
+  }
+  return values.map(function(row) { return row.slice(); });
+}
+function invalidateRpcRows_(sheet) {
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.identityRows) RPC_STORAGE_SCOPE_.identityRows.delete(sheet);
+}
 function rpcSheet_(spreadsheet, name) {
   if (!RPC_STORAGE_SCOPE_) return spreadsheet.getSheetByName(name);
   var sheets = RPC_STORAGE_SCOPE_.sheets.get(spreadsheet);
@@ -199,7 +214,7 @@ function processRequest_(request, c) {
   return withLock_(function () {
     var acquired=Date.now(),bound=acquired,validated=acquired;
     var previousScope = RPC_STORAGE_SCOPE_;
-    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap() };
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null };
     try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
     var ss;

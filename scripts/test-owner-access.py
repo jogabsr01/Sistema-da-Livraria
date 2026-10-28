@@ -103,7 +103,7 @@ class OwnerAccess(unittest.TestCase):
         self.page.locator('#email-code').fill(self.local('/test/code')['code']); self.page.get_by_role('button', name='Confirmar código').click()
         expect(self.page.locator('#pin-form')).to_be_visible()
         self.page.locator('#new-pin').fill('8274'); self.page.locator('#confirm-pin').fill('8274')
-        self.page.get_by_role('button', name='Salvar PIN e continuar').click(); expect(self.page.locator('#passkey')).to_be_visible()
+        self.page.get_by_role('button', name='Salvar PIN e continuar').click(); expect(self.page.locator('#passkey')).to_be_visible(); expect(self.page.locator('#passkey-button')).to_be_enabled()
     def activate(self):
         self.activation_until_passkey(); self.page.locator('#passkey-button').click(); expect(self.page.locator('#complete')).to_be_visible()
     def logout(self):
@@ -179,7 +179,7 @@ class OwnerAccess(unittest.TestCase):
         self.session_transport_failure = True
         self.page.reload()
         expect(self.page.locator('#email-form')).to_be_visible()
-        expect(self.page.locator('#status')).to_contain_text('Continue pelo formulário')
+        expect(self.page.locator('#status')).to_contain_text('Escolha como deseja acessar sua conta.')
         self.page.locator('#email-code').fill(code)
         self.page.get_by_role('button', name='Confirmar código', exact=True).click()
         expect(self.page.locator('#pin-form')).to_be_visible()
@@ -284,7 +284,7 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.step_posts,{})
         self.page.locator('#activation-email').fill('52998224725')
         self.page.get_by_role('button',name='Receber código por e-mail',exact=True).click()
-        expect(self.page.locator('#first-access-box #status')).to_contain_text('use o e-mail configurado')
+        expect(self.page.locator('#first-access-box #status')).to_contain_text('Use seu e-mail cadastrado')
         expect(self.page.locator('#email-form')).to_be_hidden()
         self.assertEqual(self.local('/test/state')['sessions'],0)
 
@@ -436,9 +436,8 @@ class OwnerAccess(unittest.TestCase):
         self.page.screenshot(path=str(ARTIFACTS / 'pin-falha-confirmacao.png'), full_page=True)
 
     def test_options_provider_failure_explains_device_preparation_without_restarting_pin(self):
-        self.activation_until_passkey()
         self.lost_step = 'options'; self.step_failure = 'html-before'
-        self.page.get_by_role('button', name='Confirmar no meu aparelho', exact=True).click()
+        self.activation_until_passkey()
         expect(self.page.locator('#status')).to_contain_text('Não conseguimos preparar a confirmação do aparelho')
         expect(self.page.locator('#access-progress')).to_be_hidden()
         expect(self.page.locator('#passkey')).to_be_visible()
@@ -447,6 +446,53 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['sessions'], 0)
         self.page.get_by_text('Informações para o suporte', exact=True).click()
         expect(self.page.locator('#access-diagnostic')).to_contain_text('etapa: OPTIONS / HTTP: 502')
+
+    def test_device_prompt_starts_in_user_click_without_another_network_request(self):
+        self.activation_until_passkey()
+        self.assertEqual(self.step_posts.get('options'), 1)
+        self.page.evaluate("""() => {
+          const create = navigator.credentials.create.bind(navigator.credentials);
+          navigator.credentials.create = options => {
+            window.deviceActivation = navigator.userActivation.isActive;
+            return create(options);
+          };
+        }""")
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#complete')).to_be_visible()
+        self.assertTrue(self.page.evaluate('window.deviceActivation'))
+        self.assertEqual(self.step_posts.get('options'), 1)
+        self.assertEqual(self.errors, [])
+
+    def test_device_failure_names_browser_cause_and_does_not_reset_pin_or_create_a_session(self):
+        self.activation_until_passkey()
+        self.page.evaluate("""() => { navigator.credentials.create = () => Promise.reject(new DOMException('PRIVATE_BROWSER_SENTINEL', 'NotAllowedError')); }""")
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#status')).to_contain_text('não abriu, foi cancelada ou expirou')
+        expect(self.page.locator('#passkey')).to_be_visible()
+        self.page.get_by_text('Informações para o suporte', exact=True).click()
+        expect(self.page.locator('#access-diagnostic')).to_contain_text('DEVICE / DEVICE_NOT_ALLOWED')
+        self.assertNotIn('PRIVATE_BROWSER_SENTINEL', self.page.locator('body').inner_text())
+        self.assertEqual(self.local('/test/state')['sessions'], 0)
+        self.assertEqual(self.step_posts.get('options'), 1)
+        self.page.locator('#passkey-button').click()
+        self.assertEqual(self.step_posts.get('options'), 1)
+
+    def test_old_preparation_requires_a_fresh_click_after_renewal(self):
+        self.activation_until_passkey()
+        self.page.evaluate("""() => { const now = performance.now.bind(performance); performance.now = () => now() + 121000; }""")
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#status')).to_contain_text('Tudo pronto. Clique')
+        expect(self.page.locator('#complete')).to_be_hidden()
+        self.assertEqual(self.step_posts.get('options'), 2)
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#complete')).to_be_visible()
+        self.assertEqual(self.step_posts.get('options'), 2)
+
+    def test_first_access_copy_is_short_and_has_no_internal_account_instructions(self):
+        self.open()
+        self.page.get_by_text('É meu primeiro acesso', exact=True).click()
+        expect(self.page.locator('#start-form')).to_contain_text('Informe seu CPF ou e-mail cadastrado para receber o código por e-mail.')
+        self.assertNotIn('master', self.page.locator('body').inner_text().lower())
 
     def test_login_validation_names_one_field_and_does_not_send_incomplete_inputs(self):
         self.open()

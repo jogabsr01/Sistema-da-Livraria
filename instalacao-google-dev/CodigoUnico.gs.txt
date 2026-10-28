@@ -45,7 +45,7 @@ function auditOperation_(request,c){
 ;
 // END Audit.gs
 
-// BEGIN AuthControl.gs sha256=a25420c4a58db90966b654c616f3c10b3e7bf276a8d2dc650e94554a1043ba05
+// BEGIN AuthControl.gs sha256=17d377f0a4aa95d0bd2793b9d47ac01e15e60fa8215ee601795b84e79fa1ab57
 /* DEV-only private identity controls. Public callers never access this store.
  * All operations run under the installation ScriptLock in processRequest_. */
 var AUTH_CONTROL_SCHEMA = {
@@ -75,7 +75,7 @@ function authControlShape_(ss, name) {
 }
 function authControlRows_(ss, name) {
   var shape = authControlShape_(ss, name), definition = shape.definition, sheet = shape.sheet;
-  var values = shape.lastRow < 2 ? [] : sheet.getRange(2, 1, shape.lastRow - 1, definition.columns.length).getValues();
+  var values = rpcRows_(sheet, shape.lastRow, definition.columns.length);
   return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (key, i) { row[key] = values[i]; }); return row;
@@ -150,6 +150,7 @@ function authControlExact_(payload, keys) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !same_(Object.keys(payload).sort(), keys.slice().sort())) failure_('CHALLENGE_REJECTED');
 }
 function authControlSave_(table, row) {
+  invalidateRpcRows_(table.sheet);
   var values = table.columns.map(function (key) { return row[key]; });
   if (row.number) table.sheet.getRange(row.number, 1, 1, values.length).setValues([values]);
   else {
@@ -529,7 +530,7 @@ function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=69f9a886a50afc4aeeddb7eee8085ef95fa56b8be5513d696132ac8d50184835
+// BEGIN Code.gs sha256=a9f4273710902d0c6ed764a8d7fcbeeca41e1040d0cb4ea7cad09b21a76cdc71
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -566,6 +567,21 @@ function assertMarker_(resource, c, kind) {
 // Populated only inside one signed HTTP operation under ScriptLock. Never cache
 // users, sessions, permissions, row contents or validation across requests.
 var RPC_STORAGE_SCOPE_ = null;
+// Read snapshots exist only while one signed identity command holds ScriptLock.
+// Copy on read so callers cannot mutate a cached row before a durable save.
+// Every identity write invalidates before touching Sheets, including failures.
+function rpcRows_(sheet, lastRow, width) {
+  var cache = RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.identityRows;
+  var values = cache && cache.get(sheet);
+  if (!values) {
+    values = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, width).getValues();
+    if (cache) cache.set(sheet, values);
+  }
+  return values.map(function(row) { return row.slice(); });
+}
+function invalidateRpcRows_(sheet) {
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.identityRows) RPC_STORAGE_SCOPE_.identityRows.delete(sheet);
+}
 function rpcSheet_(spreadsheet, name) {
   if (!RPC_STORAGE_SCOPE_) return spreadsheet.getSheetByName(name);
   var sheets = RPC_STORAGE_SCOPE_.sheets.get(spreadsheet);
@@ -731,7 +747,7 @@ function processRequest_(request, c) {
   return withLock_(function () {
     var acquired=Date.now(),bound=acquired,validated=acquired;
     var previousScope = RPC_STORAGE_SCOPE_;
-    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap() };
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null };
     try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
     var ss;
@@ -2622,7 +2638,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=37618752c4edf9fdaf7b8d39ffe74387c74be7225d5ac34f36e6c0568076b9cb
+// BEGIN OwnerAccess.gs sha256=a59824c47736cbed59929677e0b4a496952b682d0f0e55a13b1a9cacc6c9da93
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -2633,6 +2649,7 @@ function accessEmail_(value) {
   return value.toLowerCase();
 }
 function accessSaveMain_(table, row) {
+  invalidateRpcRows_(table.sheet);
   if (!row.number && table.rows.length >= 5000) failure_('IDENTITY_UNAVAILABLE');
   var values = table.columns.map(function (key) { return row[key] === undefined ? '' : row[key]; });
   if (row.number) table.sheet.getRange(row.number, 1, 1, values.length).setValues([values]);
@@ -4180,7 +4197,7 @@ function securityRecord_(request,c){
 ;
 // END SecurityAudit.gs
 
-// BEGIN SessionStore.gs sha256=ee6a105de8bd409fa347eec4a10763345b45b0caf9b5db5d87138831af6d0a13
+// BEGIN SessionStore.gs sha256=179859c2b00cee9b8801c8aed3c9f4e577e56fcddd4db747df7473fd390f2ed4
 /* Persistent session reader/revoker. Internal functions only.
  * processRequest_ MUST hold ScriptLock and validate the signed envelope before
  * invoking identitySessionOperation_. No user/session creation or PIN storage.
@@ -4192,7 +4209,7 @@ function identityRows_(spreadsheet, name) {
   var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? sheet.getLastRow() : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
   if (!sheet || !definition || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 5001) failure_('IDENTITY_UNAVAILABLE');
-  var values = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, definition.columns.length).getValues();
+  var values = rpcRows_(sheet, lastRow, definition.columns.length);
   return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (column, columnIndex) { row[column] = values[columnIndex]; });
@@ -4258,6 +4275,7 @@ function identitySessionOperation_(request, c) {
   if (request.action === 'identity.session.read') {
     // Reduce Sheets writes while keeping the idle window bounded and shared.
     if (now - resolved.activity >= 60 * 1000) {
+      invalidateRpcRows_(table.sheet);
       table.sheet.getRange(resolved.session.number, table.columns.indexOf('Ultima_Atividade') + 1, 1, 1).setValues([[new Date(now).toISOString()]]);
       SpreadsheetApp.flush();
     }
