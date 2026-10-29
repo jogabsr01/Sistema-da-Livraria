@@ -7,9 +7,11 @@
   <link rel="stylesheet" href="/home-dev.css"><link rel="stylesheet" href="/account-menu.css">
   <script src="/vendor/zxing-0.21.3.min.js" defer></script><script src="/home-dev.js" defer></script>
   <script src="/account-menu.js" defer></script><script src="/notification-badge.js" defer></script>
+<link rel="stylesheet" href="/app-theme.css">
 </head>
-<body><main>
-  <header><div><p class="badge">AMBIENTE DE TESTES — DEV</p><h1>Livraria IPB</h1><p class="subtitle">Jardim Bonfiglioli</p></div><nav aria-label="Sua conta"></nav></header>
+<body class="app-shell page-home"><main>
+  <header class="home-masthead"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><span class="home-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 9C12 6 7 6 3 7v18c5-1 9 0 13 3 4-3 8-4 13-3V7c-4-1-9-1-13 2Zm0 0v19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7 11h5M7 15h5M20 11h5M20 15h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span>Livraria IPB<small>Jardim Bonfiglioli</small></span></a><nav aria-label="Sua conta"></nav></header>
+  <section class="home-intro" aria-labelledby="home-title"><div><p class="badge">AMBIENTE DE TESTES — DEV</p><h1 id="home-title">Cuidar de cada <em>história.</em></h1></div><div class="book-spines" aria-hidden="true"><span></span><span></span><span></span></div></section>
   <p id="status" role="status" aria-live="polite">Conferindo seu acesso…</p>
   <a id="sign-in" href="/acesso-dev.html#entrar" hidden>Entrar na minha conta</a>
   <button id="retry" type="button" hidden>Tentar novamente</button>
@@ -18,6 +20,7 @@
       <button id="new-purchase" class="action-card purchase" type="button"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M3 5h4l4 17h14l4-12H8M12 16h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="27" r="2" fill="currentColor"/><circle cx="24" cy="27" r="2" fill="currentColor"/></svg></span><span><strong>Nova compra</strong><small>Encontre livros e monte a compra</small></span><span aria-hidden="true">→</span></button>
       <button id="search-product" class="action-card search" type="button"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><circle cx="13" cy="13" r="9" stroke="currentColor" stroke-width="2.5"/><path d="m20 20 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span><span><strong>Pesquisar produto</strong><small>Consulte livros, preços e estoque</small></span><span aria-hidden="true">→</span></button>
     </div>
+    <h2 class="section-caption">Mais na sua livraria</h2>
     <nav class="other-actions" aria-label="Mais opções">
       <a class="action-card" href="/catalogo-dev.html?novo=1"><span class="card-icon" aria-hidden="true">+</span><span><strong>Adicionar novo produto</strong><small>Cadastre um livro na livraria</small></span><span aria-hidden="true">→</span></a>
       <a href="/catalogo-dev.html">Catálogo completo</a>
