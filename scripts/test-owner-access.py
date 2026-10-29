@@ -530,6 +530,25 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['sessions'], 0)
         self.page.get_by_text('Informações para o suporte', exact=True).click()
         expect(self.page.locator('#access-diagnostic')).to_contain_text('etapa: OPTIONS / HTTP: 502')
+        expect(self.page.locator('#check-step')).to_be_hidden()
+        expect(self.page.locator('#passkey h2')).to_have_text('Confirme seu acesso')
+        expect(self.page.get_by_role('link',name='Notificações')).to_have_count(0)
+        expect(self.page.locator('#passkey-button')).to_have_text('Tentar novamente')
+        self.lost_step=None
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#passkey-button')).to_have_text('Confirmar no meu aparelho')
+        self.assertEqual(self.step_posts['options'],2);self.assertEqual(self.local('/test/state')['sessions'],0)
+        self.page.locator('#passkey-button').click();expect(self.page.locator('#complete')).to_be_visible()
+        self.assertEqual(self.step_posts['options'],2);self.assertEqual(self.local('/test/state')['sessions'],1)
+
+
+    def test_hosting_auth_gate_is_not_reported_as_google_or_pin_failure(self):
+        self.page.route(ORIGIN+'/api/v1/access/state',lambda route:route.fulfill(status=401,content_type='text/html',body='<title>Login Redirect</title><script>window.location="https://app.netlify.com/edge-access?private-marker"</script>'))
+        self.page.goto(ORIGIN+'/acesso-dev.html')
+        expect(self.page.locator('#status')).to_contain_text('Netlify precisa autorizar')
+        expect(self.page.locator('#environment-access')).to_be_visible();expect(self.page.locator('#environment-access')).to_have_attribute('href','/')
+        expect(self.page.locator('#initial')).to_be_hidden();expect(self.page.locator('#check-step')).to_be_hidden()
+        self.assertEqual(self.session_request_count,0);self.assertNotIn('private-marker',self.page.locator('body').inner_text());self.assertEqual(self.errors,[])
 
     def test_device_prompt_starts_in_user_click_without_another_network_request(self):
         self.activation_until_passkey()

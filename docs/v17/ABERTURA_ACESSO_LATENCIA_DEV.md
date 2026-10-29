@@ -147,3 +147,10 @@ Uma resposta genérica do servidor não é usada para adivinhar que o PIN ou CPF
 Casos: erro de CPF ou e-mail destaca somente o identificador e não envia tentativa; PIN incompleto destaca somente o PIN; correção limpa erro e permite envio; erro genérico de serviço com CPF válido não culpa PIN nem revela cadastro. Dados dos ensaios são sintéticos e não reproduzem o CPF da imagem do proprietário.
 
 Validação: 25 cenários Chromium aprovados, incluindo dois novos de validação local sem envio e resposta genérica do serviço sem atribuir erro ao PIN. Captura do campo inválido inspecionada; build, sintaxe JS e diff check aprovados. Backend e Apps Script não foram alterados.
+
+
+## Preparação do aparelho: margem e tela de acesso
+
+Registro real de 29/10/2026 às 10:26:10 (São Paulo): OPTIONS terminou no Google com outcome OK em 19.127 ms (6.637 ms de schema e 11.228 ms de trabalho), enquanto a tela registrou timeout do transporte aos 20,2 s. O limite de 20 s deixava margem insuficiente para envio, redirecionamento ContentService e retorno. Apenas a operação options passa a compartilhar 27 s entre o orçamento do handler e uma única RPC POST/GET. Os demais clientes mantêm 20 s por RPC. Não há repetição automática, alteração de validade da cerimônia ou emissão de sessão por esta preparação.
+
+A tela de acesso não oferece Notificações nem faz suas consultas: essas funções ficam na Home após a entrada. A etapa é chamada Confirme seu acesso e apresenta uma só ação de recuperação. Depois de preparar novamente, exige outro clique explícito para iniciar a janela nativa; a chamada WebAuthn permanece no gesto do usuário. Detalhes de suporte permanecem recolhidos. Uma resposta HTML401 identificada como Login Redirect do edge-access Netlify apresenta uma ligação à raiz do mesmo ambiente, para autorizar o acesso em uma nova aba, sem executar HTML recebido nem remover a proteção.

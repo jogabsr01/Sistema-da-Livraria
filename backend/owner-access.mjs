@@ -242,12 +242,14 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
 const shapes = { rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
 export const OWNER_ACCESS_BUDGET_MS = 55_000;
 export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
+export const OPTIONS_REQUEST_BUDGET_MS = 27_000;
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
     const requestId = randomUUID(), startedAt = performance.now();
-    const loginRequest=new URL(request.url).pathname.split('/').at(-1)==='login';
+    const requestedOperation=new URL(request.url).pathname.split('/').at(-1);
+    const loginRequest=requestedOperation==='login', optionsRequest=requestedOperation==='options';
     const completionRequest=new URL(request.url).pathname.split('/').at(-1)==='complete'&&request.headers.get('x-access-completion-version')==='2';
-    const deadlineAt=startedAt+(completionRequest||loginRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
+    const deadlineAt=startedAt+(optionsRequest?OPTIONS_REQUEST_BUDGET_MS:completionRequest||loginRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
     let operation, settingsLoaded = false, client, token, rotatedFlow = false;
     const timed=response=>{const metrics=client?.timings?.();response.headers.set('server-timing',`app;dur=${Math.round(performance.now()-startedAt)}`+(metrics?`, google;dur=${metrics.durationMs}, rpc;desc="${metrics.calls}"`:''));return response;};
     try {
@@ -258,7 +260,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       if (request.method !== method) { const result = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); result.headers.set('allow', method); return result; }
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
       settingsLoaded = true;
-      client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt });
+      client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt, ...(optionsRequest?{timeoutMs:OPTIONS_REQUEST_BUDGET_MS}:{}) });
       const service = createOwnerAccessService(settings, { client, stagedCompletion:request.headers.get('x-access-completion-version')==='2' });
       if (operation === 'state') {
         let fresh = false;
