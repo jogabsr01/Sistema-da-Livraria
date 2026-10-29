@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {runAdmin,contentHash,safeTimings,sha256,validateRequest,withSheetsBatch} from '../../scripts/google-dev-admin.mjs';
+import {runAdmin,contentHash,safeTimings,safeProcesses,safeFailures,sha256,validateRequest,withSheetsBatch} from '../../scripts/google-dev-admin.mjs';
 const source='// GENERATED: npm run google:single.\nfunction doPost() {}\n';
 function fixture() {
   const target={scriptId:'synthetic-script',deploymentId:'synthetic-deployment',cloudProjectId:'synthetic-cloud'};
@@ -12,7 +12,7 @@ function fixture() {
   const versions=new Map([[7,structuredClone(files)]]);
   let deployment={deploymentId:target.deploymentId,deploymentConfig:{scriptId:target.scriptId,versionNumber:7,manifestFileName:'appsscript',description:'keep-description'},entryPoints:[{entryPointType:'WEB_APP'}]};
   const calls=[];
-  const state={calls,versions,logs:{entries:[]},driveStatus:'DISABLED',drivePending:false,get files(){return files;},get deployment(){return deployment;},fault:null};
+  const state={calls,versions,processes:[],logs:{entries:[]},driveStatus:'DISABLED',drivePending:false,get files(){return files;},get deployment(){return deployment;},fault:null};
   const fetchImpl=async(url,options)=>{
     const path=new URL(url).pathname,method=options.method||'GET';
     calls.push({url,path,method,body:options.body,redirect:options.redirect});
@@ -20,6 +20,7 @@ function fixture() {
     let value;
     if(path==='/token')value={access_token:'access-marker-123456789'};
     else if(path==='/v2/entries:list')value=state.logs;
+    else if(path==='/v1/processes:listScriptProcesses')value={processes:state.processes};
     else if(['/v1/projects/590183543759/services/drive.googleapis.com','/v1/projects/590183543759/services/sheets.googleapis.com'].includes(path))value={state:state.driveStatus};
     else if(['/v1/projects/590183543759/services/drive.googleapis.com:enable','/v1/projects/590183543759/services/sheets.googleapis.com:enable'].includes(path)){if(!state.drivePending)state.driveStatus='ENABLED';value={name:'private-operation-marker'};}
     else if(path.endsWith('/content') && method==='GET')value={files:structuredClone(new URL(url).searchParams.has('versionNumber')?versions.get(Number(new URL(url).searchParams.get('versionNumber'))):files)};
@@ -155,4 +156,16 @@ test('timing operation tags and schema batch counts are optional closed metadata
  const metric={metric:'rpc.duration',lockMs:1,bindingsMs:2,schemaMs:3,workMs:4,totalMs:10,operation:'START',schemaBatchReads:2};
  assert.deepEqual(safeTimings([{jsonPayload:metric}]),[{lockMs:1,bindingsMs:2,schemaMs:3,workMs:4,totalMs:10,operation:'START',schemaBatchReads:2}]);
  const result=safeTimings([{jsonPayload:{...metric,operation:'PRIVATE_EMAIL',schemaBatchReads:999}}]);assert.equal(Object.hasOwn(result[0],'operation'),false);assert.equal(Object.hasOwn(result[0],'schemaBatchReads'),false);
+});
+
+test('inspection traces timestamped processes and failure categories without identities, exception bodies or Google writes',async()=>{
+ const f=fixture();f.state.processes=[{startTime:'2026-10-29T12:30:00.123456Z',duration:'5.6s',processStatus:'FAILED',processType:'WEBAPP',functionName:'doPost',userAccessLevel:'OWNER',private:'secret-marker'}];
+ f.state.logs.entries=[{timestamp:'2026-10-29T12:30:05.6Z',severity:'ERROR',textPayload:'TypeError secret-marker person@example.invalid'}];
+ const r=await f.inspect();assert.equal(r.processHistory,'SAMPLED');assert.deepEqual(r.processes,[{timestamp:'2026-10-29T12:30:00.123Z',durationMs:5600,status:'FAILED',function:'doPost',type:'WEBAPP'}]);assert.deepEqual(r.failures,[{timestamp:'2026-10-29T12:30:05.600Z',severity:'ERROR',category:'SCRIPT_TYPE'}]);assert.equal(writes(f).length,0);assert.ok(!/secret-marker|person@example|OWNER|userAccess/.test(JSON.stringify(r)));
+ const call=f.state.calls.find(c=>c.path==='/v1/processes:listScriptProcesses');assert.equal(call.method,'GET');assert.equal(new URL(call.url).searchParams.get('scriptId'),'synthetic-script');
+});
+test('process history fails independently and malformed diagnostic values cannot enter the report',async()=>{
+ const f=fixture();f.state.fault=({path})=>{if(path==='/v1/processes:listScriptProcesses')throw Error('secret-marker');};const r=await f.inspect();assert.equal(r.processHistory,'UNAVAILABLE');assert.equal(r.logging,'NO_METRICS_IN_LAST_HOUR');assert.ok(!JSON.stringify(r).includes('secret-marker'));
+ assert.deepEqual(safeProcesses([{startTime:'secret-marker',processStatus:'FAILED',duration:'1s'}]),[]);assert.deepEqual(safeProcesses([{startTime:'2026-10-29T12:30:00Z',processStatus:'secret-marker',duration:'1s'}]),[]);assert.deepEqual(safeFailures([{timestamp:'secret-marker',severity:'ERROR',textPayload:'TypeError'}]),[]);
+ const metric={metric:'rpc.duration',lockMs:0,bindingsMs:1,schemaMs:2,workMs:3,totalMs:6};assert.equal(safeTimings([{timestamp:'2026-10-29T12:30:00.123456789Z',jsonPayload:metric}])[0].timestamp,'2026-10-29T12:30:00.123Z');assert.equal(Object.hasOwn(safeTimings([{timestamp:'secret-marker',jsonPayload:metric}])[0],'timestamp'),false);
 });
