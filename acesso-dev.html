@@ -15,7 +15,7 @@
     <p class="badge">AMBIENTE DE TESTES — DEV</p>
     <h1>Acesso à sua conta</h1>
     <p>Livraria IPB Jardim Bonfiglioli</p>
-    <nav><a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a></nav>
+    <nav class="access-navigation" aria-label="Notificações"><a class="action-link secondary" href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a></nav>
     <div id="access-feedback">
     <div id="access-progress" class="access-progress" role="status" aria-live="polite" hidden><span class="access-spinner" aria-hidden="true"></span><span>Aguarde…</span></div>
     <p id="status" role="status" aria-live="polite">Conferindo disponibilidade…</p>
@@ -75,10 +75,11 @@
     <section id="complete" hidden>
       <h2>Identidade confirmada</h2>
       <p id="identity-result"></p>
-      <p><a href="/catalogo-dev.html">Abrir catálogo compartilhado DEV</a></p><p><a href="/meu-perfil-dev.html">Meu perfil</a></p>
-      <p>Os módulos compartilhados dependem da ativação desta instalação.</p>
-      <p id="team-link" hidden><a href="/equipe-dev.html">Gerenciar equipe</a></p>
-      <button id="logout-button" type="button">Sair da conta verificada</button>
+      <nav class="complete-actions" aria-label="Acessar a livraria">
+        <a id="enter-app" class="action-link app-entry" href="/catalogo-dev.html"><span>Entrar no app Livraria</span><span aria-hidden="true">→</span></a>
+        <a class="action-link secondary" href="/meu-perfil-dev.html">Meu perfil</a>
+        <span id="team-link" hidden><a class="action-link secondary" href="/equipe-dev.html">Gerenciar equipe</a></span>
+      </nav>
     </section>
     <button id="restart" type="button" class="secondary" hidden>Voltar ao início</button>
   </main>

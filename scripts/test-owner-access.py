@@ -114,7 +114,14 @@ class OwnerAccess(unittest.TestCase):
     def activate(self):
         self.activation_until_passkey(); self.page.locator('#passkey-button').click(); expect(self.page.locator('#complete')).to_be_visible()
     def logout(self):
-        self.page.locator('#logout-button').click(); expect(self.page.locator('#initial')).to_be_visible()
+        # Test setup uses the authenticated API; the entry screen now leads into the app.
+        status = self.page.evaluate("""async () => {
+          const session = await fetch('/api/v1/session', {credentials:'same-origin'});
+          const {data} = await session.json();
+          return (await fetch('/api/v1/session/logout', {method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-csrf-token':data.csrfToken},body:'{}'})).status;
+        }""")
+        self.assertEqual(status, 200)
+        self.page.reload(); expect(self.page.locator('#initial')).to_be_visible()
     def begin_login(self, pin='8274'):
         self.page.locator('#login-email').fill('owner@example.invalid'); self.page.locator('#login-pin').fill(pin)
         self.page.get_by_role('button', name='Entrar na minha conta', exact=True).first.click()
@@ -133,6 +140,19 @@ class OwnerAccess(unittest.TestCase):
         state = self.local('/test/state'); self.assertEqual(state['sessions'], 2); self.assertEqual(state['pins'], 1); self.assertEqual(state['passkeys'], 1)
         self.page.screenshot(path=str(ARTIFACTS / 'acesso-desktop.png'), full_page=True)
         self.assert_no_secrets_in_browser_storage(); self.assertEqual(self.errors, [])
+    def test_mobile_completed_entry_opens_app_without_logging_out(self):
+        self.activate()
+        expect(self.page.locator('#logout-button')).to_have_count(0)
+        entry = self.page.get_by_role('link', name='Entrar no app Livraria')
+        expect(entry).to_have_attribute('href', '/catalogo-dev.html')
+        entry.focus(); self.assertEqual(self.page.evaluate('document.activeElement.id'), 'enter-app')
+        self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        self.page.screenshot(path=str(ARTIFACTS / 'entrada-app-mobile.png'), full_page=True)
+        self.page.route(ORIGIN + '/catalogo-dev.html', lambda route: route.fulfill(status=200, content_type='text/html', body='<h1>Catálogo da livraria</h1>'))
+        entry.press('Enter'); expect(self.page).to_have_url(ORIGIN + '/catalogo-dev.html')
+        self.assertEqual(self.step_posts.get('logout', 0), 0)
+        self.assertEqual(self.local('/test/state')['activeSessions'], 1)
+        self.assertEqual(self.errors, [])
     def test_completion_uses_two_acknowledged_phases_without_extra_session_read(self):
         self.activation_until_passkey()
         before = self.session_request_count
