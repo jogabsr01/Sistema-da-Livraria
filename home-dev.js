@@ -2,6 +2,11 @@
 (() => {
   const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
   const $=id=>document.getElementById(id);
+  let memberAssetsLoaded=false;
+  function memberAssets(){
+    if(memberAssetsLoaded)return;memberAssetsLoaded=true;
+    for(const src of ['/account-menu.js','/notification-badge.js']){const script=document.createElement('script');script.src=src;script.defer=true;document.head.append(script);}
+  }
   let authenticated=false, destination='/catalogo-dev.html', stream=null, reader=null, generation=0, checking=false;
   function stopCamera(){
     generation++;reader?.reset();reader=null;
@@ -49,7 +54,7 @@
     }
   });
   async function load(){
-    if(checking)return;checking=true;authenticated=false;$('home').hidden=true;$('sign-in').hidden=true;$('retry').hidden=true;
+    if(checking)return;checking=true;authenticated=false;$('home').hidden=true;$('welcome').hidden=false;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');
     document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=true);
     if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço DEV da livraria para continuar.';checking=false;return;}
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
@@ -60,7 +65,7 @@
       if(!response.ok)throw Error('UNAVAILABLE');
       const {data}=await response.json();
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role))throw Error('INVALID_SESSION');
-      authenticated=true;$('home').hidden=false;$('status').textContent='O que você quer fazer agora?';
+      authenticated=true;$('welcome').hidden=true;$('member-intro').hidden=false;$('account-navigation').hidden=false;document.body.classList.add('is-member');$('home').hidden=false;$('status').textContent='O que você quer fazer agora?';memberAssets();
       document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role));
     }catch{$('status').textContent='Não foi possível conferir seu acesso. Tente novamente.';$('retry').hidden=false;}
     finally{clearTimeout(timer);checking=false;}
