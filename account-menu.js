@@ -21,7 +21,7 @@
     if(p?.photoUrl){avatar.src=p.photoUrl;avatar.alt='';}else avatar.textContent=p?p.name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase():'Conta';
     summary.append(avatar);menu.append(summary);
     const list=document.createElement('div');list.className='account-options';
-    for(const [label,href] of [['Meu perfil','/meu-perfil-dev.html'],...(p?.recoveryEnabled?[['Alterar PIN','/acesso-dev.html#recuperar-pin']]:[]),...(p?.schedulesEnabled?[['Minha escala','/escalas-dev.html']]:[]),['Notificações','/notificacoes-dev.html']]){const link=document.createElement('a');link.textContent=label;link.href=href;list.append(link);}
+    for(const [label,href] of [['Início','/home-dev.html'],['Meu perfil','/meu-perfil-dev.html'],...(p?.recoveryEnabled?[['Alterar PIN','/acesso-dev.html#recuperar-pin']]:[]),...(p?.schedulesEnabled?[['Minha escala','/escalas-dev.html']]:[]),['Notificações','/notificacoes-dev.html']]){const link=document.createElement('a');link.textContent=label;link.href=href;list.append(link);}
     const status=document.createElement('p');status.setAttribute('role','status');status.hidden=true;
     const logout=document.createElement('button');logout.type='button';logout.textContent='Sair';
     logout.addEventListener('click',async()=>{

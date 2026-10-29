@@ -297,6 +297,7 @@ function processRequest_(request, c) {
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
       var props = scriptProperties_();
       if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      if (request.action === 'identity.access.loginLookup') return accessLoginLookup_(request,c);
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
       if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
@@ -328,7 +329,7 @@ function processRequest_(request, c) {
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
-      var tags={'identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
+      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
       var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
       try { console.info(JSON.stringify({metric:'rpc.duration',operation:operation,schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started})); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }

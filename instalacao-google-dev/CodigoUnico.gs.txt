@@ -531,7 +531,7 @@ function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=7bb94975900cfa6a5bb63b590f32608ee75cc52c1aeb1313cc7da9a1fe81d44c
+// BEGIN Code.gs sha256=309724ed4ea8feedfa7b7942417973c2aad7970903fa7bf0e1a9bbf5f85eb69f
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -831,6 +831,7 @@ function processRequest_(request, c) {
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
       var props = scriptProperties_();
       if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      if (request.action === 'identity.access.loginLookup') return accessLoginLookup_(request,c);
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
       if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
@@ -862,7 +863,7 @@ function processRequest_(request, c) {
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
-      var tags={'identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
+      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
       var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
       try { console.info(JSON.stringify({metric:'rpc.duration',operation:operation,schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started})); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }
@@ -2669,7 +2670,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=256295843ad71f709c2c4afaa26195255ed65b0bc87cda24849897a0c1fb27c0
+// BEGIN OwnerAccess.gs sha256=8186b1af925f596737d34fa63d66cd9de4fece2850402f75ec7901b061272970
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -2964,6 +2965,29 @@ function accessOptions_(request, c) {
   else passkeyOperation_({action:'identity.passkey.begin',payload:{subjectId:user.subjectId,authorizationVersion:user.authorizationVersion,ceremonyId:p.ceremonyId,purpose:kind === 'create' ? 'REGISTER':'AUTHENTICATE',challenge:p.challenge}}, c);
   ownerAccessOperation_({action:'identity.access.bind',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId}}, c);
   return {allowed:true, subjectId:user.subjectId, authorizationVersion:user.authorizationVersion, kind:kind, credentials:credentials, ceremonyId:p.ceremonyId, challenge:p.challenge, replacementAllowed:flow.replacementAllowed};
+}
+
+// One locked lookup reserves the durable guess budget before reading a PIN
+// verifier. It never accepts a subject/role/PIN and never creates a flow/session.
+function accessLoginLookup_(request,c) {
+  var p=request.payload;
+  authControlExact_(p,['accountKey','originKey','email','emailIndex','cpfIndex','staffLookup']);
+  if(typeof p.staffLookup!=='boolean'||typeof p.email!=='string'||typeof p.emailIndex!=='string'||typeof p.cpfIndex!=='string'||
+      (p.email!==''&&accessEmail_(p.email)!==p.email)||
+      (p.email===''?!accessHash_(p.cpfIndex):p.cpfIndex!=='')||
+      (p.staffLookup&&p.email!==''?!accessHash_(p.emailIndex):p.emailIndex!==''))accessReject_();
+  if(p.staffLookup&&!staffEnabled_())failure_('STAFF_UNAVAILABLE');
+  recoverSecurityIntent_(c);
+  var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  if(p.staffLookup){
+    var staff=staffAccessOperation_({action:'identity.staffAccess.lookup',payload:{emailIndex:p.emailIndex,cpfIndex:p.cpfIndex}},c).account;
+    if(staff)return {allowed:true,kind:'STAFF',account:staff.activated&&staff.record?staff:null};
+  }
+  var email=p.email;
+  if(!email)email=ownerAccessOperation_({action:'identity.access.ownerLookup',payload:{cpfIndex:p.cpfIndex}},c).email;
+  var account=email?ownerAccessOperation_({action:'identity.access.lookup',payload:{email:email}},c).account:null;
+  return {allowed:true,kind:'OWNER',account:account};
 }
 
 function accessStartGuarded_(request,c) {
