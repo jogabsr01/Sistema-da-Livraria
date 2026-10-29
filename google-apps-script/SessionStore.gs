@@ -6,7 +6,7 @@ function identityUuid_(value) {
   return typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 }
 function identityRows_(spreadsheet, name) {
-  var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? sheet.getLastRow() : 0;
+  var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
   if (!sheet || !definition || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 5001) failure_('IDENTITY_UNAVAILABLE');
   var values = rpcRows_(sheet, lastRow, definition.columns.length);

@@ -46,7 +46,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
         if(data?.allowed!==true)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
         action={'identity.access.startGuarded':'identity.access.start','identity.access.emailGuarded':'identity.access.email','identity.access.pinReadGuarded':'identity.access.read'}[action];
       }
-      if (action === 'identity.access.options') {
+      if (['identity.access.options','identity.access.biometricOptions'].includes(action)) {
         if (data?.allowed === false && Number.isSafeInteger(data.retryAfterSeconds) && data.retryAfterSeconds >= 1 && data.retryAfterSeconds <= 3600) {
           const error = new ApiError(429, 'AUTH_RATE_LIMITED'); error.retryAfterSeconds = data.retryAfterSeconds; throw error;
         }
@@ -173,7 +173,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
         if (action === 'identity.access.email') {
           if (typeof data?.verified !== 'boolean') untrusted(); return { verified: data.verified };
         }
-        if (['identity.access.pin', 'identity.access.bind'].includes(action)) {
+        if (['identity.access.pin', 'identity.access.bind','identity.access.saveProof'].includes(action)) {
           if (data?.stored !== true) untrusted(); return { stored: true };
         }
         if(action==='identity.access.rescue'){if(typeof data?.authorized!=='boolean')untrusted();return {authorized:data.authorized};}
@@ -263,7 +263,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {
-      if (!['rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'ownerLookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      if (!['saveProof','rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'ownerLookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       return invoke('identity.access.' + operation, null, payload);
     },
     listPasskeys: payload => invoke('identity.passkey.list', null, payload),
@@ -277,6 +277,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     verifyAccessEmail: payload => invoke('identity.access.emailGuarded', null, payload),
     readAccessForPin: payload => invoke('identity.access.pinReadGuarded', null, payload),
     lookupAccessLogin: payload => invoke('identity.access.loginLookup', null, payload),
+    prepareBiometricOptions: payload => invoke('identity.access.biometricOptions', null, payload),
     prepareAccessOptions: payload => invoke('identity.access.options', null, payload),
     prepareAccessCompletion: payload => invoke('identity.access.prepareCompletion', null, payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),

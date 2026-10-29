@@ -35,6 +35,8 @@
         <div class="pin-field"><input id="login-pin" aria-describedby="login-pin-error" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="login-pin" aria-controls="login-pin" aria-label="Mostrar PIN de entrada" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
         <p id="login-pin-error" class="field-error" hidden></p>
         <button>Entrar na minha conta</button>
+        <button id="biometric-login" type="button" class="secondary">Entrar com biometria, sem PIN</button>
+        <p class="login-method-help">Já cadastrou seu aparelho? Informe o CPF ou e-mail e escolha a biometria para entrar sem digitar o PIN da livraria.</p>
       </form>
       <details id="first-access-box">
         <summary>É meu primeiro acesso</summary>
@@ -69,8 +71,9 @@
       <button id="passkey-button" type="button" aria-describedby="passkey-help">Confirmar no meu aparelho</button>
     </section>
     <section id="retry" hidden>
-      <p>A confirmação pode ter sido salva. Tente concluir novamente para conferir o resultado.</p>
-      <button id="retry-button" type="button">Conferir e concluir acesso</button>
+      <h2>Concluir entrada</h2>
+      <p id="completion-help">Estamos finalizando sua entrada. Você não precisa repetir a biometria.</p>
+      <button id="retry-button" type="button">Tentar concluir entrada</button>
     </section>
     <section id="complete" hidden>
       <h2>Identidade confirmada</h2>

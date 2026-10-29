@@ -76,9 +76,9 @@ class OwnerAccess(unittest.TestCase):
             operation = path.rsplit('/', 1)[-1]
             if request.method == 'POST':
                 self.step_posts[operation] = self.step_posts.get(operation, 0) + 1
-            if operation == self.lost_step and self.step_failure == 'before':
+            if operation == self.lost_step and (operation != 'complete' or self.step_posts.get(operation) == getattr(self,'lost_complete_at',1)) and self.step_failure == 'before':
                 route.abort('failed'); return
-            if operation == self.lost_step and self.step_failure == 'html-before':
+            if operation == self.lost_step and (operation != 'complete' or self.step_posts.get(operation) == getattr(self,'lost_complete_at',1)) and self.step_failure == 'html-before':
                 route.fulfill(status=502 if operation == 'options' else 504, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
             result = self.local(path, body=body, headers=headers, method=request.method)
             timing = re.search(r'rpc;desc="(\d+)"', result['headers'].get('server-timing', ''))
@@ -86,7 +86,7 @@ class OwnerAccess(unittest.TestCase):
             if operation == 'complete':
                 if not hasattr(self, 'complete_results'): self.complete_results = []
                 self.complete_results.append(result)
-            if operation == self.lost_step:
+            if operation == self.lost_step and (operation != 'complete' or self.step_posts.get(operation) == getattr(self,'lost_complete_at',1)):
                 if self.step_failure == 'html':
                     route.fulfill(status=502, content_type='text/html', body='<html>PRIVATE_PROVIDER_RESPONSE</html>'); return
                 route.abort('failed'); return
@@ -153,35 +153,41 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.step_posts.get('logout', 0), 0)
         self.assertEqual(self.local('/test/state')['activeSessions'], 1)
         self.assertEqual(self.errors, [])
-    def test_completion_uses_two_acknowledged_phases_without_extra_session_read(self):
+    def test_completion_uses_three_single_rpc_phases_without_extra_session_read(self):
         self.activation_until_passkey()
         before = self.session_request_count
         rpc_before = self.last_rpc_count
         self.page.locator('#passkey-button').click()
         expect(self.page.locator('#complete')).to_be_visible()
-        self.assertEqual(len(self.complete_results), 2)
-        first, second = self.complete_results
+        self.assertEqual(len(self.complete_results), 3)
+        first, saved, second = self.complete_results
         self.assertEqual(first['status'], 202)
         self.assertEqual(json.loads(first['body'])['data']['stage'], 'COMMITTING')
         self.assertEqual(first['cookies'], [])
         first_count = int(re.search(r'rpc;desc="(\d+)"', first['headers']['server-timing']).group(1))
-        self.assertEqual(first_count - rpc_before, 2)
+        self.assertEqual(first_count - rpc_before, 1)
+        self.assertIn('proofReceipt', json.loads(first['body'])['data'])
+        saved_count=int(re.search(r'rpc;desc="(\d+)"', saved['headers']['server-timing']).group(1))
+        self.assertEqual(saved_count-first_count,1)
+        self.assertEqual(saved['cookies'],[])
+        self.assertTrue(json.loads(saved['body'])['data']['proofSaved'])
         self.assertEqual(json.loads(second['body'])['data']['stage'], 'COMPLETE')
         second_count = int(re.search(r'rpc;desc="(\d+)"', second['headers']['server-timing']).group(1))
-        self.assertEqual(second_count - first_count, 1)
+        self.assertEqual(second_count - saved_count, 1)
         self.assertEqual(self.session_request_count, before)
         self.assertEqual(self.local('/test/state')['sessions'], 1)
         self.assert_no_secrets_in_browser_storage()
 
     def test_lost_proof_ack_stops_without_auto_commit_and_reload_resumes_one_session(self):
         self.activation_until_passkey()
-        self.lost_step = 'complete'; self.step_failure = 'html'
+        self.lost_step = 'complete'; self.step_failure = 'html'; self.lost_complete_at=2
         self.page.locator('#passkey-button').click()
-        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
-        self.assertEqual(self.step_posts.get('complete'), 1)
+        expect(self.page.locator('#status')).to_contain_text('Não foi possível concluir sua entrada')
+        self.assertEqual(self.step_posts.get('complete'), 2)
         state = self.local('/test/state')
         self.assertEqual(state['sessions'], 0)
         self.assertEqual(state['passkeys'], 1)
+        self.page.screenshot(path=str(ARTIFACTS/'recuperacao-entrada.png'),full_page=True)
         self.lost_step = None; self.step_failure = None
         self.page.reload()
         expect(self.page.locator('#retry')).to_be_visible()
@@ -190,6 +196,43 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['sessions'], 1)
         self.assertEqual(self.local('/test/state')['passkeys'], 1)
         self.assertEqual(self.errors, [])
+
+    def test_lost_preparation_ack_offers_fresh_device_confirmation_without_replaying_consumed_proof(self):
+        self.activate();self.logout();self.begin_login();self.lost_step='complete';self.step_failure='html';self.complete_results=[];self.step_posts['complete']=0
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#status')).to_contain_text('Não foi possível concluir sua entrada')
+        expect(self.page.locator('#check-step')).to_be_hidden()
+        expect(self.page.locator('#retry-button')).to_have_text('Tentar concluir entrada')
+        self.assertEqual(self.local('/test/state')['passkeys'],1)
+        self.lost_step=None;self.step_failure=None
+        self.page.locator('#retry-button').click();expect(self.page.locator('#passkey-button')).to_have_text('Confirmar no meu aparelho')
+        self.assertEqual(self.local('/test/state')['sessions'],1)
+        self.page.locator('#passkey-button').click();expect(self.page.locator('#complete')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['sessions'],2)
+        self.assertEqual(self.local('/test/state')['passkeys'],1)
+        self.assertEqual(self.errors,[])
+    def test_biometric_login_uses_registered_device_without_pin(self):
+        self.activate();self.logout()
+        self.page.locator('#login-email').fill('owner@example.invalid')
+        self.page.locator('#biometric-login').click()
+        expect(self.page.locator('#passkey-button')).to_have_text('Confirmar no meu aparelho')
+        self.assertEqual(self.page.locator('#login-pin').input_value(),'')
+        self.assertEqual(self.step_posts.get('login',0),0)
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#complete')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['sessions'],2)
+        self.assertEqual(self.local('/test/state')['passkeys'],1)
+        self.assertEqual(self.errors,[])
+
+    def test_expired_completion_continuation_offers_restart_instead_of_repeating_failed_action(self):
+        self.activation_until_passkey()
+        self.page.route(ORIGIN+'/api/v1/access/complete',lambda route:route.fulfill(status=401,content_type='application/json',body=json.dumps({'error':{'code':'ACCESS_CONTINUATION_EXPIRED'}})))
+        self.page.locator('#passkey-button').click()
+        expect(self.page.locator('#retry-button')).to_be_hidden()
+        expect(self.page.locator('#check-step')).to_be_hidden()
+        expect(self.page.locator('#restart')).to_be_visible()
+        self.assertEqual(self.local('/test/state')['sessions'],0)
+        self.assertEqual(self.errors,[])
 
     def test_start_timeout_recovers_delivered_code_with_rotated_cookie_without_resending(self):
         self.open(); self.page.get_by_text('É meu primeiro acesso',exact=True).click()
@@ -222,12 +265,12 @@ class OwnerAccess(unittest.TestCase):
     def recover_commit(self, stage):
         self.activation_until_passkey(); self.local('/test/fault', {'stage': stage, 'after': True})
         self.page.locator('#passkey-button').click()
-        expect(self.page.locator('#status')).to_contain_text('Não conseguimos confirmar esta etapa')
+        expect(self.page.locator('#status')).to_contain_text('Não foi possível concluir sua entrada')
         expect(self.page.locator('#access-progress')).to_be_hidden()
         expect(self.page.locator('#status')).to_have_attribute('data-tone', 'error')
         self.assertFalse(any(c['name'] == '__Host-livraria_session' for c in self.context.cookies()))
         if stage == 'session':
-            self.page.get_by_role('button', name='Conferir etapa salva', exact=True).click()
+            expect(self.page.locator('#check-step')).to_be_hidden()
         else:
             self.page.reload()
         expect(self.page.locator('#retry')).to_be_visible()

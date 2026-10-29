@@ -21,7 +21,7 @@ function authControlTime_(value) {
   try { return identityTime_(value); } catch (_) { failure_('IDENTITY_UNAVAILABLE'); }
 }
 function authControlShape_(ss, name) {
-  var definition = authControlDefinition_(name), sheet = rpcSheet_(ss, name), lastRow = sheet ? sheet.getLastRow() : 0;
+  var definition = authControlDefinition_(name), sheet = rpcSheet_(ss, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   if (!sheet || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 3001) failure_('IDENTITY_UNAVAILABLE');
   return { sheet: sheet, definition: definition, lastRow: lastRow };
 }
