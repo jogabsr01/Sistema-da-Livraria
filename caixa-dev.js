@@ -104,18 +104,18 @@
     return total;
   }
   let activeNiche='';
-  async function loadCashNiches(){const d=await api('/api/v1/catalog/niches'),host=$('cash-niches');host.hidden=d.nichesEnabled!==true;if(host.hidden){activeNiche='';return;}const list=d.niches.filter(n=>n.active).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));if(activeNiche&&!list.some(n=>n.id===activeNiche)){activeNiche='';offset=0;}host.replaceChildren();for(const n of [{id:'',name:'Todos os livros',description:'Explore o catálogo completo',color:'#205b43'},...list]){const b=document.createElement('button');b.type='button';b.className='cash-niche';b.setAttribute('aria-pressed',String(activeNiche===n.id));b.style.borderColor=n.color;if(n.imageUrl){const img=document.createElement('img');img.src=n.imageUrl;img.alt='';img.loading='lazy';img.addEventListener('error',()=>img.remove(),{once:true});b.append(img);}const label=document.createElement('strong');label.textContent=n.name;const desc=document.createElement('span');desc.textContent=n.description;b.append(label,desc);b.addEventListener('click',()=>{if(refreshing)return;activeNiche=n.id;offset=0;refresh();});host.append(b);}}
-  async function refresh() {
+  async function loadCashNiches(preloaded=null){const d=preloaded||await api('/api/v1/catalog/niches'),host=$('cash-niches');host.hidden=d.nichesEnabled!==true;if(host.hidden){activeNiche='';return;}const list=d.niches.filter(n=>n.active).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));if(activeNiche&&!list.some(n=>n.id===activeNiche)){activeNiche='';offset=0;}host.replaceChildren();for(const n of [{id:'',name:'Todos os livros',description:'Explore o catálogo completo',color:'#205b43'},...list]){const b=document.createElement('button');b.type='button';b.className='cash-niche';b.setAttribute('aria-pressed',String(activeNiche===n.id));b.style.borderColor=n.color;if(n.imageUrl){const img=document.createElement('img');img.src=n.imageUrl;img.alt='';img.loading='lazy';img.addEventListener('error',()=>img.remove(),{once:true});b.append(img);}const label=document.createElement('strong');label.textContent=n.name;const desc=document.createElement('span');desc.textContent=n.description;b.append(label,desc);b.addEventListener('click',()=>{if(refreshing)return;activeNiche=n.id;offset=0;refresh();});host.append(b);}}
+  async function refresh(preloaded=null) {
+    if(!preloaded?.user||!Array.isArray(preloaded.products))preloaded=null;
     if (refreshing || document.hidden || !csrf || !online()) return;
     refreshing = true; stockReady = false; clearTimeout(freshnessTimer); renderCart();
     const version = connectionVersion;
     try {
-      const session = await api('/api/v1/session');
-      if ('checkout.pending.' + session.user.id !== storageKey) { invalidateStock(); protectCustomer(true); throw Object.assign(Error('ACCOUNT_CHANGED'), {status:401}); }
-      csrf = session.csrfToken;
-      await loadCashNiches();
-      const query = new URLSearchParams({ q:$('query').value.trim(), offset:String(offset),niche:activeNiche });
-      const data = await api('/api/v1/catalog/list?' + query);
+      const query=new URLSearchParams({q:$('query').value.trim(),offset:String(offset),niche:activeNiche});
+      const data=preloaded||await api('/api/v1/catalog/bootstrap?'+query),session=data;
+      if('checkout.pending.'+session.user.id!==storageKey){invalidateStock();protectCustomer(true);throw Object.assign(Error('ACCOUNT_CHANGED'),{status:401});}
+      csrf=session.csrfToken;document.body.dataset.sessionRole=session.user.role;if($('module-account'))$('module-account').hidden=false;window.dispatchEvent(new Event('livraria:session-ready'));
+      await loadCashNiches(data);
       // Do not unlock from a partial page, or from a response that crossed a
       // disconnect/reconnect. Selected books outside this page must also pass.
       const selected = new Map();
@@ -216,8 +216,9 @@
     starting = true;
     const version = connectionVersion;
     try {
-      const session = await api('/api/v1/session'); csrf = session.csrfToken; storageKey = 'checkout.pending.' + session.user.id;
-      const capabilities = await api('/api/v1/catalog/niches');
+      const query=new URLSearchParams({q:$('query').value.trim(),offset:String(offset),niche:activeNiche});
+      const bootstrap=await api('/api/v1/catalog/bootstrap?'+query),session=bootstrap;csrf=session.csrfToken;storageKey='checkout.pending.'+session.user.id;
+      const capabilities=bootstrap;
       if (capabilities.checkoutEnabled !== true) { $('status').textContent = 'O Caixa compartilhado ainda não está disponível nesta instalação DEV.'; return; }
       customersEnabled=capabilities.customersEnabled===true;$('customer-options').hidden=!customersEnabled;
       let raw; try { raw = sessionStorage.getItem(storageKey); } catch { throw Error('STORAGE_UNAVAILABLE'); }
@@ -232,7 +233,7 @@
         pending = value; for (const line of pending.items) cart.set(line.productId, line.quantity);
         $('payment').value = pending.paymentMethod; $('sale-status').textContent = 'Há uma compra aguardando confirmação. Verifique o resultado antes de iniciar outra.';
       }
-      started = true; $('checkout').hidden = false; renderCart(); await refresh(); setInterval(refresh, 30000);
+      started = true; $('checkout').hidden = false; renderCart(); await refresh(bootstrap); setInterval(refresh, 30000);
     } catch (error) { $('status').textContent = error.code === 'OFFLINE' ? 'Sem conexão. Mantenha a aba aberta; o acesso será conferido ao reconectar.' : error.status ? message(error) : 'Não foi possível recuperar o Caixa com segurança neste navegador. Preserve a aba e confira o acesso antes de continuar.'; }
     finally { starting = false; if (!started && online() && version !== connectionVersion) start(); }
   }

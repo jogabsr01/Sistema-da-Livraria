@@ -4,7 +4,7 @@ import { ApiError,json,safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
 import { loadPersonalDataSettings,createPersonalDataVault } from './personal-data.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
-import { createSessionService } from './session-service.mjs';
+import { createSessionService,sessionTransportContext,validateSessionPrincipal } from './session-service.mjs';
 import { requirePermission,requireSameOriginMutation,requireCsrfToken } from './authorization.mjs';
 import { normalizeStaffContact,normalizeCpf,staffText } from './staff-model.mjs';
 import { catalogUuid } from './catalog-model.mjs';
@@ -21,9 +21,14 @@ export function unpackProfile(data,vault,id){
 }
 function phone(value){if(typeof value!=='string'||value.length>20)invalid('phone');const p=value.replace(/[\s()+-]/g,'');if(p&&!/^\d{10,15}$/.test(p))invalid('phone');return p;}
 export function createProfileHandler(dependencies={}){return async request=>{const requestId=randomUUID();try{
- const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['get','save','photo'].includes(op))throw new ApiError(404,'NOT_FOUND');const method=op==='save'?'POST':'GET';if(request.method!==method){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow',method);return r;}
+ const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['bootstrap','get','save','photo'].includes(op))throw new ApiError(404,'NOT_FOUND');const method=op==='save'?'POST':'GET';if(request.method!==method){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow',method);return r;}
  if([...url.searchParams.keys()].some(k=>op!=='photo'||k!=='v'||url.searchParams.getAll(k).length!==1)||url.searchParams.has('v')&&!/^\d{1,7}$/.test(url.searchParams.get('v')))invalid();
  const settings=(dependencies.loadSettings||loadProfileSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),sessions=createSessionService(settings,{client}),vault=createPersonalDataVault(settings);if(method==='POST')requireSameOriginMutation(request,ORIGIN);
+ if(op==='bootstrap'){
+  const context=sessionTransportContext(request,settings),result=await client.profile('bootstrap',context.actor,{}),principal=validateSessionPrincipal(result?.principal);requirePermission(principal,'profile.self.read');
+  const d=unpackProfile(result.profile,vault,principal.id);if(d.role!==principal.role)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+  return json({data:{id:d.id,role:d.role,owner:d.owner,name:d.record.name,email:d.email,phone:d.record.phone,cpfMasked:d.cpfMasked,lastAccess:d.lastAccess,revision:d.revision,photoUrl:d.hasPhoto?'/api/v1/profile/photo?v='+d.revision:'',recoveryEnabled:settings.recoveryEnabled===true,emailChangeEnabled:settings.emailChangeEnabled===true,schedulesEnabled:settings.schedulesEnabled===true,user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken:context.csrfToken},requestId});
+ }
  const principal=await sessions.authenticate(request);requirePermission(principal,op==='save'?'profile.self.write':'profile.self.read');const actor={sessionTokenHash:principal.sessionTokenHash};if(method==='POST')requireCsrfToken(request,sessions.csrfFor(request,principal));
  if(op==='photo'){const p=await client.profile('photo',actor,{});if(typeof p?.bytes!=='string'||p.bytes.length>65536||!/^([A-Za-z0-9+/]+={0,2})$/.test(p.bytes))throw new ApiError(502,'UPSTREAM_UNTRUSTED');const bytes=Buffer.from(p.bytes,'base64');if(bytes.length>49152||bytes.toString('base64')!==p.bytes||createHash('sha256').update(bytes).digest('hex')!==p.sha256||bytes[0]!==255||bytes[1]!==216)throw new ApiError(502,'UPSTREAM_UNTRUSTED');return new Response(bytes,{headers:{'content-type':'image/jpeg','cache-control':'private, no-store','x-content-type-options':'nosniff','cross-origin-resource-policy':'same-origin','content-security-policy':"default-src 'none'; sandbox"}});}
  if(op==='get'){const d=unpackProfile(await client.profile('get',actor,{}),vault,principal.id);return json({data:{id:d.id,role:d.role,owner:d.owner,name:d.record.name,email:d.email,phone:d.record.phone,cpfMasked:d.cpfMasked,lastAccess:d.lastAccess,revision:d.revision,photoUrl:d.hasPhoto?'/api/v1/profile/photo?v='+d.revision:'',recoveryEnabled:settings.recoveryEnabled===true,emailChangeEnabled:settings.emailChangeEnabled===true,schedulesEnabled:settings.schedulesEnabled===true},requestId});}

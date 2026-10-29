@@ -70,7 +70,7 @@ export function createGasEmulator(initialProperties = {}, {sourceMode = process.
   };
   const context = vm.createContext({
     Date, JSON, Object, Array, Number, String, Math, Error, Set, console: { info() {} },
-    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...props }), getProperty: key => props[key] || null, setProperty: (key, value) => { props[key] = value; }, deleteProperty:key=>{delete props[key];} }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...props }), getProperty: key => props[key] || null, setProperty: (key, value) => { props[key] = value; }, setProperties: values => { Object.assign(props,values); }, deleteProperty:key=>{delete props[key];} }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => owner }), getActiveUser:()=>({getEmail:()=>activeOwner??owner}) },
     LockService: { getScriptLock: () => ({ tryLock: () => { if (locked) return false; locked = true; return true; }, releaseLock: () => { locked = false; } }) },
     DriveApp: { Access: { PRIVATE: 'private' }, createFolder: name => new Resource('folder', name), getFolderById: id => { const r = resources.get(id); if (r?.kind !== 'folder') throw new Error('UNKNOWN_FOLDER'); return r; }, getFileById: id => { const r = resources.get(id); if (!r) throw new Error('UNKNOWN_FILE'); return r; } },

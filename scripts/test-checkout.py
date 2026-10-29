@@ -21,9 +21,9 @@ class Checkout(qa.Catalog):
     def relay(self, route):
         request = route.request; path = urlsplit(request.url).path
         if path == '/api/v1/catalog/get' and self.fail_detail: route.abort(); return
-        if path == '/api/v1/session' and self.deny_session:
+        if path in ['/api/v1/session','/api/v1/catalog/bootstrap'] and self.deny_session:
             route.fulfill(status=401, content_type='application/json', body=json.dumps({'error':{'code':'UNAUTHENTICATED'}})); return
-        if path == '/api/v1/catalog/list':
+        if path in ['/api/v1/catalog/list','/api/v1/catalog/bootstrap']:
             if self.fail_stock: route.abort(); return
             if self.hold_stock:
                 headers = {k:v for k,v in request.all_headers().items() if k not in ['host','content-length']}
@@ -253,7 +253,7 @@ class Checkout(qa.Catalog):
         auth=cdp.send('WebAuthn.addVirtualAuthenticator',{'options':{'protocol':'ctap2','transport':'internal','hasResidentKey':True,'hasUserVerification':True,'isUserVerified':True,'automaticPresenceSimulation':True}})['authenticatorId']
         for key in self.cdp.send('WebAuthn.getCredentials',{'authenticatorId':self.authenticator})['credentials']:cdp.send('WebAuthn.addCredential',{'authenticatorId':auth,'credential':key})
         try:
-            page.goto(qa.ORIGIN+'/acesso-dev.html');expect(page.locator('#initial')).to_be_visible()
+            page.goto(qa.ORIGIN+'/acesso-dev.html?verificar=1');expect(page.locator('#initial')).to_be_visible()
             page.locator('#login-email').fill('owner@example.invalid');page.locator('#login-pin').fill('8274')
             page.get_by_role('button',name='Entrar na minha conta',exact=True).first.click();expect(page.locator('#passkey')).to_be_visible()
             page.locator('#passkey-button').click();expect(page.locator('#complete')).to_be_visible()

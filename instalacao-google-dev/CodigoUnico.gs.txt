@@ -259,7 +259,7 @@ function authControlOperation_(request, c) {
 ;
 // END AuthControl.gs
 
-// BEGIN Catalog.gs sha256=0cc52d969869d564da8e3a79de5b7d69562c523a044b0c203d0b0f3d56023422
+// BEGIN Catalog.gs sha256=0e498caed36b9fdbde8bc973dc1aef0f9a3c7583ec7d464f809e7af41d99f8e0
 /* Authenticated DEV catalog, positive stock receipts and admin-only removal.
  * Dispatcher owns the installation lock; durable intent precedes projections. */
 var CATALOG_COLUMNS = ['Command_ID', 'Actor_ID', 'Actor_Role', 'Product_ID', 'Expected_Version', 'Command_Hash', 'Before_JSON', 'After_JSON', 'Created_At', 'State', 'Completed_At', 'Record_Hash'];
@@ -485,6 +485,8 @@ function catalogOperation_(request, c) {
   if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(principal.role)) failure_('FORBIDDEN');
   recoverCatalog_(c);
   var p = request.payload, ss = storage_(c, false).spreadsheet;
+  var bootstrap=request.action==='catalog.bootstrap',create=false;
+  if(bootstrap){authControlExact_(p,['search','offset','nicheId','includeInactive','create']);if(typeof p.create!=='boolean'||typeof p.search!=='string'||p.search.length>100||!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000||p.nicheId!==''&&!identityUuid_(p.nicheId)||typeof p.includeInactive!=='boolean')catalogFail_();create=p.create;p={search:p.search,offset:p.offset,nicheId:p.nicheId,includeInactive:p.includeInactive};}
   // A failed checkout must finish its durable projections before exposing stock.
   recoverSales_(ss);
   if (request.action === 'catalog.receive') return receiveStock_(request, c, principal, ss);
@@ -509,6 +511,7 @@ function catalogOperation_(request, c) {
   if (request.action === 'catalog.niches') {
     authControlExact_(p, []); return { niches: nicheDtos_(ss,catalogNiches_(ss).rows) };
   }
+  if(bootstrap&&create)return {principal:principal,niches:nicheDtos_(ss,catalogNiches_(ss).rows),products:[],total:0,nextOffset:null};
   var products = catalogProducts_(ss), links = catalogLinks_(ss);
   catalogReferences_(products, links, catalogNiches_(ss));
   if (['catalog.get','catalog.cover'].includes(request.action)) {
@@ -517,21 +520,35 @@ function catalogOperation_(request, c) {
     if (request.action === 'catalog.cover') return readCoverPhoto_(c,found[0]);
     return { product: catalogDto_(found[0], links, true) };
   }
-  if (request.action !== 'catalog.list') failure_('FORBIDDEN');
+  if (request.action !== 'catalog.list'&&!bootstrap) failure_('FORBIDDEN');
   authControlExact_(p, ['search', 'offset', 'nicheId', 'includeInactive']);
   if (typeof p.search !== 'string' || p.search.length > 100 || !Number.isSafeInteger(p.offset) || p.offset < 0 || p.offset > 5000 || p.nicheId !== '' && !identityUuid_(p.nicheId) || typeof p.includeInactive !== 'boolean') catalogFail_();
   var needle = p.search.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   var filtered = products.rows.filter(function (row) { return (p.includeInactive || row.Ativo) && (!p.nicheId || catalogLinkIds_(links, row.ID_Produto).indexOf(p.nicheId) >= 0) &&
     [row.Titulo, row.Autor, row.ISBN, row.Codigo_Interno].join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').indexOf(needle) >= 0; }).sort(function (a, b) { return a.Titulo.localeCompare(b.Titulo) || a.ID_Produto.localeCompare(b.ID_Produto); });
   var page = filtered.slice(p.offset, p.offset + 10);
-  return { products: page.map(function (row) { return catalogDto_(row, links, false); }), total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
+  var result={ products: page.map(function (row) { return catalogDto_(row, links, false); }), total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
+  if(bootstrap){result.principal=principal;result.niches=nicheDtos_(ss,catalogNiches_(ss).rows);}
+  return result;
 }
 function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_(c); return withLock_(function () { recoverCatalog_(c); return { recovered: true }; }); }
+
+// OWNER EDITOR ONLY. Not dispatched over HTTP. Prepare/back up the catalog
+// before enabling only the two core storefront modules in this DEV install.
+function activateDevelopmentStorefront(){
+  var c=baseSettings_();requireOwnerDev_(c);
+  provisionDevelopmentCatalog();
+  return withLock_(function(){
+    var ss=storage_(c,false).spreadsheet;assertSchema_(ss);authControlStore_(c);catalogJournal_(c);recoverSales_(ss);
+    scriptProperties_().setProperties({CATALOG_ENABLED:'true',CHECKOUT_ENABLED:'true'});
+    return {environment:'dev',catalog:true,checkout:true};
+  });
+}
 
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=b777112f9be1ced983bbf60a6e79ebacb507cd18d31df34157235164696aeba0
+// BEGIN Code.gs sha256=0e4820c3587f33f2865914d216bd531789d8db4fe1cae5b219081791168ebcb0
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -848,7 +865,7 @@ function processRequest_(request, c) {
       if (c.environment !== 'dev' || ['NOTIFICATIONS_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return notificationProps.getProperty(key) !== 'true'; })) failure_('NOTIFICATIONS_UNAVAILABLE');
       return notificationOperation_(request, c);
     }
-    if (['catalog.list', 'catalog.get', 'catalog.niches', 'catalog.save', 'catalog.cover', 'catalog.receive', 'catalog.remove'].includes(request.action)) {
+    if (['catalog.bootstrap','catalog.list', 'catalog.get', 'catalog.niches', 'catalog.save', 'catalog.cover', 'catalog.receive', 'catalog.remove'].includes(request.action)) {
       var catalogProps = scriptProperties_();
       if (c.environment !== 'dev' || catalogProps.getProperty('CATALOG_ENABLED') !== 'true' || catalogProps.getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('CATALOG_UNAVAILABLE');
       return catalogOperation_(request, c);
@@ -862,6 +879,7 @@ function processRequest_(request, c) {
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
       if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
+      if (request.action === 'identity.access.devicePrepare') return accessDevicePrepare_(request,c);
       if (request.action === 'identity.access.biometricOptions') return accessBiometricOptions_(request,c);
       if (request.action === 'identity.access.options') return accessOptions_(request, c);
       if (request.action === 'identity.access.saveProof') return accessSaveProof_(request,c);
@@ -895,7 +913,7 @@ function processRequest_(request, c) {
       throw error;
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
-      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.biometricOptions':'OPTIONS','identity.access.options':'OPTIONS','identity.access.saveProof':'PROOF_SAVE','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
+      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.biometricOptions':'OPTIONS','identity.access.options':'OPTIONS','identity.access.devicePrepare':'DEVICE_PREPARE','identity.access.saveProof':'PROOF_SAVE','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
       var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
       try { console.info(JSON.stringify(Object.assign({metric:'rpc.duration',operation:operation,phase:phase,outcome:fault?'ERROR':'OK',schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started},fault||{}))); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }
@@ -2702,7 +2720,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=3b203ee88bdc286bc142614221021a1dda9000a808079a2a154bd7b480d5b198
+// BEGIN OwnerAccess.gs sha256=b35e706b85b46188369d1876f1ee578a639720e0b89db790d3fb17584ea036c2
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -3117,6 +3135,28 @@ function accessBiometricOptions_(request,c){
   return accessOptions_({payload:{tokenHash:p.tokenHash,accountKey:p.accountKey,originKey:p.originKey,ceremonyId:p.ceremonyId,challenge:p.challenge,allowReplacement:false}},c,true);
 }
 
+// Discoverable WebAuthn: the browser selects its saved key before any Google
+// lookup. A signed, cookie-bound Node challenge identifies no user by itself.
+function accessDevicePrepare_(request,c){
+  var p=request.payload;authControlExact_(p,['tokenHash','flowId','ceremonyId','challenge','credentialId','subjectId','staffAllowed','accountKey','originKey']);
+  if(!accessHash_(p.tokenHash)||!identityUuid_(p.flowId)||!identityUuid_(p.ceremonyId)||!identityUuid_(p.subjectId)||!passkeyText_(p.challenge,43,43)||!passkeyText_(p.credentialId,2,1400)||typeof p.staffAllowed!=='boolean')accessReject_();
+  recoverSecurityIntent_(c);var ss=authControlStore_(c),attempt=authAttempt_(ss,{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  var keys=passkeyCredentials_(ss).rows.filter(function(k){return k.Credential_ID===p.credentialId&&k.Subject_ID===p.subjectId&&k.Revoked_At==='';});
+  if(keys.length!==1)accessReject_();
+  var ownerId=scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID');
+  if(p.subjectId!==ownerId&&(!p.staffAllowed||!staffEnabled_()))accessReject_();
+  var version=keys[0].Authorization_Version;
+  // Existing login and passkey operations recheck activation, epoch, status,
+  // credential binding and one-use challenge inside this same ScriptLock.
+  ownerAccessOperation_({action:'identity.access.login',payload:{flowId:p.flowId,tokenHash:p.tokenHash,subjectId:p.subjectId,authorizationVersion:version}},c);
+  passkeyOperation_({action:'identity.passkey.begin',payload:{subjectId:p.subjectId,authorizationVersion:version,ceremonyId:p.ceremonyId,purpose:'AUTHENTICATE',challenge:p.challenge}},c);
+  ownerAccessOperation_({action:'identity.access.bind',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId}},c);
+  var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:p.subjectId,authorizationVersion:version,ceremonyId:p.ceremonyId,credentialId:p.credentialId}},c);
+  var flow=ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}},c);
+  return {allowed:true,done:false,flow:flow,ceremony:ceremony};
+}
+
 ;
 // END OwnerAccess.gs
 
@@ -3302,7 +3342,7 @@ function passkeyOperation_(request, c) {
 ;
 // END PasskeyStore.gs
 
-// BEGIN Profile.gs sha256=23f3b6532145fac1b9477490130c0a72d176a95704a838357fb259a5d5fe5b73
+// BEGIN Profile.gs sha256=4d8f414dab34c33b65af6a24702f001e9006ea4317e60ae3e45db79491c4e3d1
 /* Self-service profile. Owner CPF can be bound once after strong authentication.
  * Dispatcher owns ScriptLock; recovery of committed changes ignores UI flags. */
 function profileFail_(code){failure_(code||'INVALID_PROFILE');}
@@ -3344,9 +3384,10 @@ function recoverProfiles_(c){var ss=storage_(c,false).spreadsheet,pending=profil
 function profileOperation_(request,c){
  recoverStaff_(c);recoverProfiles_(c);if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var ss=storage_(c,false).spreadsheet,principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,found=profileUser_(ss,principal.id),user=found.row,owner=user.ID_Usuario===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID'),p=request.payload;
  if(request.action.indexOf('profile.email')===0)return emailChangeOperation_(request,c,principal);
- if(request.action==='profile.get'){
+ if(request.action==='profile.get'||request.action==='profile.bootstrap'){
   authControlExact_(p,[]);var extra=owner?staffConfig_(ss,'profile.owner.'+user.ID_Usuario).row:null;
-  return {id:user.ID_Usuario,role:user.Perfil,owner:owner,contact:owner?extra?extra.Valor:'':user.Nome,email:owner?ownerLoginEmail_(c):'',revision:staffRevision_(ss,user.ID_Usuario),lastAccess:user.Ultimo_Acesso,hasPhoto:user.Foto_Perfil_Drive_ID!==''};
+  var data={id:user.ID_Usuario,role:user.Perfil,owner:owner,contact:owner?extra?extra.Valor:'':user.Nome,email:owner?ownerLoginEmail_(c):'',revision:staffRevision_(ss,user.ID_Usuario),lastAccess:user.Ultimo_Acesso,hasPhoto:user.Foto_Perfil_Drive_ID!==''};
+  return request.action==='profile.bootstrap'?{principal:principal,profile:data}:data;
  }
  if(request.action==='profile.photo'){authControlExact_(p,[]);if(!user.Foto_Perfil_Drive_ID)profileFail_('PROFILE_NOT_FOUND');var photo=profilePhotoFile_(c,user.Foto_Perfil_Drive_ID,user.ID_Usuario,null,false);return {bytes:photo.bytes,sha256:photo.sha256};}
  if(request.action!=='profile.save')failure_('FORBIDDEN');if(!['passkey','mfa'].includes(principal.assurance)||Date.now()-principal.authenticatedAt>300000)failure_('FORBIDDEN');
@@ -4436,7 +4477,7 @@ function identitySessionOperation_(request, c) {
 ;
 // END SessionStore.gs
 
-// BEGIN Staff.gs sha256=ed3de536f84ff9a1b8ec421096d61d8a753b200aed49afd911176b413dab76b1
+// BEGIN Staff.gs sha256=4378192c9881f740349e9a46f3adc407021da07c71b960cec14da587471a01bd
 /* DEV staff management. Dispatcher owns ScriptLock. Contact data is AEAD-sealed
  * in Node; no plaintext personal fields, PINs or bearer tokens in this journal. */
 function staffEnabled_() { return scriptProperties_().getProperty('STAFF_ENABLED') === 'true'; }
@@ -4513,15 +4554,15 @@ function staffOperation_(request,c) {
   if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');
   var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;staffAdmin_(principal);
   var users=staffUsers_(ss);
-  if(request.action==='staff.list'||request.action==='staff.get'){
-    if(request.action==='staff.list'){authControlExact_(p,['offset']);if(!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000)staffFail_();}
+  if(request.action==='staff.bootstrap'||request.action==='staff.list'||request.action==='staff.get'){
+    if(request.action==='staff.list'||request.action==='staff.bootstrap'){authControlExact_(p,['offset']);if(!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000)staffFail_();}
     else {authControlExact_(p,['id']);if(!identityUuid_(p.id))staffFail_();}
     // List access is itself sensitive and append-only audited, without contact data.
     var at=new Date().toISOString(),audit=identityRows_(ss,'Logs_Auditoria');if(audit.rows.length>=5000)staffFail_('STAFF_CAPACITY');
     accessSaveMain_(audit,{ID_Log:request.requestId,Data_Hora:at,ID_Usuario:principal.id,Perfil:principal.role,Acao:'STAFF_LIST',Entidade:'Usuarios',ID_Entidade:'',Antes:'',Depois:'',Resultado:'SUCESSO',ID_Requisicao:request.requestId});
     if(request.action==='staff.get'){var found=users.rows.filter(function(r){return r.ID_Usuario===p.id;});if(found.length!==1)staffFail_('STAFF_CONFLICT');return {user:staffDto_(ss,found[0])};}
     var sorted=users.rows.slice().sort(function(a,b){return String(a.Criado_Em).localeCompare(String(b.Criado_Em))||a.ID_Usuario.localeCompare(b.ID_Usuario);}),page=sorted.slice(p.offset,p.offset+25);
-    return {users:page.map(function(r){return staffDto_(ss,r);}),total:sorted.length,nextOffset:p.offset+page.length<sorted.length?p.offset+page.length:null};
+    var data={users:page.map(function(r){return staffDto_(ss,r);}),total:sorted.length,nextOffset:p.offset+page.length<sorted.length?p.offset+page.length:null};if(request.action==='staff.bootstrap')data.principal=principal;return data;
   }
   if(request.action!=='staff.save')failure_('FORBIDDEN');
   authControlExact_(p,['commandId','id','expectedRevision','reason','role','status','fingerprint','contact','emailIndex','cpfIndex','emailCheck']);

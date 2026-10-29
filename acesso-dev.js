@@ -4,6 +4,13 @@
   const $ = id => document.getElementById(id);
   let pendingMessage = null;
   const message = (text, tone = 'info') => { if (busy) { pendingMessage = { text, tone }; return; } $('status').textContent = text; $('status').dataset.tone = tone; $('status').hidden = false; };
+  let loginDevice=null,loginDeviceAt=0,lastIdentifier='';
+  const verificationView=new URLSearchParams(location.search).get('verificar')==='1',forceAuthentication=new URLSearchParams(location.search).get('confirmar')==='1';
+  const identifierStorage='livraria.access.identifier.v1';
+  function rememberIdentifier(){try{const value=(lastIdentifier||$('login-email').value).trim();if(!$('remember-identifier').checked){localStorage.removeItem(identifierStorage);return;}if(value&&!identifierError(value))localStorage.setItem(identifierStorage,JSON.stringify({value,expires:Date.now()+2592000000}));}catch{}}
+  function enterApp(){rememberIdentifier();if(!verificationView)location.replace('/home-dev.html');}
+  try{const saved=JSON.parse(localStorage.getItem(identifierStorage)||'null');if(saved&&typeof saved.value==='string'&&saved.value.length<=254&&Number.isFinite(saved.expires)&&saved.expires>Date.now()&&!identifierError(saved.value))$('login-email').value=saved.value;else localStorage.removeItem(identifierStorage);}catch{}
+  $('remember-identifier').addEventListener('change',()=>{if(!$('remember-identifier').checked)try{localStorage.removeItem(identifierStorage);}catch{}});
   let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
   const diagnosticCodes = new Set(['ACCESS_CONTINUATION_EXPIRED','HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
   function diagnostic(error) {
@@ -11,7 +18,7 @@
     if (!node || location.hostname !== DEV) return;
     node.textContent = 'Referência para suporte: ' + accessPhase + ' / ' + (diagnosticCodes.has(error?.code) ? error.code : 'ACCESS_PAGE_UNAVAILABLE');
     const info = error.transport;
-    if (info && ['state','start','recover','login','biometric','continue-login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
+    if (info && ['state','start','recover','login','device-login','biometric','continue-login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
     node.hidden = false;
     $('support-details').hidden = false;
   }
@@ -96,6 +103,7 @@
     } finally { clearTimeout(timer); }
   }
   async function api(operation, body, canRenew = true, openLogin = false) {
+    if(busy)$('access-progress').querySelector('span:last-child').textContent=({'state':'Preparando acesso…','device-login':'Entrando na livraria…','complete':'Finalizando sua entrada…','login':'Conferindo acesso…','options':'Preparando confirmação…'})[operation]||'Aguarde…';
     const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
       headers: body === undefined ? (openLogin?{'x-access-view':'login'}:{}) : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(operation==='complete'?{'x-access-completion-version':'3'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.ok) {
@@ -110,6 +118,7 @@
     }
     if (!result?.data || typeof result.data.csrfToken !== 'string') throw failure('ACCESS_RESPONSE_INVALID');
     if (result.data.csrfToken) csrfToken = result.data.csrfToken;
+    if(operation==='state'&&result.data.deviceLogin){const d=result.data.deviceLogin;if(typeof d.receipt!=='string'||d.receipt.length>12000||typeof d.options?.challenge!=='string'||d.options.userVerification!=='required'||d.options.rpId!==location.hostname||!Array.isArray(d.options.allowCredentials)||d.options.allowCredentials.length)throw failure('ACCESS_RESPONSE_INVALID');loginDevice={receipt:d.receipt,options:{...d.options,challenge:decode(d.options.challenge)}};loginDeviceAt=performance.now();}
     if(operation==='recover'){recoveryFlow=true;replacementReady=false;$('use-rescue').checked=false;$('rescue-status').textContent='';$('rescue-inputs').hidden=true;}if(operation==='start'||operation==='login'){recoveryFlow=false;replacementReady=false;}if(result.data.purpose)recoveryFlow=result.data.purpose==='RECOVER';if(result.data.replacementAllowed!==undefined)replacementReady=result.data.replacementAllowed===true;if(result.data.emergencyRecoveryEnabled!==undefined)emergencyEnabled=result.data.emergencyRecoveryEnabled;
     if(result.data.recoveryEnabled!==undefined)$('recovery-choice').hidden=!result.data.recoveryEnabled;
     return result.data;
@@ -195,7 +204,7 @@
     if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || data.user.assurance !== 'passkey' || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (!shouldApply()) return false;
     show('COMPLETE'); message('Acesso verificado com sucesso.', 'success');
-    $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
+    $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role);enterApp(); return true;
   }
   async function finish() {
     if(pendingLogin){
@@ -215,7 +224,8 @@
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||result.user.assurance!=='passkey'||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
       show('COMPLETE');message('Acesso verificado com sucesso.','success');
       $('identity-result').textContent='Sua conta está pronta para uso.';$('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(result.user.role);
-    }else if(!await current())throw new Error('SESSION_NOT_CONFIRMED');
+    }else {if(!await current())throw new Error('SESSION_NOT_CONFIRMED');return;}
+    enterApp();
   }
   $('check-step').addEventListener('click', () => run(async () => {
     const state = await api('state');
@@ -228,21 +238,28 @@
   $('first-access-box').addEventListener('toggle',()=>{if(!busy&&$('first-access-box').open){feedbackIn('start-form');$('status').hidden=true;}});
   submit('recovery-form',async()=>{const data=await api('recover',{email:$('recovery-email').value});clearSecrets();show(data.stage);message(data.message);});
   submit('start-form', async () => {
-    const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);
+    lastIdentifier=$('activation-email').value;const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);
   });
   submit('login-form', async () => {
-    try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); show(data.stage); message('Confirme sua identidade pelo aparelho cadastrado.'); }
+    lastIdentifier=$('login-email').value;try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); show(data.stage); message('Confirme sua identidade pelo aparelho cadastrado.'); }
     finally { $('login-pin').value = ''; }
   });
-  $('biometric-login').addEventListener('click',()=>{
-    if(busy)return;const error=identifierError($('login-email').value);
-    if(error){feedbackIn('login-form');message(error,'error');$('login-email').focus();return;}
-    run(async()=>{
-      const data=await api('biometric',{email:$('login-email').value});
-      if(!data.loginReceipt)throw unavailable('ACCESS_RESPONSE_INVALID');
-      pendingLogin=data.loginReceipt;show('COMMITTING');await finish();
-    },'login-form');
-  });
+  $('biometric-login').addEventListener('click',()=>run(async()=>{
+    if(!window.PublicKeyCredential||!navigator.credentials)throw unavailable('DEVICE_NOT_SUPPORTED');
+    if(!loginDevice||performance.now()-loginDeviceAt>90000){
+      await api('state',undefined,true,true);message('Tudo pronto. Toque em “Entrar com biometria” para abrir seu aparelho.');return;
+    }
+    // Call WebAuthn synchronously in this click: no Google lookup before prompt.
+    const prepared=loginDevice;lastIdentifier=$('login-email').value;
+    let credential;
+    try{credential=await navigator.credentials.get({publicKey:prepared.options});}
+    catch(error){throw unavailable({NotAllowedError:'DEVICE_NOT_ALLOWED',NotSupportedError:'DEVICE_NOT_SUPPORTED',SecurityError:'DEVICE_SECURITY_ERROR',AbortError:'DEVICE_ABORTED'}[error?.name]||'DEVICE_RESPONSE_INVALID');}
+    if(!credential)throw unavailable('DEVICE_RESPONSE_INVALID');
+    pendingResponse=serialize(credential);loginDevice=null;show('COMMITTING');accessPhase='COMPLETE';
+    const data=await api('device-login',{response:pendingResponse,receipt:prepared.receipt});
+    if(!data.proofReceipt)throw unavailable('ACCESS_RESPONSE_INVALID');
+    pendingReceipt=data.proofReceipt;pendingResponse=null;await finish();
+  },'login-form'));
   async function saveAccessStep(operation, body, expectedStage) {
     try { return await api(operation, body); }
     catch (error) {
@@ -312,8 +329,9 @@
     if(['COMMITTING','COMPLETE'].includes(state.stage)){await finish();return;}
     pendingResponse=null;show(state.stage);message('Continue pela etapa indicada abaixo.');
   }));
-  $('restart').addEventListener('click', () => { clearSecrets(); pendingResponse = null; pendingReceipt=null;pendingLogin=null; show('INITIAL'); message('Solicite um novo código ou entre na conta já ativada.'); });
+  $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('Escolha como deseja entrar.');}));
   function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
+  window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-pin')run(async()=>{if(!await current()){await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');}});});
   window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingLogin=null;});
   window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
@@ -321,7 +339,7 @@
     accessPhase = 'STATE';
     const state = await api('state',undefined,true,location.hash==='#entrar');
     accessPhase = 'RENDER';
-    if(requestedView(state))return;
+    if(requestedView(state)){if(!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-pin'){const revision=actionRevision;setTimeout(()=>current(()=>revision===actionRevision).catch(()=>{}),0);}return;}
     // A session lookup is optional here: never hide a server-confirmed access
     // flow because that separate read failed. Authentication still happens only
     // after the session endpoint confirms a passkey-backed principal.

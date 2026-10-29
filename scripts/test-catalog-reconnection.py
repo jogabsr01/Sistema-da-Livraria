@@ -27,13 +27,13 @@ class CatalogReconnection(qa.Stock):
     def relay(self, route):
         req = route.request; path = urlsplit(req.url).path
         headers = {k:v for k,v in req.all_headers().items() if k not in ['host','content-length']}
-        if path == '/api/v1/session' and (self.deny_session or self.changed_account):
+        if path in ['/api/v1/session','/api/v1/catalog/bootstrap'] and (self.deny_session or self.changed_account):
             if self.deny_session:
                 route.fulfill(status=401, content_type='application/json', body=json.dumps({'error':{'code':'UNAUTHENTICATED'}})); return
-            result = self.local(path,headers=headers); body = json.loads(result['body'])
+            result = self.local(path+('?' + urlsplit(req.url).query if urlsplit(req.url).query else ''),headers=headers); body = json.loads(result['body'])
             body['data']['user']['id'] = '00000000-0000-4000-8000-000000000001'
             route.fulfill(status=result['status'],headers=result['headers'],body=json.dumps(body)); return
-        if path == '/api/v1/catalog/list':
+        if path in ['/api/v1/catalog/list','/api/v1/catalog/bootstrap']:
             if self.fail_list: route.abort(); return
             if self.hold_list:
                 result = self.local(path+'?'+urlsplit(req.url).query,headers=headers)
@@ -108,7 +108,7 @@ class CatalogReconnection(qa.Stock):
         expect(self.page.locator('#form-status')).to_contain_text('Não foi possível confirmar o resultado')
         self.assertTrue(self.saves[0]['photo']); self.network(False); self.network(True); self.ready()
         self.assertEqual(self.page.evaluate('Object.keys(sessionStorage)'),[])
-        self.assertEqual(self.page.evaluate('Object.keys(localStorage)'),[])
+        self.assert_no_secrets_in_browser_storage()
         self.save(); self.assertEqual(self.saves[0],self.saves[1]); self.assertEqual(self.local('/test/state')['files'],1)
 
     def test_reconnection_stock_lost_response_keeps_command_and_does_not_repeat_units(self):
@@ -138,7 +138,7 @@ class CatalogReconnection(qa.Stock):
         expect(self.page.locator('#stock-status')).to_contain_text('Não foi possível confirmar o resultado')
         stored=self.page.evaluate('sessionStorage.getItem(Object.keys(sessionStorage)[0])')
         self.network(False); self.deny_session=True; self.network(True)
-        expect(self.page.locator('#status')).to_contain_text('Entre na conta verificada')
+        expect(self.page.locator('#status')).to_contain_text('Entre na sua conta')
         self.page.locator('#stock-save').click()
         expect(self.page.locator('#stock-status')).to_contain_text('Não foi possível confirmar o resultado')
         self.assertEqual(len(self.receipt_requests),1)
@@ -146,14 +146,14 @@ class CatalogReconnection(qa.Stock):
 
     def test_reconnection_changed_account_cannot_retry_another_accounts_book(self):
         self.uncertain_book(); self.changed_account=True; self.network(False); self.network(True)
-        expect(self.page.locator('#status')).to_contain_text('Entre na conta verificada')
-        self.page.locator('#save').click(); expect(self.page.locator('#form-status')).to_contain_text('Entre na conta verificada')
+        expect(self.page.locator('#status')).to_contain_text('Entre na sua conta')
+        self.page.locator('#save').click(); expect(self.page.locator('#form-status')).to_contain_text('Entre na sua conta')
         self.assertEqual(len(self.saves),1); expect(self.page.locator('#title')).to_be_disabled()
         self.changed_account=False; self.page.locator('#editor [data-catalog-refresh]').click(); self.ready(); self.save()
         self.assertEqual(self.saves[0],self.saves[1])
 
     def test_reconnection_old_list_response_cannot_unlock_after_network_change(self):
-        self.prepare(); self.hold_list=True; self.page.locator('#refresh').click()
+        self.prepare(); expect(self.page.locator('#refresh')).to_be_enabled(); self.hold_list=True; self.page.locator('#refresh').click()
         for _ in range(100):
             if self.held: break
             self.page.wait_for_timeout(10)

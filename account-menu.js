@@ -21,7 +21,9 @@
     if(p?.photoUrl){avatar.src=p.photoUrl;avatar.alt='';}else avatar.textContent=p?p.name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase():'Conta';
     summary.append(avatar);menu.append(summary);
     const list=document.createElement('div');list.className='account-options';
-    for(const [label,href] of [['Início','/home-dev.html'],['Meu perfil','/meu-perfil-dev.html'],...(p?.recoveryEnabled?[['Alterar PIN','/acesso-dev.html#recuperar-pin']]:[]),...(p?.schedulesEnabled?[['Minha escala','/escalas-dev.html']]:[]),['Notificações','/notificacoes-dev.html']]){const link=document.createElement('a');link.textContent=label;link.href=href;list.append(link);}
+    const currentRole=p?.role||document.body.dataset.sessionRole;
+    const administrative=['ADMIN','SUPER_ADMIN'].includes(currentRole)?[['Gerenciar equipe','/equipe-dev.html'],['Relatórios','/relatorios-dev.html']]:[];
+    for(const [label,href] of [['Início','/home-dev.html'],['Meu perfil','/meu-perfil-dev.html'],...administrative,...(p?.recoveryEnabled?[['Alterar PIN','/acesso-dev.html#recuperar-pin']]:[]),...(p?.schedulesEnabled?[['Minha escala','/escalas-dev.html']]:[]),['Notificações','/notificacoes-dev.html']]){const link=document.createElement('a');link.textContent=label;link.href=href;list.append(link);}
     const status=document.createElement('p');status.setAttribute('role','status');status.hidden=true;
     const logout=document.createElement('button');logout.type='button';logout.textContent='Sair';
     logout.addEventListener('click',async()=>{
@@ -38,12 +40,13 @@
   async function load(){
     if(loading||!online()||document.hidden||Date.now()-loadedAt<60000)return;
     loading=true;const ticket=epoch;
-    try{const p=await request('/api/v1/profile/get');check(ticket);if(!valid(p)||user&&(p.id!==user||p.role!==role))throw Error('CONTEXT_CHANGED');render(p,true);}
+    try{const p=await request('/api/v1/profile/bootstrap');check(ticket);if(!valid(p)||user&&(p.id!==user||p.role!==role))throw Error('CONTEXT_CHANGED');render(p,true);}
     catch(e){if(ticket===epoch&&e.status===401)clear();}
     finally{loading=false;}
   }
   // The main profile page already fetched this self-service DTO. Reuse it only
   // for presentation. Every operation still authenticates on the server.
+  window.addEventListener('livraria:session-ready',()=>{clear();render();});
   window.addEventListener('livraria:profile-loaded',e=>{if(valid(e.detail?.profile))render(e.detail.profile,node?.open===true);});
   window.addEventListener('livraria:profile-changed',()=>{clear();render();});
   window.addEventListener('livraria:profile-invalidated',clear);

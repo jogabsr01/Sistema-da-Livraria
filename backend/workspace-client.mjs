@@ -1,3 +1,4 @@
+import { validateSessionPrincipal } from './session-service.mjs';
 import { validateOperationData } from './operations-model.mjs';
 import { ApiError } from './errors.mjs';
 import { createHash } from 'node:crypto';
@@ -30,7 +31,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
         if (signal.aborted || now() >= deadlineAt) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
       }
       if (!response.ok) throw new ApiError(502, 'UPSTREAM_UNAVAILABLE');
-      const limit = ['insights.source','reports.source','audit.list','audit.export','notifications.report','schedules.list','schedules.people'].includes(action) ? 4_000_000 : ['catalog.niches','niches.list'].includes(action)?1_500_000:180_000;
+      const limit = ['insights.source','reports.source','audit.list','audit.export','notifications.report','schedules.list','schedules.people'].includes(action) ? 4_000_000 : ['catalog.bootstrap','catalog.niches','niches.list'].includes(action)?1_500_000:180_000;
       let text;
       if (limit>180_000) {
         const reader = response.body?.getReader(), decoder = new TextDecoder('utf-8', { fatal:true }); text = ''; let size = 0;
@@ -94,6 +95,12 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
           return { id: value.id, ...record, stock: value.stock, version: value.version, updatedAt: value.updatedAt,hasPhoto:value.hasPhoto === true,
             photoUrl:value.hasPhoto === true ? `/api/v1/catalog/cover?id=${value.id}&v=${value.version}`:'' };
         }
+        function validatedNiches(data){
+          if (!Array.isArray(data?.niches) || data.niches.length > 200 || data.niches.some(n => !catalogUuid(n?.id) || typeof n.name !== 'string' || !n.name.trim() || n.name.length > 100 ||
+              !/^#[a-fA-F0-9]{6}$/.test(n.color) || !Number.isSafeInteger(n.order) || n.order < 0 || typeof n.active !== 'boolean')) invalid();
+          if(data.niches.some(n=>n.description!==undefined&&(typeof n.description!=='string'||n.description.length>1000)||n.version!==undefined&&(!Number.isSafeInteger(n.version)||n.version<0)||n.hasImage!==undefined&&typeof n.hasImage!=='boolean'))invalid();
+          return data.niches.map(n => ({ id: n.id, name: n.name, color: n.color, order: n.order, active: n.active,description:typeof n.description==='string'&&n.description.length<=1000?n.description:'',version:Number.isSafeInteger(n.version)&&n.version>=0?n.version:0,hasImage:n.hasImage===true }));
+        }
         if (action === 'catalog.receive') {
           if (!data || data.commandId !== payload.commandId || data.id !== payload.id || data.quantity !== payload.quantity || data.version !== payload.expectedVersion + 1 ||
               !Number.isSafeInteger(data.stockBefore) || data.stockBefore < 0 || !Number.isSafeInteger(data.stockAfter) || data.stockAfter > 1_000_000 || data.stockAfter !== data.stockBefore + data.quantity ||
@@ -110,17 +117,14 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
           return {bytes:data.bytes,sha256:data.sha256};
         }
         if (action === 'catalog.get') { const value = product(data?.product); if (value.id !== payload.id) invalid(); return { product: value }; }
-        if (action === 'catalog.list') {
+        if (['catalog.list','catalog.bootstrap'].includes(action)) {
           if (!data || !Array.isArray(data.products) || data.products.length > 10 || !Number.isSafeInteger(data.total) || data.total < 0 || data.total > 5000 ||
               data.nextOffset !== null && (!Number.isSafeInteger(data.nextOffset) || data.nextOffset !== payload.offset + data.products.length || data.nextOffset >= data.total)) invalid();
-          return { products: data.products.map(product), total: data.total, nextOffset: data.nextOffset };
+          const result={ products: data.products.map(product), total: data.total, nextOffset: data.nextOffset };
+          if(action==='catalog.bootstrap'){result.principal=validateSessionPrincipal(data.principal);result.niches=validatedNiches(data);}
+          return result;
         }
-        if (action === 'catalog.niches') {
-          if (!Array.isArray(data?.niches) || data.niches.length > 200 || data.niches.some(n => !catalogUuid(n?.id) || typeof n.name !== 'string' || !n.name.trim() || n.name.length > 100 ||
-              !/^#[a-fA-F0-9]{6}$/.test(n.color) || !Number.isSafeInteger(n.order) || n.order < 0 || typeof n.active !== 'boolean')) invalid();
-          if(data.niches.some(n=>n.description!==undefined&&(typeof n.description!=='string'||n.description.length>1000)||n.version!==undefined&&(!Number.isSafeInteger(n.version)||n.version<0)||n.hasImage!==undefined&&typeof n.hasImage!=='boolean'))invalid();
-          return { niches: data.niches.map(n => ({ id: n.id, name: n.name, color: n.color, order: n.order, active: n.active,description:typeof n.description==='string'&&n.description.length<=1000?n.description:'',version:Number.isSafeInteger(n.version)&&n.version>=0?n.version:0,hasImage:n.hasImage===true })) };
-        }
+        if(action==='catalog.niches')return {niches:validatedNiches(data)};
         invalid();
       }
       if (action.startsWith('identity.access.')) {
@@ -139,7 +143,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
           if(data.kind==='STAFF'&&(payload.staffLookup!==true||a.activated!==true||typeof a.contact!=='string'||a.contact.length>10000))untrusted();
           return {kind:data.kind,account:{subjectId:a.subjectId,authorizationVersion:a.authorizationVersion,record:{version:1,algorithm:r.algorithm,salt:r.salt,hash:r.hash},...(data.kind==='STAFF'?{contact:a.contact}: {})}};
         }
-        if(action==='identity.access.prepareCompletion'){
+        if(['identity.access.prepareCompletion','identity.access.devicePrepare'].includes(action)){
           if(data?.allowed===false&&Number.isSafeInteger(data.retryAfterSeconds)&&data.retryAfterSeconds>0&&data.retryAfterSeconds<=3600){const error=new ApiError(429,'AUTH_RATE_LIMITED');error.retryAfterSeconds=data.retryAfterSeconds;throw error;}
           if(data?.allowed!==true||typeof data.done!=='boolean')untrusted();
           const flow=flowResult(data.flow);
@@ -149,8 +153,9 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
             if(!flow.proofReady||p?.id!==flow.subjectId||p.sessionId!==flow.flowId||p.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(p.role)||p.assurance!=='passkey'||!Number.isSafeInteger(p.authenticatedAt)||!Number.isSafeInteger(p.expiresAt))untrusted();
             return {done:true,flow,principal:{id:p.id,sessionId:p.sessionId,authorizationVersion:p.authorizationVersion,role:p.role,assurance:p.assurance,authenticatedAt:p.authenticatedAt,expiresAt:p.expiresAt}};
           }
+          if(action==='identity.access.devicePrepare'&&(flow.subjectId!==payload.subjectId||flow.flowId!==payload.flowId||flow.ceremonyId!==payload.ceremonyId||flow.purpose!=='LOGIN'))untrusted();
           const ceremony=data.ceremony,register=flow.purpose==='ACTIVATE'||flow.replacementAllowed;
-          if(flow.state!=='PASSKEY'||flow.proofReady||payload.hasResponse!==true||typeof ceremony?.challenge!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(ceremony.challenge)||ceremony.purpose!==(register?'REGISTER':'AUTHENTICATE'))untrusted();
+          if(flow.state!=='PASSKEY'||flow.proofReady||payload.hasResponse!==true&&action!=='identity.access.devicePrepare'||typeof ceremony?.challenge!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(ceremony.challenge)||ceremony.purpose!==(register?'REGISTER':'AUTHENTICATE'))untrusted();
           const k=ceremony.credential;
           if(register&&k!==null||!register&&(!k||k.id!==payload.credentialId||typeof k.publicKey!=='string'||!/^[A-Za-z0-9_-]{20,4096}$/.test(k.publicKey)||!Number.isSafeInteger(k.counter)||k.counter<0||k.counter>4294967295||!Array.isArray(k.transports)||k.transports.some(t=>!['ble','cable','hybrid','internal','nfc','smart-card','usb'].includes(t))))untrusted();
           return {done:false,flow,ceremony:{challenge:ceremony.challenge,purpose:ceremony.purpose,credential:k?{id:k.id,publicKey:k.publicKey,counter:k.counter,transports:k.transports}:null}};
@@ -247,10 +252,10 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     } finally { durationMs+=Math.max(0,now()-started); }
   }
   return { keys:(op,actor,payload)=>{if(!['list','state','start','authorize','register','cancel','codes'].includes(op))throw new ApiError(400,'INVALID_KEY_MANAGEMENT');return invoke('keys.'+op,actor,payload);},insights:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('insights.'+op,actor,payload);},reports:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('reports.'+op,actor,payload);},audit:(op,actor,payload)=>{if(!['list','export'].includes(op))throw new ApiError(400,'INVALID_AUDIT');return invoke('audit.'+op,actor,payload);},schedules:(op,actor,payload)=>{if(!['list','get','people','save','cancel'].includes(op))throw new ApiError(400,'INVALID_SCHEDULE');return invoke('schedules.'+op,actor,payload);},niches:(op,actor,payload)=>{if(!['list','save','image'].includes(op))throw new ApiError(400,'INVALID_NICHE');return invoke('niches.'+op,actor,payload);},schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
-    profile:(operation,actor,payload)=>{if(!['get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
+    profile:(operation,actor,payload)=>{if(!['bootstrap','get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
     operations:(operation,actor,payload)=>{if(!['list','get','adjust','reverse'].includes(operation))throw new ApiError(400,'INVALID_OPERATION');return invoke('operations.'+operation,actor,payload);},
     customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
-    staff:(operation,actor,payload)=> { if(!['list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
+    staff:(operation,actor,payload)=> { if(!['bootstrap','list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
     staffAccess:(operation,payload)=> { if(!['lookup','start','recover'].includes(operation))throw new ApiError(400,'INVALID_AUTH_REQUEST');return invoke('identity.staffAccess.'+operation,null,payload); },
     notifications: (operation, actor, payload) => {
       if (!['summary','list','read','state','report'].includes(operation)) throw new ApiError(400,'INVALID_NOTIFICATION');
@@ -259,7 +264,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     checkoutReceipt:(actor,payload)=>invoke('sales.receipt',actor,payload),
     checkout: (actor, payload) => invoke('sales.checkout', actor, payload),
     catalog: (operation, actor, payload) => {
-      if (!['list', 'get', 'niches', 'save', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
+      if (!['bootstrap','list', 'get', 'niches', 'save', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {
@@ -279,6 +284,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     lookupAccessLogin: payload => invoke('identity.access.loginLookup', null, payload),
     prepareBiometricOptions: payload => invoke('identity.access.biometricOptions', null, payload),
     prepareAccessOptions: payload => invoke('identity.access.options', null, payload),
+    prepareDeviceAccess: payload => invoke('identity.access.devicePrepare', null, payload),
     prepareAccessCompletion: payload => invoke('identity.access.prepareCompletion', null, payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
     createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),

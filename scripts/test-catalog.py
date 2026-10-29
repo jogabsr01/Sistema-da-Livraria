@@ -75,7 +75,7 @@ class Catalog(OwnerAccess):
         auth=cdp.send('WebAuthn.addVirtualAuthenticator',{'options':{'protocol':'ctap2','transport':'internal','hasResidentKey':True,'hasUserVerification':True,'isUserVerified':True,'automaticPresenceSimulation':True}})['authenticatorId']
         for key in self.cdp.send('WebAuthn.getCredentials',{'authenticatorId':self.authenticator})['credentials']:cdp.send('WebAuthn.addCredential',{'authenticatorId':auth,'credential':key})
         try:
-            page2.goto(ORIGIN+'/acesso-dev.html');expect(page2.locator('#initial')).to_be_visible();page2.locator('#login-email').fill('owner@example.invalid');page2.locator('#login-pin').fill('8274')
+            page2.goto(ORIGIN+'/acesso-dev.html?verificar=1');expect(page2.locator('#initial')).to_be_visible();page2.locator('#login-email').fill('owner@example.invalid');page2.locator('#login-pin').fill('8274')
             page2.get_by_role('button',name='Entrar na minha conta',exact=True).first.click();expect(page2.locator('#passkey')).to_be_visible();page2.locator('#passkey-button').click();expect(page2.locator('#complete')).to_be_visible()
             page2.goto(ORIGIN+'/catalogo-dev.html');expect(page2.locator('.book h2')).to_have_text('Livro de teste compartilhado')
             self.page.get_by_role('button',name='Detalhes e edição').click();page2.get_by_role('button',name='Detalhes e edição').click()
@@ -101,7 +101,7 @@ class Catalog(OwnerAccess):
         self.page.screenshot(path=str(ARTIFACTS/'catalogo-celular.png'),full_page=True);self.assertEqual(self.errors,[])
     def test_catalog_disabled_or_unauthenticated_and_prod_have_no_write_form(self):
         self.page.goto(ORIGIN+'/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('Entre na sua conta para continuar');expect(self.page.locator('#catalog')).to_be_hidden()
-        self.activate();self.local('/test/disable',{});self.page.goto(ORIGIN+'/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('ainda não está disponível');expect(self.page.locator('#catalog')).to_be_hidden()
+        self.activate();self.local('/test/disable',{});self.page.goto(ORIGIN+'/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('ainda não foi ativado');expect(self.page.locator('#catalog')).to_be_hidden()
         self.page.goto('https://merry-chimera-49a1f3.netlify.app/catalogo-dev.html');expect(self.page.locator('#status')).to_contain_text('exclusivamente no endereço DEV');expect(self.page.locator('#catalog')).to_be_hidden()
 
 if __name__=='__main__':

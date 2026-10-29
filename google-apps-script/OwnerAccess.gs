@@ -411,3 +411,25 @@ function accessBiometricOptions_(request,c){
   ownerAccessOperation_({action:'identity.access.login',payload:{flowId:p.flowId,tokenHash:p.tokenHash,subjectId:p.subjectId,authorizationVersion:p.authorizationVersion}},c);
   return accessOptions_({payload:{tokenHash:p.tokenHash,accountKey:p.accountKey,originKey:p.originKey,ceremonyId:p.ceremonyId,challenge:p.challenge,allowReplacement:false}},c,true);
 }
+
+// Discoverable WebAuthn: the browser selects its saved key before any Google
+// lookup. A signed, cookie-bound Node challenge identifies no user by itself.
+function accessDevicePrepare_(request,c){
+  var p=request.payload;authControlExact_(p,['tokenHash','flowId','ceremonyId','challenge','credentialId','subjectId','staffAllowed','accountKey','originKey']);
+  if(!accessHash_(p.tokenHash)||!identityUuid_(p.flowId)||!identityUuid_(p.ceremonyId)||!identityUuid_(p.subjectId)||!passkeyText_(p.challenge,43,43)||!passkeyText_(p.credentialId,2,1400)||typeof p.staffAllowed!=='boolean')accessReject_();
+  recoverSecurityIntent_(c);var ss=authControlStore_(c),attempt=authAttempt_(ss,{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  var keys=passkeyCredentials_(ss).rows.filter(function(k){return k.Credential_ID===p.credentialId&&k.Subject_ID===p.subjectId&&k.Revoked_At==='';});
+  if(keys.length!==1)accessReject_();
+  var ownerId=scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID');
+  if(p.subjectId!==ownerId&&(!p.staffAllowed||!staffEnabled_()))accessReject_();
+  var version=keys[0].Authorization_Version;
+  // Existing login and passkey operations recheck activation, epoch, status,
+  // credential binding and one-use challenge inside this same ScriptLock.
+  ownerAccessOperation_({action:'identity.access.login',payload:{flowId:p.flowId,tokenHash:p.tokenHash,subjectId:p.subjectId,authorizationVersion:version}},c);
+  passkeyOperation_({action:'identity.passkey.begin',payload:{subjectId:p.subjectId,authorizationVersion:version,ceremonyId:p.ceremonyId,purpose:'AUTHENTICATE',challenge:p.challenge}},c);
+  ownerAccessOperation_({action:'identity.access.bind',payload:{tokenHash:p.tokenHash,ceremonyId:p.ceremonyId}},c);
+  var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:p.subjectId,authorizationVersion:version,ceremonyId:p.ceremonyId,credentialId:p.credentialId}},c);
+  var flow=ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}},c);
+  return {allowed:true,done:false,flow:flow,ceremony:ceremony};
+}

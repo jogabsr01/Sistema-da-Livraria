@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
-import { createSessionService } from './session-service.mjs';
+import { createSessionService,sessionTransportContext,validateSessionPrincipal } from './session-service.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requirePermission, requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
 import { loadPersonalDataSettings, createPersonalDataVault } from './personal-data.mjs';
@@ -12,9 +12,15 @@ export function loadStaffSettings(env=process.env){if(env.WORKSPACE_STAFF_ENABLE
 export function createStaffHandler(dependencies={}){
  return async request=>{const requestId=randomUUID();try{
   const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==STAFF_ORIGIN)throw new ApiError(403,'FORBIDDEN');
-  if(!['list','save'].includes(op))throw new ApiError(404,'NOT_FOUND');const method=op==='save'?'POST':'GET';
+  if(!['bootstrap','list','save'].includes(op))throw new ApiError(404,'NOT_FOUND');const method=op==='save'?'POST':'GET';
   if(request.method!==method){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow',method);return r;}
   const settings=(dependencies.loadSettings||loadStaffSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),vault=createPersonalDataVault(settings),sessions=createSessionService(settings,{client});
+  if(op==='bootstrap'){
+   if([...url.searchParams.keys()].some(k=>k!=='offset'||url.searchParams.getAll(k).length!==1)||!/^\d{1,4}$/.test(url.searchParams.get('offset')||'0')||Number(url.searchParams.get('offset')||0)>5000)staffInvalid();
+   const context=sessionTransportContext(request,settings),data=await client.staff('bootstrap',context.actor,{offset:Number(url.searchParams.get('offset')||0)}),principal=validateSessionPrincipal(data?.principal);requirePermission(principal,'users.attendant.manage',{targetRole:'ATENDENTE'});
+   if(!Array.isArray(data.users)||data.users.length>25||!Number.isSafeInteger(data.total)||data.total<0||data.total>5000||data.nextOffset!==null&&(!Number.isSafeInteger(data.nextOffset)||data.nextOffset!==Number(url.searchParams.get('offset')||0)+data.users.length||data.nextOffset>=data.total))throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+   return json({data:{total:data.total,nextOffset:data.nextOffset,users:data.users.map(row=>staffDto(row,vault)),user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken:context.csrfToken},requestId});
+  }
   if(method==='POST')requireSameOriginMutation(request,STAFF_ORIGIN);const principal=await sessions.authenticate(request);
   // Current target role is resolved AGAIN in GAS; here only the broad admin gate.
   requirePermission(principal,'users.attendant.manage',{targetRole:'ATENDENTE'});
