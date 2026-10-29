@@ -12,7 +12,7 @@
   try{const saved=JSON.parse(localStorage.getItem(identifierStorage)||'null');if(saved&&typeof saved.value==='string'&&saved.value.length<=254&&Number.isFinite(saved.expires)&&saved.expires>Date.now()&&!identifierError(saved.value))$('login-email').value=saved.value;else localStorage.removeItem(identifierStorage);}catch{}
   $('remember-identifier').addEventListener('change',()=>{if(!$('remember-identifier').checked)try{localStorage.removeItem(identifierStorage);}catch{}});
   let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
-  const diagnosticCodes = new Set(['ACCESS_CONTINUATION_EXPIRED','HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
+  const diagnosticCodes = new Set(['WORKSPACE_BUSY','ACCESS_CONTINUATION_EXPIRED','HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
@@ -23,7 +23,7 @@
     $('support-details').hidden = false;
   }
   function unavailable(code) { const error = new Error('ACCESS_FAILED'); error.code = code; return error; }
-  let csrfToken = '', busy = false, pendingResponse = null, pendingReceipt = null, pendingLogin = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
+  let csrfToken = '', busy = false, pendingResponse = null, pendingReceipt = null, pendingDeviceCommand = null, pendingLogin = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
   const panels = ['initial', 'email-form', 'pin-form', 'passkey', 'retry', 'complete'];
   function feedbackIn(id) {
     const target = $(id), feedback = $('access-feedback');
@@ -42,8 +42,9 @@
     if(stage==='PIN'&&replacementReady){$('use-rescue').checked=true;$('rescue-inputs').hidden=false;$('rescue-status').textContent='Código já validado nesta tentativa. Defina seu PIN novo.';}
     $('restart').hidden = !panel || ['initial', 'complete'].includes(panel);
   }
-  const uncertainCodes = new Set(['ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
-  function describe(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common && !uncertainCodes.has(error.code)) return common;
+  const busyCodes=new Set(['WORKSPACE_BUSY']);
+  const uncertainCodes = new Set(['WORKSPACE_BUSY','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
+  function describe(error) { if(busyCodes.has(error.code))return pendingDeviceCommand||pendingReceipt?'O serviço está ocupado. Sua confirmação pelo aparelho foi preservada nesta aba. Clique em “Tentar concluir entrada” para continuar.':'O serviço está ocupado. Aguarde alguns instantes e tente entrar novamente.'; const common = globalThis.LivrariaMessages?.describe(error); if (common && !uncertainCodes.has(error.code)) return common;
     const code = error.code || '';
     if (uncertainCodes.has(code) && ['state','session'].includes(error.transport?.operation)) return 'Não conseguimos carregar seu acesso agora. Aguarde alguns instantes e clique em “Tentar carregar novamente”. Se continuar, peça ajuda à administração.';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
@@ -79,11 +80,25 @@
     if (code === 'FORBIDDEN') return 'Não foi possível validar esta tentativa de acesso. Atualize a página e tente novamente no endereço da livraria. Se continuar, peça ajuda à administração.';
     return 'Não foi possível concluir esta etapa. Aguarde alguns instantes e tente novamente. Se o problema continuar, peça ajuda à administração da livraria.';
   }
-  async function requestJson(operation, options) {
-    const controller = new AbortController(), started = performance.now();
+  // Serialize HTTP reads and writes: ignoring an old response does not release
+  // its Google lock or prevent the browser from applying its Set-Cookie header.
+  const transportSteps=[];
+  $('download-access-diagnostic').addEventListener('click',()=>{
+    const report={version:1,environment:'dev',generatedAt:new Date().toISOString(),steps:transportSteps.slice(-40)};
+    const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'})),link=document.createElement('a');
+    link.href=url;link.download='livraria-diagnostico-acesso.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+  let transportTail=Promise.resolve();
+  function requestJson(operation,options){
+    const queuedAt=performance.now(),pending=transportTail.then(()=>requestJsonNow(operation,options,queuedAt));
+    transportTail=pending.then(()=>undefined,()=>undefined);return pending;
+  }
+  async function requestJsonNow(operation, options,queuedAt) {
+    const controller = new AbortController(), started = performance.now(),at=new Date().toISOString();
     const timer = setTimeout(() => controller.abort(), 60000);
-    let response;
+    let response,observedCode='OK';
     const failure = code => {
+      observedCode=diagnosticCodes.has(code)?code:'ACCESS_RESPONSE_INVALID';
       const error = unavailable(code);
       error.transport = {operation, status: response?.status || 0, elapsedMs: Math.round(performance.now() - started)};
       return error;
@@ -96,17 +111,29 @@
         if (body.length <= 65536 && body.includes('app.netlify.com') && body.includes('edge-access') && body.includes('Login Redirect')) throw failure('HOST_ACCESS_REQUIRED');
         throw failure('ACCESS_RESPONSE_INVALID');
       }
-      if (operation === 'session' && [401,403].includes(response.status)) return {response, result:null, failure};
+      if (operation === 'session' && [401,403].includes(response.status)) {observedCode='UNAUTHENTICATED';return {response, result:null, failure};}
       let result; try { result = await response.json(); }
       catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
+      if(!response.ok)observedCode=diagnosticCodes.has(result?.error?.code)?result.error.code:'OTHER_REJECTION';
       return {response, result, failure};
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+      transportSteps.push({operation,at,queuedMs:Math.round(started-queuedAt),http:response?.status||0,elapsedMs:Math.round(performance.now()-started),code:observedCode});
+      if(transportSteps.length>40)transportSteps.shift();
+    }
   }
-  async function api(operation, body, canRenew = true, openLogin = false) {
-    if(busy)$('access-progress').querySelector('span:last-child').textContent=({'state':'Preparando acesso…','device-login':'Entrando na livraria…','complete':'Finalizando sua entrada…','login':'Conferindo acesso…','options':'Preparando confirmação…'})[operation]||'Aguarde…';
+  async function api(operation, body, canRenew = true, openLogin = false, busyAttempt = 0) {
+    if(busy)$('access-progress').querySelector('span:last-child').textContent=({'state':'Preparando acesso…','device-login':'Entrando na livraria…','complete':'Finalizando sua entrada…','login':'Conferindo acesso…','continue-login':'Preparando confirmação…','options':'Preparando confirmação…'})[operation]||'Aguarde…';
     const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-      headers: body === undefined ? (openLogin?{'x-access-view':'login'}:{}) : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(operation==='complete'?{'x-access-completion-version':'3'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      headers: body === undefined ? (openLogin?{'x-access-view':'login'}:{}) : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(['complete','login'].includes(operation)?{'x-access-completion-version':'3'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.ok) {
+      // A signed WORKSPACE_BUSY is returned only before acquiring ScriptLock;
+      // that command did not execute. Retry once, never replay ambiguous failures.
+      if(response.status===503&&result?.error?.code==='WORKSPACE_BUSY'&&busyAttempt===0){
+        if(busy)$('access-progress').querySelector('span:last-child').textContent='Aguardando o serviço liberar sua entrada…';
+        await new Promise(resolve=>setTimeout(resolve,500));
+        return api(operation,body,canRenew,openLogin,1);
+      }
       // Renew only a server-confirmed preflight rejection: no command ran.
       // Never replay a timeout, invalid response, PIN/code guess or ceremony.
       if (canRenew && response.status === 401 && result?.error?.code === 'ACCESS_CONTEXT_EXPIRED' && ['start','login','recover'].includes(operation)) {
@@ -207,6 +234,12 @@
     $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role);enterApp(); return true;
   }
   async function finish() {
+    if(pendingDeviceCommand){
+      let prepared;try{prepared=await api('device-login',pendingDeviceCommand);}
+      catch(error){if(!busyCodes.has(error.code))pendingDeviceCommand=null;throw error;}
+      if(!prepared.proofReceipt){pendingDeviceCommand=null;throw unavailable('ACCESS_RESPONSE_INVALID');}
+      pendingDeviceCommand=null;pendingReceipt=prepared.proofReceipt;pendingResponse=null;
+    }
     if(pendingLogin){
       const result=await api('continue-login',{receipt:pendingLogin});pendingLogin=null;
       if(result.stage!=='PASSKEY')throw unavailable('ACCESS_RESPONSE_INVALID');
@@ -241,7 +274,7 @@
     lastIdentifier=$('activation-email').value;const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);
   });
   submit('login-form', async () => {
-    lastIdentifier=$('login-email').value;try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); show(data.stage); message('Confirme sua identidade pelo aparelho cadastrado.'); }
+    lastIdentifier=$('login-email').value;try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); if(data.loginReceipt){pendingLogin=data.loginReceipt;show('COMMITTING');await finish();}else{show(data.stage);message('Confirme sua identidade pelo aparelho cadastrado.');} }
     finally { $('login-pin').value = ''; }
   });
   $('biometric-login').addEventListener('click',()=>run(async()=>{
@@ -256,9 +289,7 @@
     catch(error){throw unavailable({NotAllowedError:'DEVICE_NOT_ALLOWED',NotSupportedError:'DEVICE_NOT_SUPPORTED',SecurityError:'DEVICE_SECURITY_ERROR',AbortError:'DEVICE_ABORTED'}[error?.name]||'DEVICE_RESPONSE_INVALID');}
     if(!credential)throw unavailable('DEVICE_RESPONSE_INVALID');
     pendingResponse=serialize(credential);loginDevice=null;show('COMMITTING');accessPhase='COMPLETE';
-    const data=await api('device-login',{response:pendingResponse,receipt:prepared.receipt});
-    if(!data.proofReceipt)throw unavailable('ACCESS_RESPONSE_INVALID');
-    pendingReceipt=data.proofReceipt;pendingResponse=null;await finish();
+    pendingDeviceCommand={response:pendingResponse,receipt:prepared.receipt};await finish();
   },'login-form'));
   async function saveAccessStep(operation, body, expectedStage) {
     try { return await api(operation, body); }
@@ -321,7 +352,7 @@
     show('COMMITTING'); accessPhase = 'COMPLETE'; await finish();
   }));
   $('retry-button').addEventListener('click',()=>run(async()=>{
-    if(pendingLogin||pendingReceipt){await finish();return;}
+    if(pendingDeviceCommand||pendingLogin||pendingReceipt){await finish();return;}
     const state=await api('state');
     if(state.stage==='PASSKEY'){
       pendingResponse=null;show('PASSKEY');message('A confirmação não foi salva. Confirme novamente pelo aparelho para entrar.');return;
@@ -329,10 +360,10 @@
     if(['COMMITTING','COMPLETE'].includes(state.stage)){await finish();return;}
     pendingResponse=null;show(state.stage);message('Continue pela etapa indicada abaixo.');
   }));
-  $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('Escolha como deseja entrar.');}));
-  function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
+  $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('Escolha como deseja entrar.');}));
+  function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingLogin=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
   window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-pin')run(async()=>{if(!await current()){await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');}});});
-  window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingLogin=null;});
+  window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingLogin=null;});
   window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {

@@ -25,7 +25,9 @@ export function createSessionHandler(operation, dependencies = {}) {
       return response;
     } catch (error) {
       const response = safeFailure(error, requestId);
-      if (error?.code === 'UNAUTHENTICATED') response.headers.set('set-cookie', clearSessionCookie());
+      // A delayed read for an expired old token must not erase a newer cookie
+      // issued by a concurrent login. Authoritative denial still returns 401;
+      // explicit successful logout remains responsible for clearing the cookie.
       return response;
     }
   };

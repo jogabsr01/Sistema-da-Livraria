@@ -180,7 +180,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
       }
       if(operation==='continue-login'){
         const saved=accessReceipts(settings,token).open(input.receipt,'login');
-        if(saved.mode!=='biometric')rejected();
+        if(!['biometric','pin'].includes(saved.mode))rejected();
         const prepared=await client.prepareBiometricOptions({...saved.command,tokenHash:hash(token),...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),ceremonyId:randomUUID(),challenge:randomBytes(32).toString('base64url')});
         if(prepared.subjectId!==saved.command.subjectId||prepared.authorizationVersion!==saved.command.authorizationVersion||prepared.kind!=='get')rejected();
         return await preparedAccessOptions(prepared);
@@ -196,9 +196,9 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         const biometric=operation==='biometric';
         const valid=biometric?!!account:await pins.verify(input.pin,account?.subjectId||'00000000-0000-4000-8000-000000000000',account?.record||dummy);
         if(!account||!valid)rejected();
-        if(biometric){
+        if(biometric||stagedCompletion){
           const command={flowId:randomUUID(),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion};
-          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:'biometric',command})};
+          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:biometric?'biometric':'pin',command})};
         }
         await client.access('login',{flowId:randomUUID(),tokenHash:hash(token),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion});
         return {stage:'PASSKEY'};
