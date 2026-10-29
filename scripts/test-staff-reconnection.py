@@ -14,7 +14,7 @@ class StaffReconnection(qa.Staff):
         if path=='/api/v1/session' and (self.deny or self.other):
             if self.deny:route.fulfill(status=401,content_type='application/json',body=json.dumps({'error':{'code':'UNAUTHENTICATED'}}));return
             out=self.local(path,headers=headers);body=json.loads(out['body']);body['data']['user']['id']='00000000-0000-4000-8000-000000000001';route.fulfill(status=out['status'],headers=out['headers'],body=json.dumps(body));return
-        if path=='/api/v1/staff/list':
+        if path in ['/api/v1/staff/list','/api/v1/staff/bootstrap']:
             if self.fail_list:route.abort();return
             out=self.local(path+'?'+urlsplit(req.url).query,headers=headers)
             if self.hold:self.held=(route,out);return

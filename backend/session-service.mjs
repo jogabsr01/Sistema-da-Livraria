@@ -93,3 +93,12 @@ export function createSessionService(settings, { client, now = () => Date.now() 
     },
   };
 }
+
+// Cookie/CSRF transport binding only, never a principal or permission grant.
+// Read-only bootstrap handlers MUST validate the fresh signed Google principal
+// and requirePermission before disclosing their data.
+export function sessionTransportContext(request,settings){
+  if(settings.config.environment!=='dev'||new URL(request.url).origin!=='https://dev--merry-chimera-49a1f3.netlify.app')denied();
+  const rawToken=readSessionToken(request),tokens=createSessionTokens({...settings.config,tokenKey:settings.tokenKey});
+  return {actor:{sessionTokenHash:tokens.hash(rawToken)},csrfToken:createHmac('sha256',settings.tokenKey).update(JSON.stringify(['csrf.v1',settings.config.environment,settings.config.installationId,rawToken])).digest('base64url')};
+}

@@ -48,3 +48,5 @@ button.pin-visibility[aria-pressed="true"] { background: #e6eee8; }
 
 .field-error { margin: 6px 0 12px; color: #853d31; font-size: .9rem; }
 input[aria-invalid="true"] { border-color: #ad4434; }
+
+.remember-choice{display:flex;align-items:center;gap:10px;font-size:.8rem;font-weight:400;line-height:1.5;margin:14px 0}.remember-choice input{width:20px;min-height:20px;height:20px;flex:0 0 20px;padding:0}.login-method-help{font-size:.78rem;color:#617266}

@@ -30,13 +30,14 @@
       <form id="login-form" novalidate>
         <h2>Entrar</h2>
         <label for="login-email">CPF ou e-mail cadastrado</label>
-        <input id="login-email" aria-describedby="login-email-error" type="text" autocomplete="username" maxlength="254" required><p id="login-email-error" class="field-error" hidden></p>
+        <input id="login-email" aria-describedby="login-email-error" type="text" autocomplete="username webauthn" maxlength="254" required><p id="login-email-error" class="field-error" hidden></p>
         <label for="login-pin">PIN de 4 números</label>
         <div class="pin-field"><input id="login-pin" aria-describedby="login-pin-error" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="login-pin" aria-controls="login-pin" aria-label="Mostrar PIN de entrada" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
         <p id="login-pin-error" class="field-error" hidden></p>
         <button>Entrar na minha conta</button>
-        <button id="biometric-login" type="button" class="secondary">Entrar com biometria, sem PIN</button>
-        <p class="login-method-help">Já cadastrou seu aparelho? Informe o CPF ou e-mail e escolha a biometria para entrar sem digitar o PIN da livraria.</p>
+        <button id="biometric-login" type="button" class="secondary">Entrar com biometria</button>
+        <label class="remember-choice"><input id="remember-identifier" type="checkbox" checked> Lembrar meu CPF ou e-mail neste navegador</label>
+        <p class="login-method-help">Use a chave de acesso salva no seu aparelho ou gerenciador de senhas. Para entrar com biometria, você não precisa digitar o PIN da livraria.</p>
       </form>
       <details id="first-access-box">
         <summary>É meu primeiro acesso</summary>

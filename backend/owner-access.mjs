@@ -121,6 +121,10 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
     }
     const rawToken=digest('access.session.v1',token,'base64url',tokenKey),sessionTokenHash=tokens.hash(rawToken);
     const prepared=await client.prepareAccessCompletion({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token),sessionTokenHash,credentialId:hasResponse&&typeof response.id==='string'?response.id:'',hasResponse,allowReplacement:settings.emergencyRecoveryEnabled===true,handleSubjectId});
+    return verifyPreparedProof(prepared,response,token,sessionTokenHash);
+  }
+  async function verifyPreparedProof(prepared,response,token,sessionTokenHash){
+    const rawToken=digest('access.session.v1',token,'base64url',tokenKey);
     const flow=prepared.flow;
     if(prepared.done)return completedOutput(flow,prepared.principal,rawToken);
     const user={subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion};
@@ -144,12 +148,29 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
 
   return {
     csrf,
+    deviceOptions(token){
+      const challenge=randomBytes(32).toString('base64url'),flowId=randomUUID(),ceremonyId=randomUUID();
+      return {receipt:accessReceipts(settings,token).seal('device-login',{challenge,flowId,ceremonyId}),options:{challenge,rpId:new URL(ACCESS_ORIGIN).hostname,allowCredentials:[],userVerification:'required',timeout:120000}};
+    },
     async state(token) {
       try { const f=await read(token);return {stage:f.state==='PASSKEY'&&f.proofReady?'COMMITTING':f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
       catch (error) { if (error?.code === 'WORKSPACE_ACCESS_REJECTED') return { stage: 'INITIAL' }; throw error; }
     },
     async execute(operation, input, token, ip) {
      try {
+      if(operation==='device-login'){
+        const issued=accessReceipts(settings,token).open(input.receipt,'device-login');
+        validatePasskeyResponse(input.response);
+        const response=input.response,handle=response.response?.userHandle;
+        if(typeof response.id!=='string'||!/^[A-Za-z0-9_-]{2,1400}$/.test(response.id))rejected();
+        if(typeof handle!=='string'||Buffer.from(handle,'base64url').toString('base64url')!==handle)rejected();
+        const subjectId=Buffer.from(handle,'base64url').toString('utf8');if(!catalogUuid(subjectId))rejected();
+        let browserData;try{browserData=JSON.parse(Buffer.from(response.response.clientDataJSON,'base64url').toString('utf8'));}catch{rejected();}
+        if(browserData.type!=='webauthn.get'||browserData.origin!==ACCESS_ORIGIN||browserData.challenge!==issued.challenge)rejected();
+        const prepared=await client.prepareDeviceAccess({...issued,tokenHash:hash(token),subjectId,credentialId:response.id,staffAllowed:settings.staffEnabled===true,...guard.attemptKeys({identifier:'passkey:'+createHash('sha256').update(response.id||'').digest('hex'),originAddress:ip})});
+        const rawToken=digest('access.session.v1',token,'base64url',tokenKey);
+        return verifyPreparedProof(prepared,response,token,tokens.hash(rawToken));
+      }
       // Trusted platform address only, never body/forwarded HTTP headers.
       if (operation === 'email' && typeof client.verifyAccessEmail === 'function' && typeof input.code === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/i.test(input.code.trim()) || canonical(input.code.trim()))) {
         const code=normalizeAccessEmailCode(input.code);
@@ -256,13 +277,13 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
       }
       throw new ApiError(404, 'NOT_FOUND');
      } catch(error) {
-      if(error instanceof ApiError&&error.status===401&&['ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED','WORKSPACE_CHALLENGE_REJECTED'].includes(error.code)){const code=operation==='login'?'CREDENTIALS_REJECTED':operation==='email'?'EMAIL_PROOF_REJECTED':['PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED'].includes(error.code)?'PASSKEY_REJECTED':'FLOW_REJECTED';await client.recordSecurityEvent({commandId:randomUUID(),phase:operation==='rescue'?'RECOVER':['biometric','continue-login'].includes(operation)?'LOGIN':operation.toUpperCase(),code});}
+      if(error instanceof ApiError&&error.status===401&&['ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED','WORKSPACE_CHALLENGE_REJECTED'].includes(error.code)){const code=operation==='login'?'CREDENTIALS_REJECTED':operation==='email'?'EMAIL_PROOF_REJECTED':['PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED'].includes(error.code)?'PASSKEY_REJECTED':'FLOW_REJECTED';await client.recordSecurityEvent({commandId:randomUUID(),phase:operation==='rescue'?'RECOVER':['biometric','continue-login','device-login'].includes(operation)?'LOGIN':operation.toUpperCase(),code});}
       throw error;
      }
     },
   };
 }
-const shapes = { biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
+const shapes = { 'device-login':['response','receipt'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
 export const OWNER_ACCESS_BUDGET_MS = 55_000;
 export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
 export const OPTIONS_REQUEST_BUDGET_MS = 27_000;
@@ -270,7 +291,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
     const requestId = randomUUID(), startedAt = performance.now();
     const requestedOperation=new URL(request.url).pathname.split('/').at(-1);
-    const loginRequest=['login','biometric','continue-login'].includes(requestedOperation), optionsRequest=requestedOperation==='options';
+    const loginRequest=['login','biometric','continue-login','device-login'].includes(requestedOperation), optionsRequest=requestedOperation==='options';
     const completionRequest=new URL(request.url).pathname.split('/').at(-1)==='complete'&&['2','3'].includes(request.headers.get('x-access-completion-version'));
     const deadlineAt=startedAt+(optionsRequest?OPTIONS_REQUEST_BUDGET_MS:completionRequest||loginRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
     let operation, settingsLoaded = false, client, token, rotatedFlow = false;
@@ -284,12 +305,12 @@ export function createOwnerAccessHandler(dependencies = {}) {
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
       settingsLoaded = true;
       client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt, ...(optionsRequest||completionRequest||loginRequest?{timeoutMs:COMPLETION_REQUEST_BUDGET_MS}:{}) });
-      const service = createOwnerAccessService(settings, { client, stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3' });
+      const service = createOwnerAccessService(settings, { client, stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3'||operation==='device-login' });
       if (operation === 'state') {
         let fresh = request.headers.get('x-access-view')==='login';
         try { if(fresh)throw new Error('NEW_LOGIN_VIEW'); token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }
         const data = fresh ? { stage: 'INITIAL' } : await service.state(token);
-        const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId });
+        const result = json({ data: { ...data,...(data.stage==='INITIAL'?{deviceLogin:service.deviceOptions(token)}:{}),emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId });
         if (fresh) result.headers.set('set-cookie', accessCookie(token)); return timed(result);
       }
       requireSameOriginMutation(request, ACCESS_ORIGIN);

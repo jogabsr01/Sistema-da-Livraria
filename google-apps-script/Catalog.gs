@@ -223,6 +223,8 @@ function catalogOperation_(request, c) {
   if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(principal.role)) failure_('FORBIDDEN');
   recoverCatalog_(c);
   var p = request.payload, ss = storage_(c, false).spreadsheet;
+  var bootstrap=request.action==='catalog.bootstrap',create=false;
+  if(bootstrap){authControlExact_(p,['search','offset','nicheId','includeInactive','create']);if(typeof p.create!=='boolean'||typeof p.search!=='string'||p.search.length>100||!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000||p.nicheId!==''&&!identityUuid_(p.nicheId)||typeof p.includeInactive!=='boolean')catalogFail_();create=p.create;p={search:p.search,offset:p.offset,nicheId:p.nicheId,includeInactive:p.includeInactive};}
   // A failed checkout must finish its durable projections before exposing stock.
   recoverSales_(ss);
   if (request.action === 'catalog.receive') return receiveStock_(request, c, principal, ss);
@@ -247,6 +249,7 @@ function catalogOperation_(request, c) {
   if (request.action === 'catalog.niches') {
     authControlExact_(p, []); return { niches: nicheDtos_(ss,catalogNiches_(ss).rows) };
   }
+  if(bootstrap&&create)return {principal:principal,niches:nicheDtos_(ss,catalogNiches_(ss).rows),products:[],total:0,nextOffset:null};
   var products = catalogProducts_(ss), links = catalogLinks_(ss);
   catalogReferences_(products, links, catalogNiches_(ss));
   if (['catalog.get','catalog.cover'].includes(request.action)) {
@@ -255,13 +258,27 @@ function catalogOperation_(request, c) {
     if (request.action === 'catalog.cover') return readCoverPhoto_(c,found[0]);
     return { product: catalogDto_(found[0], links, true) };
   }
-  if (request.action !== 'catalog.list') failure_('FORBIDDEN');
+  if (request.action !== 'catalog.list'&&!bootstrap) failure_('FORBIDDEN');
   authControlExact_(p, ['search', 'offset', 'nicheId', 'includeInactive']);
   if (typeof p.search !== 'string' || p.search.length > 100 || !Number.isSafeInteger(p.offset) || p.offset < 0 || p.offset > 5000 || p.nicheId !== '' && !identityUuid_(p.nicheId) || typeof p.includeInactive !== 'boolean') catalogFail_();
   var needle = p.search.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   var filtered = products.rows.filter(function (row) { return (p.includeInactive || row.Ativo) && (!p.nicheId || catalogLinkIds_(links, row.ID_Produto).indexOf(p.nicheId) >= 0) &&
     [row.Titulo, row.Autor, row.ISBN, row.Codigo_Interno].join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').indexOf(needle) >= 0; }).sort(function (a, b) { return a.Titulo.localeCompare(b.Titulo) || a.ID_Produto.localeCompare(b.ID_Produto); });
   var page = filtered.slice(p.offset, p.offset + 10);
-  return { products: page.map(function (row) { return catalogDto_(row, links, false); }), total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
+  var result={ products: page.map(function (row) { return catalogDto_(row, links, false); }), total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
+  if(bootstrap){result.principal=principal;result.niches=nicheDtos_(ss,catalogNiches_(ss).rows);}
+  return result;
 }
 function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_(c); return withLock_(function () { recoverCatalog_(c); return { recovered: true }; }); }
+
+// OWNER EDITOR ONLY. Not dispatched over HTTP. Prepare/back up the catalog
+// before enabling only the two core storefront modules in this DEV install.
+function activateDevelopmentStorefront(){
+  var c=baseSettings_();requireOwnerDev_(c);
+  provisionDevelopmentCatalog();
+  return withLock_(function(){
+    var ss=storage_(c,false).spreadsheet;assertSchema_(ss);authControlStore_(c);catalogJournal_(c);recoverSales_(ss);
+    scriptProperties_().setProperties({CATALOG_ENABLED:'true',CHECKOUT_ENABLED:'true'});
+    return {environment:'dev',catalog:true,checkout:true};
+  });
+}

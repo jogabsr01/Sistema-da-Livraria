@@ -74,15 +74,15 @@ function staffOperation_(request,c) {
   if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');
   var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;staffAdmin_(principal);
   var users=staffUsers_(ss);
-  if(request.action==='staff.list'||request.action==='staff.get'){
-    if(request.action==='staff.list'){authControlExact_(p,['offset']);if(!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000)staffFail_();}
+  if(request.action==='staff.bootstrap'||request.action==='staff.list'||request.action==='staff.get'){
+    if(request.action==='staff.list'||request.action==='staff.bootstrap'){authControlExact_(p,['offset']);if(!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000)staffFail_();}
     else {authControlExact_(p,['id']);if(!identityUuid_(p.id))staffFail_();}
     // List access is itself sensitive and append-only audited, without contact data.
     var at=new Date().toISOString(),audit=identityRows_(ss,'Logs_Auditoria');if(audit.rows.length>=5000)staffFail_('STAFF_CAPACITY');
     accessSaveMain_(audit,{ID_Log:request.requestId,Data_Hora:at,ID_Usuario:principal.id,Perfil:principal.role,Acao:'STAFF_LIST',Entidade:'Usuarios',ID_Entidade:'',Antes:'',Depois:'',Resultado:'SUCESSO',ID_Requisicao:request.requestId});
     if(request.action==='staff.get'){var found=users.rows.filter(function(r){return r.ID_Usuario===p.id;});if(found.length!==1)staffFail_('STAFF_CONFLICT');return {user:staffDto_(ss,found[0])};}
     var sorted=users.rows.slice().sort(function(a,b){return String(a.Criado_Em).localeCompare(String(b.Criado_Em))||a.ID_Usuario.localeCompare(b.ID_Usuario);}),page=sorted.slice(p.offset,p.offset+25);
-    return {users:page.map(function(r){return staffDto_(ss,r);}),total:sorted.length,nextOffset:p.offset+page.length<sorted.length?p.offset+page.length:null};
+    var data={users:page.map(function(r){return staffDto_(ss,r);}),total:sorted.length,nextOffset:p.offset+page.length<sorted.length?p.offset+page.length:null};if(request.action==='staff.bootstrap')data.principal=principal;return data;
   }
   if(request.action!=='staff.save')failure_('FORBIDDEN');
   authControlExact_(p,['commandId','id','expectedRevision','reason','role','status','fingerprint','contact','emailIndex','cpfIndex','emailCheck']);

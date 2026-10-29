@@ -68,7 +68,7 @@ class OwnerAccess(unittest.TestCase):
             route.abort('failed'); return
         if path.startswith('/api/'):
             body = request.post_data_buffer
-            if self.corrupt_signature and path.endswith('/complete'):
+            if self.corrupt_signature and (path.endswith('/complete') or path.endswith('/device-login')):
                 value = json.loads(body); signature = value['response']['response']['signature']
                 raw = bytearray(base64.urlsafe_b64decode(signature + '=' * ((4-len(signature)%4)%4))); raw[-1] ^= 1
                 value['response']['response']['signature'] = base64.urlsafe_b64encode(raw).decode().rstrip('='); body = json.dumps(value).encode()
@@ -102,7 +102,7 @@ class OwnerAccess(unittest.TestCase):
             route.fulfill(status=200, content_type=files[path], headers=headers, body=(ROOT / 'dist' / path[1:]).read_bytes()); return
         route.abort()  # No external requests or third-party scripts in this suite.
     def open(self):
-        self.page.goto(ORIGIN + '/acesso-dev.html'); expect(self.page.locator('#initial')).to_be_visible()
+        self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1'); expect(self.page.locator('#initial')).to_be_visible()
     def activation_until_passkey(self):
         self.open(); self.page.get_by_text('É meu primeiro acesso', exact=True).click(); self.page.locator('#activation-email').fill('owner@example.invalid')
         self.page.get_by_role('button', name='Receber código por e-mail').click()
@@ -127,6 +127,9 @@ class OwnerAccess(unittest.TestCase):
         self.page.get_by_role('button', name='Entrar na minha conta', exact=True).first.click()
     def assert_no_secrets_in_browser_storage(self):
         state = self.page.evaluate('({local: {...localStorage}, session: {...sessionStorage}, cookie: document.cookie})')
+        remembered=state['local'].pop('livraria.access.identifier.v1',None)
+        if remembered is not None:
+            hint=json.loads(remembered);self.assertEqual(set(hint),{'value','expires'});self.assertIsInstance(hint['value'],str);self.assertLessEqual(len(hint['value']),254)
         self.assertEqual(state, {'local': {}, 'session': {}, 'cookie': ''})
         cookie = next(c for c in self.context.cookies() if c['name'] == '__Host-livraria_session')
         self.assertTrue(cookie['httpOnly']); self.assertTrue(cookie['secure']); self.assertEqual(cookie['sameSite'], 'Lax')
@@ -213,16 +216,37 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.errors,[])
     def test_biometric_login_uses_registered_device_without_pin(self):
         self.activate();self.logout()
-        self.page.locator('#login-email').fill('owner@example.invalid')
+        expect(self.page.locator('#login-email')).to_have_value('owner@example.invalid')
+        self.page.locator('#login-email').fill('')
+        self.page.evaluate("""() => {const get=navigator.credentials.get.bind(navigator.credentials);navigator.credentials.get=options=>{window.nativeLoginActive=navigator.userActivation.isActive;return get(options)}}""")
+        before=self.step_posts.get('options',0)
         self.page.locator('#biometric-login').click()
-        expect(self.page.locator('#passkey-button')).to_have_text('Confirmar no meu aparelho')
-        self.assertEqual(self.page.locator('#login-pin').input_value(),'')
-        self.assertEqual(self.step_posts.get('login',0),0)
-        self.page.locator('#passkey-button').click()
         expect(self.page.locator('#complete')).to_be_visible()
+        self.assertTrue(self.page.evaluate('nativeLoginActive'))
+        self.assertEqual(self.step_posts.get('login',0),0)
+        self.assertEqual(self.step_posts.get('biometric',0),0)
+        self.assertEqual(self.step_posts.get('options',0),before)
+        self.assertEqual(self.step_posts.get('device-login',0),1)
         self.assertEqual(self.local('/test/state')['sessions'],2)
         self.assertEqual(self.local('/test/state')['passkeys'],1)
         self.assertEqual(self.errors,[])
+
+    def test_discoverable_login_rejects_corrupted_native_signature_without_issuing_session(self):
+        self.activate();self.logout();self.corrupt_signature=True
+        self.page.locator('#biometric-login').click()
+        expect(self.page.locator('#status')).to_contain_text('Não foi possível confirmar sua identidade')
+        self.assertEqual(self.local('/test/state')['sessions'],1)
+        self.assertEqual(self.local('/test/state')['activeSessions'],0)
+        expect(self.page.locator('#complete')).to_be_hidden()
+        self.assertEqual(self.errors,[])
+
+    def test_identifier_memory_can_be_cleared_without_storing_pin_or_credentials(self):
+        self.activate();self.logout()
+        expect(self.page.locator('#login-email')).to_have_value('owner@example.invalid')
+        self.page.locator('#remember-identifier').uncheck()
+        self.page.locator('#biometric-login').click();expect(self.page.locator('#complete')).to_be_visible()
+        self.assertIsNone(self.page.evaluate("localStorage.getItem('livraria.access.identifier.v1')"))
+        self.assert_no_secrets_in_browser_storage();self.assertEqual(self.errors,[])
 
     def test_expired_completion_continuation_offers_restart_instead_of_repeating_failed_action(self):
         self.activation_until_passkey()
@@ -285,7 +309,7 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['sessions'], 1); self.assertEqual(self.local('/test/state')['activeSessions'], 0)
     def test_session_read_failure_preserves_first_access_form_without_grant(self):
         self.session_transport_failure = True
-        self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1')
         expect(self.page.locator('#initial')).to_be_visible()
         expect(self.page.locator('#status')).to_contain_text('Continue pelo formulário')
         expect(self.page.locator('#access-diagnostic')).to_contain_text('SESSION / ACCESS_NETWORK_UNAVAILABLE')
@@ -297,7 +321,7 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['sessions'], 0)
         self.assertEqual(self.local('/test/state')['outbox'], 1)
     def test_session_read_failure_on_reload_preserves_email_flow(self):
-        self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1')
         self.page.get_by_text('É meu primeiro acesso', exact=True).click()
         self.page.locator('#activation-email').fill('owner@example.invalid')
         self.page.get_by_role('button', name='Receber código por e-mail').click()
@@ -391,7 +415,7 @@ class OwnerAccess(unittest.TestCase):
         for code, status, expected in [('ACCESS_EMAIL_NOT_REGISTERED',404,'E-mail não cadastrado'),('ACCESS_ALREADY_ACTIVATED',409,'já tem acesso ativo'),('AUTH_DELIVERY_RATE_LIMITED',429,'Confira o e-mail mais recente'),('ACCESS_EMAIL_DELIVERY_UNAVAILABLE',503,'confirmar o envio')]:
             with self.subTest(code=code):
                 self.page.route('**/api/v1/access/start',lambda route, request, c=code, s=status: route.fulfill(status=s,json={'error':{'code':c,'message':'PRIVATE_PROVIDER_SENTINEL'}}))
-                self.page.goto(ORIGIN + '/acesso-dev.html')
+                self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1')
                 self.page.get_by_text('É meu primeiro acesso', exact=True).click()
                 self.page.locator('#activation-email').fill('pessoa@example.invalid')
                 self.page.get_by_role('button',name='Receber código por e-mail',exact=True).click()
@@ -403,7 +427,7 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['sessions'],0)
 
     def test_first_access_invalid_email_is_local_and_cpf_missing_keys_is_explained_in_its_box(self):
-        self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1')
         self.page.get_by_text('É meu primeiro acesso',exact=True).click()
         self.page.locator('#activation-email').fill('incompleto@')
         self.page.get_by_role('button',name='Receber código por e-mail',exact=True).click()
@@ -417,7 +441,7 @@ class OwnerAccess(unittest.TestCase):
 
     def test_opening_state_timeout_offers_read_retry_without_claiming_data_saved(self):
         self.lost_step = 'state'; self.step_failure = 'html-before'
-        self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1')
         expect(self.page.locator('#status')).to_contain_text('Não conseguimos carregar seu acesso agora')
         self.assertNotIn('salvos', self.page.locator('#status').inner_text())
         expect(self.page.locator('#complete')).to_be_hidden()
@@ -587,7 +611,7 @@ class OwnerAccess(unittest.TestCase):
 
     def test_hosting_auth_gate_is_not_reported_as_google_or_pin_failure(self):
         self.page.route(ORIGIN+'/api/v1/access/state',lambda route:route.fulfill(status=401,content_type='text/html',body='<title>Login Redirect</title><script>window.location="https://app.netlify.com/edge-access?private-marker"</script>'))
-        self.page.goto(ORIGIN+'/acesso-dev.html')
+        self.page.goto(ORIGIN+'/acesso-dev.html?verificar=1')
         expect(self.page.locator('#status')).to_contain_text('Netlify precisa autorizar')
         expect(self.page.locator('#environment-access')).to_be_visible();expect(self.page.locator('#environment-access')).to_have_attribute('href','/')
         expect(self.page.locator('#initial')).to_be_hidden();expect(self.page.locator('#check-step')).to_be_hidden()
@@ -754,7 +778,7 @@ class OwnerAccess(unittest.TestCase):
 
     def test_explicit_entry_keeps_required_state_check_and_skips_optional_session_lookup(self):
         self.session_transport_failure = True
-        self.page.goto(ORIGIN + '/acesso-dev.html#entrar')
+        self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1#entrar')
         expect(self.page.locator('#initial')).to_be_visible()
         self.assertEqual(self.session_request_count, 0)
         self.assertEqual(self.local('/test/state')['sessions'], 0)
@@ -765,7 +789,7 @@ class OwnerAccess(unittest.TestCase):
 
     def test_invalid_state_response_shows_only_safe_diagnostic_and_keeps_forms_closed(self):
         self.state_response_invalid = True
-        self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1')
         expect(self.page.locator('#access-diagnostic')).to_contain_text('STATE / ACCESS_RESPONSE_INVALID')
         expect(self.page.locator('#initial')).to_be_hidden()
         expect(self.page.locator('#status')).to_contain_text('Não conseguimos carregar seu acesso agora')
@@ -778,7 +802,7 @@ class OwnerAccess(unittest.TestCase):
         self.assertEqual(self.local('/test/state')['sessions'], 0)
 
     def test_disabled_installation_and_production_page_expose_no_active_forms(self):
-        self.local('/test/disable', {}); self.page.goto(ORIGIN + '/acesso-dev.html')
+        self.local('/test/disable', {}); self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1')
         expect(self.page.locator('#status')).to_contain_text('acesso está indisponível')
         expect(self.page.locator('#initial')).to_be_hidden()
         self.page.goto('https://merry-chimera-49a1f3.netlify.app/acesso-dev.html')

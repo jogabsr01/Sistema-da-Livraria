@@ -52,7 +52,7 @@
     csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); $('niche-admin-link').hidden = !canDelete;
   }
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
-  function explain(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
+  function explain(error) { if(error.code==='CATALOG_NOT_ACTIVATED')return 'O cadastro de produtos ainda não foi ativado. Peça à administração para liberar o catálogo.'; const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     if (error.code === 'OFFLINE') return 'Sem conexão. Mantenha a aba aberta e confira a conexão antes de tentar novamente.';
     if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
     if (error.code === 'UNAUTHENTICATED') return 'Entre na conta verificada para usar o catálogo.';
@@ -71,7 +71,7 @@
   }
   async function run(action, form = false) {
     if (busy) return; busy = true; controls();
-    try { await action(); } catch (error) { const text = explain(error); if (form) { $('form-status').textContent = text; globalThis.LivrariaMessages?.highlight($('book-form'),error,'form-status'); $('reload-book').hidden = !editing || !error.code?.includes('CONFLICT'); } else message(text); }
+    try { await action(); } catch (error) { const text = explain(error); if (form) { $('form-status').textContent = text; globalThis.LivrariaMessages?.highlight($('book-form'),error,'form-status'); $('reload-book').hidden = !editing || !error.code?.includes('CONFLICT'); } else {message(text);$('catalog-error-actions').hidden=false;} }
     finally { busy = false; controls(); if (reconnectQueued) { reconnectQueued = false; reconnect(); } }
   }
   function cover(url, parent, preview = false) {
@@ -80,10 +80,13 @@
     const img = document.createElement('img'); img.alt = 'Capa do livro'; img.referrerPolicy = 'no-referrer'; img.src = url;
     img.addEventListener('error', () => { fallback.textContent = preview ? 'A imagem não carregou. Confira o link da capa.' : '📖'; parent.replaceChildren(fallback); }, { once:true }); parent.append(img);
   }
-  async function list() {
+  let deferredCatalogRead=false;
+  async function list(preloaded = null) {
+    if(preloaded&&deferredCatalogRead){$('books').replaceChildren();$('count').textContent='Novo cadastro de produto';nextOffset=null;return true;}
+    deferredCatalogRead=false;
     const ticket=++listSequence, version=connectionVersion;
     const params = new URLSearchParams({ q:$('query').value, offset:String(offset), niche:$('niche-filter').value, inactive:String($('inactive').checked) });
-    const data = await api('list', null, '?' + params);if(ticket!==listSequence || version!==connectionVersion || !online())return false; nextOffset = data.nextOffset; $('books').replaceChildren();
+    const data = preloaded || await api('list', null, '?' + params);if(ticket!==listSequence || version!==connectionVersion || !online())return false; nextOffset = data.nextOffset; $('books').replaceChildren();
     data.products.forEach(book => {
       const article = document.createElement('article'); article.className = 'book';
       const image = document.createElement('span'); cover(book.photoUrl || book.coverUrl, image); const content = document.createElement('div');
@@ -111,7 +114,7 @@
     $('previous').hidden = offset === 0; $('next').hidden = nextOffset === null; message('Catálogo atualizado com os dados do servidor.'); return true;
   }
   let nicheLoading=false,listSequence=0;
-  async function refreshNiches(){if(nicheLoading)return;nicheLoading=true;try{const data=await api('niches'),selected=$('niche-filter').value;niches=data.niches.sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));$('niche-filter').replaceChildren(new Option('Todos os nichos',''));for(const n of niches.filter(n=>n.active))$('niche-filter').append(new Option(n.name,n.id));$('niche-filter').value=niches.some(n=>n.active&&n.id===selected)?selected:'';if($('editor').open&&!command)choices([...document.querySelectorAll('#niche-choices input:checked')].map(n=>n.value));}finally{nicheLoading=false;}}
+  async function refreshNiches(preloaded=null){if(nicheLoading)return;nicheLoading=true;try{const data=preloaded||await api('niches'),selected=$('niche-filter').value;niches=data.niches.sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));$('niche-filter').replaceChildren(new Option('Todos os nichos',''));for(const n of niches.filter(n=>n.active))$('niche-filter').append(new Option(n.name,n.id));$('niche-filter').value=niches.some(n=>n.active&&n.id===selected)?selected:'';if($('editor').open&&!command)choices([...document.querySelectorAll('#niche-choices input:checked')].map(n=>n.value));}finally{nicheLoading=false;}}
   function choices(selected) {
     $('niche-choices').replaceChildren(); niches.filter(n => n.active||editing?.nicheIds.includes(n.id)).forEach(niche => {
       const label = document.createElement('label'); label.className = 'check'; const input = document.createElement('input'); input.type = 'checkbox'; input.value = niche.id; input.checked = selected.includes(niche.id);
@@ -218,7 +221,7 @@
   }); });
   $('reload-book').addEventListener('click', () => run(() => openBook(editing.id), true));
   $('editor').addEventListener('cancel', event => { if (busy || command?.pending) event.preventDefault(); });
-  $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();dirty=false;});
+  $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();dirty=false;if(deferredCatalogRead&&!busy){$('count').textContent='Carregando produtos…';run(()=>list());}});
   $('book-form').addEventListener('input',()=>{dirty=true;});
   window.addEventListener('beforeunload',event=>{if(dirty || command?.pending || pendingStock || archiveCommand || busy){event.preventDefault();event.returnValue='';}});
   window.addEventListener('pagehide',()=>{cancelLookup();cleanupPhoto();});
@@ -349,7 +352,8 @@
   document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidate();else reconnect();});
   setInterval(reconnect,30000);
   async function initialize() {
-    const data = await requestData('/api/v1/session');
+    const params=new URLSearchParams({q:$('query').value,offset:String(offset),niche:$('niche-filter').value,inactive:String($('inactive').checked),create:String(!initialized&&entryParams.get('novo')==='1')});
+    const data=await requestData('/api/v1/catalog/bootstrap?'+params);deferredCatalogRead=params.get('create')==='true';
     if (userId && userId !== data.user.id) throw Object.assign(Error('ACCOUNT_CHANGED'),{code:'UNAUTHENTICATED',status:401});
     userId = data.user.id; csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role);$('niche-admin-link').hidden=!canDelete; stockStorageKey = 'catalog.stock.pending.' + data.user.id;
     const stored = sessionStorage.getItem(stockStorageKey);
@@ -359,7 +363,7 @@
           !Number.isSafeInteger(value.expectedVersion) || value.expectedVersion < 1 || value.expectedVersion >= 1000000000 || !Number.isSafeInteger(value.quantity) || value.quantity < 1 || value.quantity > 1000000 || !['REPOSICAO','ESTOQUE_INICIAL','RECEBIMENTO'].includes(value.reason)) throw Error('INVALID_RECOVERY');
       pendingStock = value; $('resume-stock').hidden = false;
     }
-    const capabilities = await api('niches'); $('isbn-tools').hidden = capabilities.lookupEnabled !== true; photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;
+    document.body.dataset.sessionRole=data.user.role;if($('module-account'))$('module-account').hidden=false;window.dispatchEvent(new Event('livraria:session-ready'));const capabilities = data; $('isbn-tools').hidden = capabilities.lookupEnabled !== true; photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;return data;
   }
   async function reconnect() {
     if (!online() || document.hidden) { controls(); if (!initialized && !online()) message('Sem conexão. Mantenha esta aba aberta; o acesso será conferido ao reconectar.'); return; }
@@ -369,12 +373,12 @@
       reconciling = true; ready = false; clearTimeout(freshnessTimer); controls();
       const version = connectionVersion, first = !initialized;
       try {
-        if (first) await initialize(); else await sameAccount();
-        await refreshNiches();
-        if (await list() && version === connectionVersion && online() && !document.hidden) {
+        const bootstrap=await initialize();
+        await refreshNiches(bootstrap);
+        if (await list(bootstrap) && version === connectionVersion && online() && !document.hidden) {
           ready = true; checkedAt = performance.now();
           freshnessTimer = setTimeout(()=>{ready=false;controls();},90000);
-          initialized = true; $('catalog').hidden = false;
+          initialized = true; $('catalog').hidden = false;$('catalog-error-actions').hidden=true;
           if (first) {
             const params = new URL(location.href).searchParams, focusId = params.get('livro'), stockId = params.get('entrada');
             const validId = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
@@ -384,5 +388,7 @@
       } finally { reconciling = false; }
     });
   }
+  if(entryParams.get('novo')==='1'){$('catalog-title').textContent='Novo produto';$('catalog-intro').textContent='Cadastre os dados do livro e organize seu catálogo.';}
+  $('catalog-retry').addEventListener('click',reconnect);
   reconnect();
 })();

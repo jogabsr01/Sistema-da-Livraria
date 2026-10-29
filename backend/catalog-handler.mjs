@@ -1,7 +1,8 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
-import { createSessionService } from './session-service.mjs';
+import { readSessionToken, validateSessionPrincipal, createSessionService } from './session-service.mjs';
+import { createSessionTokens } from './credential-core.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requirePermission, requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
 import { catalogUuid, normalizeProduct, normalizedIsbn } from './catalog-model.mjs';
@@ -25,9 +26,21 @@ export function createCatalogHandler(dependencies = {}) {
     try {
       if (new URL(request.url).origin !== ORIGIN) throw new ApiError(403, 'FORBIDDEN');
       const operation = new URL(request.url).pathname.split('/').at(-1), method = ['save','isbn','receive','remove'].includes(operation) ? 'POST' : 'GET';
-      if (!['list', 'get', 'niches', 'save', 'isbn', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(404, 'NOT_FOUND');
+      if (!['bootstrap','list', 'get', 'niches', 'save', 'isbn', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(404, 'NOT_FOUND');
       if (request.method !== method) { const response = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); response.headers.set('allow', method); return response; }
       const settings = (dependencies.loadSettings || loadCatalogSettings)(), client = (dependencies.createClient || createWorkspaceClient)(settings.config);
+      if(operation==='bootstrap'){
+        const query=new URL(request.url).searchParams;
+        if([...query.keys()].some(k=>!['q','offset','niche','inactive','create'].includes(k)||query.getAll(k).length!==1))throw new ApiError(400,'INVALID_PRODUCT');
+        const offset=query.get('offset')||'0',search=(query.get('q')||'').trim(),nicheId=query.get('niche')||'';
+        if(!/^\d{1,5}$/.test(offset)||Number(offset)>5000||search.length>100||nicheId&&!catalogUuid(nicheId)||['inactive','create'].some(k=>query.has(k)&&!['true','false'].includes(query.get(k))))throw new ApiError(400,'INVALID_PRODUCT');
+        const rawToken=readSessionToken(request),tokens=createSessionTokens({...settings.config,tokenKey:settings.tokenKey});
+        const data=await client.catalog('bootstrap',{sessionTokenHash:tokens.hash(rawToken)},{search,offset:Number(offset),nicheId,includeInactive:query.get('inactive')==='true',create:query.get('create')==='true'});
+        const principal=validateSessionPrincipal(data.principal);requirePermission(principal,query.get('create')==='true'?'products.write':'products.read');
+        const csrfToken=createHmac('sha256',settings.tokenKey).update(JSON.stringify(['csrf.v1',settings.config.environment,settings.config.installationId,rawToken])).digest('base64url');
+        const {principal:_,...catalog}=data;
+        return json({data:{...catalog,niches:catalog.niches.map(n=>({...n,imageUrl:settings.nichesEnabled&&n.hasImage?'/api/v1/niches/image?id='+n.id+'&v='+n.version:''})),user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken,lookupEnabled:settings.lookupEnabled===true,photosEnabled:settings.photosEnabled===true,nichesEnabled:settings.nichesEnabled===true,checkoutEnabled:settings.checkoutEnabled===true,customersEnabled:settings.customersEnabled===true},requestId});
+      }
       const sessions = createSessionService(settings, { client });
       if (method === 'POST') requireSameOriginMutation(request, ORIGIN);
       const principal = await sessions.authenticate(request);
