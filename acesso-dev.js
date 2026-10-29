@@ -5,18 +5,18 @@
   let pendingMessage = null;
   const message = (text, tone = 'info') => { if (busy) { pendingMessage = { text, tone }; return; } $('status').textContent = text; $('status').dataset.tone = tone; $('status').hidden = false; };
   let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
-  const diagnosticCodes = new Set(['HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
+  const diagnosticCodes = new Set(['ACCESS_CONTINUATION_EXPIRED','HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
     node.textContent = 'Referência para suporte: ' + accessPhase + ' / ' + (diagnosticCodes.has(error?.code) ? error.code : 'ACCESS_PAGE_UNAVAILABLE');
     const info = error.transport;
-    if (info && ['state','start','recover','login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
+    if (info && ['state','start','recover','login','biometric','continue-login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
     node.hidden = false;
     $('support-details').hidden = false;
   }
   function unavailable(code) { const error = new Error('ACCESS_FAILED'); error.code = code; return error; }
-  let csrfToken = '', busy = false, pendingResponse = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
+  let csrfToken = '', busy = false, pendingResponse = null, pendingReceipt = null, pendingLogin = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
   const panels = ['initial', 'email-form', 'pin-form', 'passkey', 'retry', 'complete'];
   function feedbackIn(id) {
     const target = $(id), feedback = $('access-feedback');
@@ -26,6 +26,7 @@
   }
   function show(stage) {
     preparedDevice = null; preparedAt = 0;
+    if(stage==='COMMITTING'){$('retry-button').hidden=false;$('retry-button').textContent='Tentar concluir entrada';$('completion-help').textContent='Estamos finalizando sua entrada. Você não precisa repetir a biometria.';}
     const panel = { INITIAL: 'initial', EMAIL: 'email-form', PIN: 'pin-form', PASSKEY: 'passkey', COMMITTING: 'retry', COMPLETE: 'complete' }[stage];
     panels.forEach(id => { $(id).hidden = id !== panel; });
     if (panel) feedbackIn(panel === 'initial' ? 'login-form' : panel);
@@ -40,6 +41,8 @@
     if (uncertainCodes.has(code) && ['state','session'].includes(error.transport?.operation)) return 'Não conseguimos carregar seu acesso agora. Aguarde alguns instantes e clique em “Tentar carregar novamente”. Se continuar, peça ajuda à administração.';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
     if (code === 'HOST_ACCESS_REQUIRED') return 'O Netlify precisa autorizar o acesso a este ambiente de testes. Abra o ambiente pelo botão abaixo e depois tente carregar novamente.';
+    if(code==='ACCESS_CONTINUATION_EXPIRED')return 'Esta tentativa de entrada expirou. Volte ao início e entre novamente.';
+    if (uncertainCodes.has(code) && !$('retry').hidden) return 'Não foi possível concluir sua entrada agora. Clique em “Tentar concluir entrada” para verificar a etapa salva.';
     if (uncertainCodes.has(code) && error.transport?.operation === 'options') return 'Não conseguimos preparar a confirmação do aparelho. Clique em “Tentar novamente”.';
     if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
     if (code === 'INVALID_CPF') return 'CPF inválido. Confira os números digitados.';
@@ -92,9 +95,9 @@
       return {response, result, failure};
     } finally { clearTimeout(timer); }
   }
-  async function api(operation, body, canRenew = true) {
+  async function api(operation, body, canRenew = true, openLogin = false) {
     const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-      headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(operation==='complete'?{'x-access-completion-version':'2'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      headers: body === undefined ? (openLogin?{'x-access-view':'login'}:{}) : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(operation==='complete'?{'x-access-completion-version':'3'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.ok) {
       // Renew only a server-confirmed preflight rejection: no command ran.
       // Never replay a timeout, invalid response, PIN/code guess or ceremony.
@@ -122,7 +125,7 @@
     $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true; $('environment-access').hidden = true;
     pendingMessage = null; $('status').hidden = true; $('access-progress').hidden = false;
     document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'true'));
-    try { await action(); if (!$('passkey').hidden && !preparedDevice) await prepareDevice(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = error.transport?.operation === 'options' ? 'Preparar confirmação novamente' : ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = error.transport?.operation === 'options' || !uncertainCodes.has(error.code); $('environment-access').hidden = error.code !== 'HOST_ACCESS_REQUIRED'; if (error.transport?.operation === 'options') $('passkey-button').textContent = 'Tentar novamente'; }
+    try { await action(); if (!$('passkey').hidden && !preparedDevice) await prepareDevice(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = error.transport?.operation === 'options' ? 'Preparar confirmação novamente' : ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = !$('retry').hidden || error.transport?.operation === 'options' || !uncertainCodes.has(error.code); if(!$('retry').hidden){$('completion-help').textContent='Sua entrada ainda não foi confirmada. Tente continuar da etapa já realizada.';$('retry-button').hidden=!uncertainCodes.has(error.code);if($('retry-button').hidden)$('completion-help').textContent='Esta tentativa não pode ser concluída. Volte ao início para entrar novamente.';$('retry-button').textContent='Tentar concluir entrada';} $('environment-access').hidden = error.code !== 'HOST_ACCESS_REQUIRED'; if (error.transport?.operation === 'options') $('passkey-button').textContent = 'Tentar novamente'; }
     finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); if (!$('passkey').hidden && !preparedDevice && $('passkey-button').textContent === 'Preparando confirmação…') $('passkey-button').textContent = 'Tentar novamente'; const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
   }
   function clearFieldError(field) {
@@ -195,13 +198,19 @@
     $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
   async function finish() {
-    let result=await api('complete',{response:pendingResponse});
+    if(pendingLogin){
+      const result=await api('continue-login',{receipt:pendingLogin});pendingLogin=null;
+      if(result.stage!=='PASSKEY')throw unavailable('ACCESS_RESPONSE_INVALID');
+      show('PASSKEY');if(result.options)applyDeviceOptions(result);message('Use a biometria do aparelho cadastrado para entrar.');return;
+    }
+    let result=await api('complete',{response:pendingReceipt?null:pendingResponse,receipt:pendingReceipt});
+    if(result.proofReceipt){pendingReceipt=result.proofReceipt;pendingResponse=null;result=await api('complete',{response:null,receipt:pendingReceipt});}
     if(result.stage==='COMMITTING'&&result.proofSaved===true){
-      pendingResponse=null;
-      result=await api('complete',{response:null});
+      pendingResponse=null;pendingReceipt=null;
+      result=await api('complete',{response:null,receipt:null});
     }
     if(result.stage!=='COMPLETE')throw unavailable('ACCESS_RESPONSE_INVALID');
-    pendingResponse=null;clearSecrets();
+    pendingResponse=null;pendingReceipt=null;clearSecrets();
     if(typeof result.sessionCsrfToken==='string'){
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||result.user.assurance!=='passkey'||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
       show('COMPLETE');message('Acesso verificado com sucesso.','success');
@@ -224,6 +233,15 @@
   submit('login-form', async () => {
     try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); show(data.stage); message('Confirme sua identidade pelo aparelho cadastrado.'); }
     finally { $('login-pin').value = ''; }
+  });
+  $('biometric-login').addEventListener('click',()=>{
+    if(busy)return;const error=identifierError($('login-email').value);
+    if(error){feedbackIn('login-form');message(error,'error');$('login-email').focus();return;}
+    run(async()=>{
+      const data=await api('biometric',{email:$('login-email').value});
+      if(!data.loginReceipt)throw unavailable('ACCESS_RESPONSE_INVALID');
+      pendingLogin=data.loginReceipt;show('COMMITTING');await finish();
+    },'login-form');
   });
   async function saveAccessStep(operation, body, expectedStage) {
     try { return await api(operation, body); }
@@ -253,7 +271,10 @@
     accessPhase = 'PREPARE';
     $('passkey-button').textContent = 'Preparando confirmação…';
     if (!window.PublicKeyCredential || !navigator.credentials) throw unavailable('DEVICE_NOT_SUPPORTED');
-    const data = await api('options', {}), options = data.options;
+    const data = await api('options', {});applyDeviceOptions(data);
+  }
+  function applyDeviceOptions(data){
+    const options=data.options;
     if (!['create', 'get'].includes(data.kind) || !options || typeof options.challenge !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     options.challenge = decode(options.challenge);
     if (data.kind === 'create') { options.user.id = decode(options.user.id); options.excludeCredentials = (options.excludeCredentials || []).map(key => ({ ...key, id: decode(key.id) })); }
@@ -282,15 +303,23 @@
     pendingResponse = serialize(credential);
     show('COMMITTING'); accessPhase = 'COMPLETE'; await finish();
   }));
-  $('retry-button').addEventListener('click', () => run(finish));
-  $('restart').addEventListener('click', () => { clearSecrets(); pendingResponse = null; show('INITIAL'); message('Solicite um novo código ou entre na conta já ativada.'); });
+  $('retry-button').addEventListener('click',()=>run(async()=>{
+    if(pendingLogin||pendingReceipt){await finish();return;}
+    const state=await api('state');
+    if(state.stage==='PASSKEY'){
+      pendingResponse=null;show('PASSKEY');message('A confirmação não foi salva. Confirme novamente pelo aparelho para entrar.');return;
+    }
+    if(['COMMITTING','COMPLETE'].includes(state.stage)){await finish();return;}
+    pendingResponse=null;show(state.stage);message('Continue pela etapa indicada abaixo.');
+  }));
+  $('restart').addEventListener('click', () => { clearSecrets(); pendingResponse = null; pendingReceipt=null;pendingLogin=null; show('INITIAL'); message('Solicite um novo código ou entre na conta já ativada.'); });
   function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
-  window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;});
-  window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state');accessPhase='RENDER';requestedView(state);});});
+  window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingLogin=null;});
+  window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {
     accessPhase = 'STATE';
-    const state = await api('state');
+    const state = await api('state',undefined,true,location.hash==='#entrar');
     accessPhase = 'RENDER';
     if(requestedView(state))return;
     // A session lookup is optional here: never hide a server-confirmed access

@@ -45,7 +45,7 @@ function auditOperation_(request,c){
 ;
 // END Audit.gs
 
-// BEGIN AuthControl.gs sha256=9aded2723e12e30a87702503e0f0401a376fca67beaa3e113d57ede7901814b5
+// BEGIN AuthControl.gs sha256=5dc543dd870cca7bf8efc0fa7a33e89ac4e38c075b9ead178e8f37386ca05b3c
 /* DEV-only private identity controls. Public callers never access this store.
  * All operations run under the installation ScriptLock in processRequest_. */
 var AUTH_CONTROL_SCHEMA = {
@@ -69,7 +69,7 @@ function authControlTime_(value) {
   try { return identityTime_(value); } catch (_) { failure_('IDENTITY_UNAVAILABLE'); }
 }
 function authControlShape_(ss, name) {
-  var definition = authControlDefinition_(name), sheet = rpcSheet_(ss, name), lastRow = sheet ? sheet.getLastRow() : 0;
+  var definition = authControlDefinition_(name), sheet = rpcSheet_(ss, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   if (!sheet || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 3001) failure_('IDENTITY_UNAVAILABLE');
   return { sheet: sheet, definition: definition, lastRow: lastRow };
 }
@@ -531,7 +531,7 @@ function recoverDevelopmentCatalog() { var c = baseSettings_(); requireOwnerDev_
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=4de033a8eb5499d8fc716268cfce0fcd47cb3922e37426e1b530a5fc115a1cd7
+// BEGIN Code.gs sha256=b777112f9be1ced983bbf60a6e79ebacb507cd18d31df34157235164696aeba0
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -580,8 +580,15 @@ function rpcRows_(sheet, lastRow, width) {
   }
   return values.map(function(row) { return row.slice(); });
 }
+// Fresh metadata once per locked RPC. Every write invalidates the row count.
+function rpcLastRow_(sheet) {
+  var cache=RPC_STORAGE_SCOPE_&&RPC_STORAGE_SCOPE_.lastRows;
+  if(cache&&cache.has(sheet))return cache.get(sheet);
+  var value=sheet.getLastRow();if(cache)cache.set(sheet,value);return value;
+}
 function invalidateRpcRows_(sheet) {
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.identityRows) RPC_STORAGE_SCOPE_.identityRows.delete(sheet);
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.lastRows) RPC_STORAGE_SCOPE_.lastRows.delete(sheet);
 }
 function rpcSheet_(spreadsheet, name) {
   if (!RPC_STORAGE_SCOPE_) return spreadsheet.getSheetByName(name);
@@ -616,7 +623,7 @@ function rowValues_(sheet, knownLastRow) {
   // Runtime commands never edit row 1. Reuse only its header during this locked
   // invocation; authorization and business rows are always read afresh.
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.headers.has(sheet)) return RPC_STORAGE_SCOPE_.headers.get(sheet).slice();
-  var header = (knownLastRow === undefined ? sheet.getLastRow() : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
+  var header = (knownLastRow === undefined ? rpcLastRow_(sheet) : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.headers.set(sheet, header.slice());
   return header;
 }
@@ -648,7 +655,7 @@ function primeSchemaHeaders_(spreadsheet, definitions) {
 }
 function same_(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function migrationRows_(spreadsheet) {
-  var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? sheet.getLastRow() : 0;
+  var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   return lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 4).getValues();
 }
 function migrationVersion_(rows) {
@@ -672,7 +679,7 @@ function assertSchema_(spreadsheet) {
   // Conflicting nonempty headers still take precedence over missing sheets.
   var missing = false;
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
-    var sheet = rpcSheet_(spreadsheet, table.name), lastRow = sheet ? sheet.getLastRow() : 0;
+    var sheet = rpcSheet_(spreadsheet, table.name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
     if (!sheet || !lastRow) { missing = true; return; }
     if (!same_(rowValues_(sheet, lastRow), table.columns)) failure_('SCHEMA_CONFLICT');
   });
@@ -792,7 +799,7 @@ function processRequest_(request, c) {
   return withLock_(function () {
     var acquired=Date.now(),bound=acquired,validated=acquired,phase='BINDING',fault=null;
     var previousScope = RPC_STORAGE_SCOPE_;
-    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, batchReads:0 };
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), lastRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, batchReads:0 };
     try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
     var ss;
@@ -855,7 +862,9 @@ function processRequest_(request, c) {
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
       if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
+      if (request.action === 'identity.access.biometricOptions') return accessBiometricOptions_(request,c);
       if (request.action === 'identity.access.options') return accessOptions_(request, c);
+      if (request.action === 'identity.access.saveProof') return accessSaveProof_(request,c);
       if (request.action === 'identity.access.prepareCompletion') return accessPrepareCompletion_(request, c);
       return ownerAccessOperation_(request, c);
     }
@@ -886,7 +895,7 @@ function processRequest_(request, c) {
       throw error;
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
-      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
+      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.biometricOptions':'OPTIONS','identity.access.options':'OPTIONS','identity.access.saveProof':'PROOF_SAVE','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
       var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
       try { console.info(JSON.stringify(Object.assign({metric:'rpc.duration',operation:operation,phase:phase,outcome:fault?'ERROR':'OK',schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started},fault||{}))); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }
@@ -2693,7 +2702,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=8186b1af925f596737d34fa63d66cd9de4fece2850402f75ec7901b061272970
+// BEGIN OwnerAccess.gs sha256=3b203ee88bdc286bc142614221021a1dda9000a808079a2a154bd7b480d5b198
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -2930,7 +2939,9 @@ function ownerAccessOperation_(request, c) {
   if (action === 'identity.access.login') {
     var owner = p.subjectId === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,p.subjectId);
     if (!owner || !owner.row.Primeiro_Acesso_Concluido || owner.row.ID_Usuario !== p.subjectId || owner.version !== p.authorizationVersion) accessReject_();
-    accessNewFlow_(accessFlows_(ss), p, owner, 'LOGIN', now); return { accepted: true };
+    var flows=accessFlows_(ss),prior=flows.rows.filter(function(r){return r.ID===p.flowId||r.Token_Hash===p.tokenHash;});
+    if(prior.length){if(prior.length!==1||prior[0].ID!==p.flowId||prior[0].Token_Hash!==p.tokenHash||prior[0].Subject_ID!==p.subjectId||prior[0].Authorization_Version!==p.authorizationVersion||prior[0].Purpose!=='LOGIN'||prior[0].State!=='PASSKEY'||authControlTime_(prior[0].Expires_At)<=now)accessReject_();return {accepted:true};}
+    accessNewFlow_(flows, p, owner, 'LOGIN', now); return { accepted: true };
   }
   var current = accessCurrent_(ss, p.tokenHash, now), row = current.row;
   if (action === 'identity.access.email') {
@@ -2972,12 +2983,12 @@ function ownerAccessOperation_(request, c) {
 
 // Fixed access commands only, signed and gated by processRequest_ under ScriptLock.
 // They preserve the existing validators; no caller-selected arbitrary batch.
-function accessOptions_(request, c) {
+function accessOptions_(request, c, attemptReserved) {
   var p = request.payload;
   authControlExact_(p, ['tokenHash','accountKey','originKey','ceremonyId','challenge','allowReplacement']);
   if (typeof p.allowReplacement !== 'boolean' || !identityUuid_(p.ceremonyId) || !/^[A-Za-z0-9_-]{43}$/.test(p.challenge || '')) accessReject_();
   recoverSecurityIntent_(c);
-  var attempt = authAttempt_(authControlStore_(c), {accountKey:p.accountKey, originKey:p.originKey}, Date.now());
+  var attempt = attemptReserved===true?{allowed:true}:authAttempt_(authControlStore_(c), {accountKey:p.accountKey, originKey:p.originKey}, Date.now());
   if (!attempt.allowed) return {allowed:false, retryAfterSeconds:attempt.retryAfterSeconds};
   var flow = ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}}, c);
   if (flow.state !== 'PASSKEY' || flow.replacementAllowed && !p.allowReplacement) accessReject_();
@@ -3075,6 +3086,35 @@ function accessPrepareCompletion_(request,c) {
   if(flow.state!=='PASSKEY'||!flow.ceremonyId||!p.hasResponse||!passkeyText_(p.credentialId,2,1400)||flow.replacementAllowed&&!p.allowReplacement)accessReject_();
   var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion,ceremonyId:flow.ceremonyId,credentialId:flow.purpose==='ACTIVATE'||flow.replacementAllowed?'':p.credentialId}},c);
   return {allowed:true,done:false,flow:flow,ceremony:ceremony};
+}
+
+
+// Acknowledgement/recovery for this flow only. The one-use passkey verifier is
+// unchanged: never invoke it twice once a matching completed proof is stored.
+function accessSaveProof_(request,c){
+  var p=request.payload;authControlExact_(p,['tokenHash','method','command']);
+  if(!['registerPasskey','advancePasskeyCounter','rescueKey'].includes(p.method)||!p.command||typeof p.command!=='object'||Array.isArray(p.command))accessReject_();
+  var flow=ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}},c),command=p.command;
+  if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||command.ceremonyId!==flow.ceremonyId)accessReject_();
+  if(p.method==='rescueKey'){
+    if(!flow.replacementAllowed||command.tokenHash!==p.tokenHash)accessReject_();
+  }else if(command.subjectId!==flow.subjectId||command.authorizationVersion!==flow.authorizationVersion||p.method!==(flow.purpose==='ACTIVATE'?'registerPasskey':'advancePasskeyCounter'))accessReject_();
+  if(flow.proofReady){
+    var ceremony=passkeyCeremonies_(authControlStore_(c)).rows.filter(function(r){return r.ID===flow.ceremonyId;});
+    if(ceremony.length!==1||ceremony[0].Credential_ID!==command.credentialId)accessReject_();
+    return {stored:true};
+  }
+  if(p.method==='rescueKey')return ownerAccessOperation_({action:'identity.access.rescueKey',payload:command},c);
+  return passkeyOperation_({action:p.method==='registerPasskey'?'identity.passkey.register':'identity.passkey.counter',payload:command},c);
+}
+
+// Bound biometric flow and challenge in one locked RPC after account selection.
+function accessBiometricOptions_(request,c){
+  var p=request.payload;authControlExact_(p,['flowId','tokenHash','subjectId','authorizationVersion','accountKey','originKey','ceremonyId','challenge']);
+  recoverSecurityIntent_(c);var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  ownerAccessOperation_({action:'identity.access.login',payload:{flowId:p.flowId,tokenHash:p.tokenHash,subjectId:p.subjectId,authorizationVersion:p.authorizationVersion}},c);
+  return accessOptions_({payload:{tokenHash:p.tokenHash,accountKey:p.accountKey,originKey:p.originKey,ceremonyId:p.ceremonyId,challenge:p.challenge,allowReplacement:false}},c,true);
 }
 
 ;
@@ -4307,7 +4347,7 @@ function securityRecord_(request,c){
 ;
 // END SecurityAudit.gs
 
-// BEGIN SessionStore.gs sha256=179859c2b00cee9b8801c8aed3c9f4e577e56fcddd4db747df7473fd390f2ed4
+// BEGIN SessionStore.gs sha256=527bb72ece60ace8c0d108d29110b40d62752a0fcf252717a5f38665aebc666d
 /* Persistent session reader/revoker. Internal functions only.
  * processRequest_ MUST hold ScriptLock and validate the signed envelope before
  * invoking identitySessionOperation_. No user/session creation or PIN storage.
@@ -4316,7 +4356,7 @@ function identityUuid_(value) {
   return typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 }
 function identityRows_(spreadsheet, name) {
-  var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? sheet.getLastRow() : 0;
+  var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
   if (!sheet || !definition || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 5001) failure_('IDENTITY_UNAVAILABLE');
   var values = rpcRows_(sheet, lastRow, definition.columns.length);

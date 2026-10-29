@@ -46,8 +46,15 @@ function rpcRows_(sheet, lastRow, width) {
   }
   return values.map(function(row) { return row.slice(); });
 }
+// Fresh metadata once per locked RPC. Every write invalidates the row count.
+function rpcLastRow_(sheet) {
+  var cache=RPC_STORAGE_SCOPE_&&RPC_STORAGE_SCOPE_.lastRows;
+  if(cache&&cache.has(sheet))return cache.get(sheet);
+  var value=sheet.getLastRow();if(cache)cache.set(sheet,value);return value;
+}
 function invalidateRpcRows_(sheet) {
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.identityRows) RPC_STORAGE_SCOPE_.identityRows.delete(sheet);
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.lastRows) RPC_STORAGE_SCOPE_.lastRows.delete(sheet);
 }
 function rpcSheet_(spreadsheet, name) {
   if (!RPC_STORAGE_SCOPE_) return spreadsheet.getSheetByName(name);
@@ -82,7 +89,7 @@ function rowValues_(sheet, knownLastRow) {
   // Runtime commands never edit row 1. Reuse only its header during this locked
   // invocation; authorization and business rows are always read afresh.
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.headers.has(sheet)) return RPC_STORAGE_SCOPE_.headers.get(sheet).slice();
-  var header = (knownLastRow === undefined ? sheet.getLastRow() : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
+  var header = (knownLastRow === undefined ? rpcLastRow_(sheet) : knownLastRow) ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.headers.set(sheet, header.slice());
   return header;
 }
@@ -114,7 +121,7 @@ function primeSchemaHeaders_(spreadsheet, definitions) {
 }
 function same_(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function migrationRows_(spreadsheet) {
-  var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? sheet.getLastRow() : 0;
+  var sheet = spreadsheet.getSheetByName('_Migracoes'), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   return lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 4).getValues();
 }
 function migrationVersion_(rows) {
@@ -138,7 +145,7 @@ function assertSchema_(spreadsheet) {
   // Conflicting nonempty headers still take precedence over missing sheets.
   var missing = false;
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
-    var sheet = rpcSheet_(spreadsheet, table.name), lastRow = sheet ? sheet.getLastRow() : 0;
+    var sheet = rpcSheet_(spreadsheet, table.name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
     if (!sheet || !lastRow) { missing = true; return; }
     if (!same_(rowValues_(sheet, lastRow), table.columns)) failure_('SCHEMA_CONFLICT');
   });
@@ -258,7 +265,7 @@ function processRequest_(request, c) {
   return withLock_(function () {
     var acquired=Date.now(),bound=acquired,validated=acquired,phase='BINDING',fault=null;
     var previousScope = RPC_STORAGE_SCOPE_;
-    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, batchReads:0 };
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), lastRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, batchReads:0 };
     try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
     var ss;
@@ -321,7 +328,9 @@ function processRequest_(request, c) {
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
       if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
+      if (request.action === 'identity.access.biometricOptions') return accessBiometricOptions_(request,c);
       if (request.action === 'identity.access.options') return accessOptions_(request, c);
+      if (request.action === 'identity.access.saveProof') return accessSaveProof_(request,c);
       if (request.action === 'identity.access.prepareCompletion') return accessPrepareCompletion_(request, c);
       return ownerAccessOperation_(request, c);
     }
@@ -352,7 +361,7 @@ function processRequest_(request, c) {
       throw error;
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
-      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
+      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.biometricOptions':'OPTIONS','identity.access.options':'OPTIONS','identity.access.saveProof':'PROOF_SAVE','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
       var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
       try { console.info(JSON.stringify(Object.assign({metric:'rpc.duration',operation:operation,phase:phase,outcome:fault?'ERROR':'OK',schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started},fault||{}))); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }

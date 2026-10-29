@@ -234,7 +234,9 @@ function ownerAccessOperation_(request, c) {
   if (action === 'identity.access.login') {
     var owner = p.subjectId === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,p.subjectId);
     if (!owner || !owner.row.Primeiro_Acesso_Concluido || owner.row.ID_Usuario !== p.subjectId || owner.version !== p.authorizationVersion) accessReject_();
-    accessNewFlow_(accessFlows_(ss), p, owner, 'LOGIN', now); return { accepted: true };
+    var flows=accessFlows_(ss),prior=flows.rows.filter(function(r){return r.ID===p.flowId||r.Token_Hash===p.tokenHash;});
+    if(prior.length){if(prior.length!==1||prior[0].ID!==p.flowId||prior[0].Token_Hash!==p.tokenHash||prior[0].Subject_ID!==p.subjectId||prior[0].Authorization_Version!==p.authorizationVersion||prior[0].Purpose!=='LOGIN'||prior[0].State!=='PASSKEY'||authControlTime_(prior[0].Expires_At)<=now)accessReject_();return {accepted:true};}
+    accessNewFlow_(flows, p, owner, 'LOGIN', now); return { accepted: true };
   }
   var current = accessCurrent_(ss, p.tokenHash, now), row = current.row;
   if (action === 'identity.access.email') {
@@ -276,12 +278,12 @@ function ownerAccessOperation_(request, c) {
 
 // Fixed access commands only, signed and gated by processRequest_ under ScriptLock.
 // They preserve the existing validators; no caller-selected arbitrary batch.
-function accessOptions_(request, c) {
+function accessOptions_(request, c, attemptReserved) {
   var p = request.payload;
   authControlExact_(p, ['tokenHash','accountKey','originKey','ceremonyId','challenge','allowReplacement']);
   if (typeof p.allowReplacement !== 'boolean' || !identityUuid_(p.ceremonyId) || !/^[A-Za-z0-9_-]{43}$/.test(p.challenge || '')) accessReject_();
   recoverSecurityIntent_(c);
-  var attempt = authAttempt_(authControlStore_(c), {accountKey:p.accountKey, originKey:p.originKey}, Date.now());
+  var attempt = attemptReserved===true?{allowed:true}:authAttempt_(authControlStore_(c), {accountKey:p.accountKey, originKey:p.originKey}, Date.now());
   if (!attempt.allowed) return {allowed:false, retryAfterSeconds:attempt.retryAfterSeconds};
   var flow = ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}}, c);
   if (flow.state !== 'PASSKEY' || flow.replacementAllowed && !p.allowReplacement) accessReject_();
@@ -379,4 +381,33 @@ function accessPrepareCompletion_(request,c) {
   if(flow.state!=='PASSKEY'||!flow.ceremonyId||!p.hasResponse||!passkeyText_(p.credentialId,2,1400)||flow.replacementAllowed&&!p.allowReplacement)accessReject_();
   var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion,ceremonyId:flow.ceremonyId,credentialId:flow.purpose==='ACTIVATE'||flow.replacementAllowed?'':p.credentialId}},c);
   return {allowed:true,done:false,flow:flow,ceremony:ceremony};
+}
+
+
+// Acknowledgement/recovery for this flow only. The one-use passkey verifier is
+// unchanged: never invoke it twice once a matching completed proof is stored.
+function accessSaveProof_(request,c){
+  var p=request.payload;authControlExact_(p,['tokenHash','method','command']);
+  if(!['registerPasskey','advancePasskeyCounter','rescueKey'].includes(p.method)||!p.command||typeof p.command!=='object'||Array.isArray(p.command))accessReject_();
+  var flow=ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}},c),command=p.command;
+  if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||command.ceremonyId!==flow.ceremonyId)accessReject_();
+  if(p.method==='rescueKey'){
+    if(!flow.replacementAllowed||command.tokenHash!==p.tokenHash)accessReject_();
+  }else if(command.subjectId!==flow.subjectId||command.authorizationVersion!==flow.authorizationVersion||p.method!==(flow.purpose==='ACTIVATE'?'registerPasskey':'advancePasskeyCounter'))accessReject_();
+  if(flow.proofReady){
+    var ceremony=passkeyCeremonies_(authControlStore_(c)).rows.filter(function(r){return r.ID===flow.ceremonyId;});
+    if(ceremony.length!==1||ceremony[0].Credential_ID!==command.credentialId)accessReject_();
+    return {stored:true};
+  }
+  if(p.method==='rescueKey')return ownerAccessOperation_({action:'identity.access.rescueKey',payload:command},c);
+  return passkeyOperation_({action:p.method==='registerPasskey'?'identity.passkey.register':'identity.passkey.counter',payload:command},c);
+}
+
+// Bound biometric flow and challenge in one locked RPC after account selection.
+function accessBiometricOptions_(request,c){
+  var p=request.payload;authControlExact_(p,['flowId','tokenHash','subjectId','authorizationVersion','accountKey','originKey','ceremonyId','challenge']);
+  recoverSecurityIntent_(c);var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  ownerAccessOperation_({action:'identity.access.login',payload:{flowId:p.flowId,tokenHash:p.tokenHash,subjectId:p.subjectId,authorizationVersion:p.authorizationVersion}},c);
+  return accessOptions_({payload:{tokenHash:p.tokenHash,accountKey:p.accountKey,originKey:p.originKey,ceremonyId:p.ceremonyId,challenge:p.challenge,allowReplacement:false}},c,true);
 }
