@@ -111,7 +111,7 @@ test('session API methods, logout cookie clearing and no-store responses are cor
   const response = await logout(request(s.first.rawToken, { method: 'POST', csrf: body.data.csrfToken }));
   assert.equal(response.status, 200); assert.ok(response.headers.get('set-cookie').includes('Max-Age=0'));
   const denied = await get(request(s.first.rawToken));
-  assert.equal(denied.status, 401); assert.ok(denied.headers.get('set-cookie').includes('Max-Age=0'));
+  assert.equal(denied.status, 401); assert.equal(denied.headers.get('set-cookie'),null,'a stale read cannot erase a newer login cookie');
 });
 
 test('real local HTTP roundtrip Node service to signed GAS contract resolves session without exposing token upstream', async t => {

@@ -83,7 +83,7 @@ export function createGasEmulator(initialProperties = {}, {sourceMode = process.
   context.Utilities.getUuid = randomUUID;
   if(sourceMode==='single') vm.runInContext(readFileSync(new URL('../../instalacao-google-dev/CodigoUnico.gs.txt',import.meta.url),'utf8'),context);
   else if(sourceMode==='modules') {
-  for (const name of ['Schema.gs', 'Maintenance.gs', 'Code.gs', 'Sales.gs', 'Stock.gs', 'Notifications.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs','PasskeyManagement.gs', 'OwnerAccess.gs', 'Recovery.gs','EmergencyRecovery.gs', 'Profile.gs', 'EmailChange.gs','Niches.gs','Schedules.gs','Audit.gs','SecurityAudit.gs','Reports.gs','CustomerInsights.gs', 'Staff.gs', 'Customers.gs', 'Operations.gs', 'Catalog.gs', 'CoverPhotos.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
+  for (const name of ['Schema.gs', 'Maintenance.gs', 'Code.gs', 'ConfigurationAudit.gs', 'Sales.gs', 'Stock.gs', 'Notifications.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs','PasskeyManagement.gs', 'OwnerAccess.gs', 'Recovery.gs','EmergencyRecovery.gs', 'Profile.gs', 'EmailChange.gs','Niches.gs','Schedules.gs','Audit.gs','SecurityAudit.gs','Reports.gs','CustomerInsights.gs', 'Staff.gs', 'Customers.gs', 'Operations.gs', 'Catalog.gs', 'CoverPhotos.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
   } else throw Error('INVALID_TEST_GAS_SOURCE_MODE');
   return { context, props, resources, sheets, outbox,
     call(name, ...args) { return context[name](...args); },

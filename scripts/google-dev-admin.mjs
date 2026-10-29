@@ -63,6 +63,19 @@ export function safeFailures(entries) {
     return [{timestamp,severity:entry.severity,category}];
   });
 }
+export function safeLockContention(entries) {
+  return (Array.isArray(entries)?entries:[]).slice(0,50).flatMap(entry=>{
+    let p=entry?.jsonPayload;
+    if(p?.metric!=='rpc.lockBusy'){
+      const message=typeof p?.message==='string'?p.message:entry?.textPayload;
+      if(typeof message!=='string'||message.length>4096)return [];
+      try{p=JSON.parse(message);}catch{return [];}
+    }
+    if(p?.metric!=='rpc.lockBusy'||!Number.isSafeInteger(p.waitMs)||p.waitMs<0||p.waitMs>3600000||!Number.isSafeInteger(p.limitMs)||p.limitMs<0||p.limitMs>60000)return [];
+    const timestamp=safeTimestamp(entry?.timestamp);
+    return [{...(timestamp?{timestamp}:{}),waitMs:p.waitMs,limitMs:p.limitMs}];
+  });
+}
 export function safeTimings(entries) {
   return (Array.isArray(entries)?entries:[]).slice(0,50).flatMap(entry=>{
     let p=entry?.jsonPayload;
@@ -148,9 +161,9 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
     try {
       const logs=await requestJson('https://logging.googleapis.com/v2/entries:list',{
         method:'POST',headers:{authorization:'Bearer '+token.access_token,'content-type':'application/json'},
-        body:JSON.stringify({resourceNames:['projects/'+config.cloudProjectId],filter:'resource.type="app_script_function" AND (jsonPayload.metric="rpc.duration" OR jsonPayload.message:"rpc.duration" OR textPayload:"rpc.duration" OR severity>=ERROR) AND timestamp>="'+new Date(Date.now()-3600000).toISOString()+'"',orderBy:'timestamp desc',pageSize:50})
+        body:JSON.stringify({resourceNames:['projects/'+config.cloudProjectId],filter:'resource.type="app_script_function" AND (jsonPayload.metric="rpc.duration" OR jsonPayload.message:"rpc.duration" OR textPayload:"rpc.duration" OR jsonPayload.metric="rpc.lockBusy" OR jsonPayload.message:"rpc.lockBusy" OR textPayload:"rpc.lockBusy" OR severity>=ERROR) AND timestamp>="'+new Date(Date.now()-3600000).toISOString()+'"',orderBy:'timestamp desc',pageSize:50})
       },'LOGS_UNAVAILABLE');
-      report.timings=safeTimings(logs.entries);report.failures=safeFailures(logs.entries);report.logging=report.timings.length?'SAMPLED':'NO_METRICS_IN_LAST_HOUR';
+      report.timings=safeTimings(logs.entries);report.lockContention=safeLockContention(logs.entries);report.failures=safeFailures(logs.entries);report.logging=report.timings.length||report.lockContention.length?'SAMPLED':'NO_METRICS_IN_LAST_HOUR';
     } catch { report.logging='UNAVAILABLE'; }
     try {
       const processes=await requestJson('https://script.googleapis.com/v1/processes:listScriptProcesses?'+new URLSearchParams({scriptId:config.scriptId,pageSize:'50'}),{headers:{authorization:'Bearer '+token.access_token}},'PROCESSES_UNAVAILABLE');

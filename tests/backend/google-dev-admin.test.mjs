@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {runAdmin,contentHash,safeTimings,safeProcesses,safeFailures,sha256,validateRequest,withSheetsBatch} from '../../scripts/google-dev-admin.mjs';
+import {runAdmin,contentHash,safeLockContention,safeTimings,safeProcesses,safeFailures,sha256,validateRequest,withSheetsBatch} from '../../scripts/google-dev-admin.mjs';
 const source='// GENERATED: npm run google:single.\nfunction doPost() {}\n';
 function fixture() {
   const target={scriptId:'synthetic-script',deploymentId:'synthetic-deployment',cloudProjectId:'synthetic-cloud'};
@@ -174,3 +174,9 @@ test('process history fails independently and malformed diagnostic values cannot
 test('process API denial records only its numeric status, never the provider response body',async()=>{
  const f=fixture();f.state.processHttpStatus=403;const r=await f.inspect();assert.equal(r.processHistory,'UNAVAILABLE');assert.equal(r.processHistoryHttpStatus,403);assert.ok(!JSON.stringify(r).includes('private-provider-marker'));
 });
+
+ test('lock contention diagnostics keep only bounded numeric fields and never raw messages',async()=>{
+  const raw={metric:'rpc.lockBusy',waitMs:5003,limitMs:5000,secret:'DO_NOT_DISCLOSE'};
+  assert.deepEqual(safeLockContention([{jsonPayload:{message:JSON.stringify(raw)}},{jsonPayload:{...raw,waitMs:'DO_NOT_DISCLOSE'}},{textPayload:JSON.stringify({...raw,limitMs:999999})}]),[{waitMs:5003,limitMs:5000}]);
+  const f=fixture();f.state.logs.entries=[{jsonPayload:raw}];const r=await f.inspect();assert.equal(r.logging,'SAMPLED');assert.equal(r.lockContention.length,1);assert.ok(!JSON.stringify(r).includes('DO_NOT_DISCLOSE'));
+ });

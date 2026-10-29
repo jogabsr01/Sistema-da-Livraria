@@ -62,3 +62,23 @@ test('explicit new-login view creates only a fresh pre-auth cookie without Googl
  const cookies=response.headers.getSetCookie();assert.equal(cookies.length,1);assert.ok(cookies[0].startsWith('__Host-livraria_access='));assert.ok(!cookies[0].startsWith('__Host-livraria_access='+token+';'));
  assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
 });
+
+test('staged PIN login verifies the PIN in one RPC and then binds options in one fresh RPC without granting a session',async()=>{
+ const s=await activated(),token=randomBytes(32).toString('base64url'),svc=createOwnerAccessService(s.settings,{client:s.client,stagedCompletion:true}),actions=[],post=s.gas.post;
+ s.gas.post=e=>{actions.push(JSON.parse(Buffer.from(e.message,'base64')).action);return post(e);};
+ const before=s.main.getSheetByName('Sessoes').getLastRow();
+ const first=await svc.execute('login',{email:properties.OWNER_EMAIL,pin:'8274'},token,s.ip);assert.equal(first.stage,'COMMITTING');assert.ok(first.loginReceipt);assert.deepEqual(actions,['identity.access.loginLookup']);
+ const saved=accessReceipts(s.settings,token).open(first.loginReceipt,'login');assert.equal(saved.mode,'pin');assert.deepEqual(Object.keys(saved).sort(),['command','mode']);assert.deepEqual(Object.keys(saved.command).sort(),['authorizationVersion','flowId','subjectId']);
+ const next=await svc.execute('continue-login',{receipt:first.loginReceipt},token,s.ip);assert.equal(next.stage,'PASSKEY');assert.equal(next.kind,'get');assert.deepEqual(actions,['identity.access.loginLookup','identity.access.biometricOptions']);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),before);
+ await assert.rejects(svc.execute('continue-login',{receipt:first.loginReceipt},randomBytes(32).toString('base64url'),s.ip),rejected);
+ await assert.rejects(svc.execute('login',{email:properties.OWNER_EMAIL,pin:'0193'},token,s.ip),{code:'ACCESS_REJECTED'});
+});
+test('PIN continuation rechecks account revocation and epoch before binding a browser challenge',async()=>{
+ for(const mode of ['disabled','epoch']){
+  const s=await activated(),token=randomBytes(32).toString('base64url'),svc=createOwnerAccessService(s.settings,{client:s.client,stagedCompletion:true});
+  const first=await svc.execute('login',{email:properties.OWNER_EMAIL,pin:'8274'},token,s.ip);
+  if(mode==='disabled'){const t=s.main.getSheetByName('Usuarios');t.rows[1][t.rows[0].indexOf('Status')]='INATIVO';}
+  else{const t=s.main.getSheetByName('Configuracoes');t.rows.find(r=>r[0]==='identity.version.'+s.gas.props.IDENTITY_OWNER_USER_ID)[1]=2;}
+  await assert.rejects(svc.execute('continue-login',{receipt:first.loginReceipt},token,s.ip));assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),2);
+ }
+});
