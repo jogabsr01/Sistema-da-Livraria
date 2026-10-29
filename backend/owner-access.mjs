@@ -1,7 +1,7 @@
 import { accessReceipts } from './access-receipt.mjs';
 import { identityConfigurationIssues } from './identity-configuration.mjs';
 import { emergencyCodeHash } from './emergency-codes.mjs';
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { loadPersonalDataSettings, createPersonalDataVault } from './personal-data.mjs';
 import { normalizeCpf, normalizeStaffContact } from './staff-model.mjs';
 import { catalogUuid } from './catalog-model.mjs';
@@ -12,7 +12,7 @@ import { loadPasskeySettings, createPasskeyService, preparedAccessOptions, valid
 import { createPinHasher, createSessionTokens } from './credential-core.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
-import { sessionCookie, validateSessionPrincipal } from './session-service.mjs';
+import { sessionCookie, validateSessionPrincipal, readSessionToken } from './session-service.mjs';
 export const ACCESS_ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
 export const ACCESS_COOKIE = '__Host-livraria_access';
 const rejected = () => { throw new ApiError(401, 'ACCESS_REJECTED'); };
@@ -61,7 +61,7 @@ function readCookie(request) {
   if (found.length !== 1 || !canonical(found[0].slice(ACCESS_COOKIE.length + 1))) rejected();
   return found[0].slice(ACCESS_COOKIE.length + 1);
 }
-export function createOwnerAccessService(settings, { client, stagedCompletion = false, segmentedCompletion = false }) {
+export function createOwnerAccessService(settings, { client, stagedCompletion = false, segmentedCompletion = false, pinLogin = false }) {
   const { config, guardKey, tokenKey, pepper } = settings;
   if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   const vault=settings.cpfEnabled||settings.staffEnabled?createPersonalDataVault(settings):null;
@@ -96,8 +96,8 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
   const dummy = { version: 1, algorithm: 'scrypt-N32768-r8-p1', salt: '00'.repeat(32), hash: '00'.repeat(32) };
   async function read(token) { return client.access('read', { tokenHash: hash(token) }); }
   function completedOutput(flow, value, rawToken) {
-    const principal=validateSessionPrincipal(value);
-    if(principal.id!==flow.subjectId||principal.sessionId!==flow.flowId||principal.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role)||principal.assurance!=='passkey')rejected();
+    const principal=validateSessionPrincipal(value,Date.now(),config.adminPinLogin===true);
+    if(principal.id!==flow.subjectId||principal.sessionId!==flow.flowId||principal.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role)||principal.assurance!==(flow.purpose==='PIN_LOGIN'?'pin':'passkey'))rejected();
     const sessionCsrfToken=createHmac('sha256',tokenKey).update(JSON.stringify(['csrf.v1',config.environment,config.installationId,rawToken])).digest('base64url');
     return {stage:'COMPLETE',user:{role:principal.role,assurance:principal.assurance},cookie:sessionCookie(rawToken),sessionCsrfToken};
   }
@@ -148,6 +148,10 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
 
   return {
     csrf,
+    confirmSessionCookie(token,raw){
+      const expected=digest('access.session.v1',token,'base64url',tokenKey);
+      if(!canonical(raw)||!timingSafeEqual(Buffer.from(expected),Buffer.from(raw)))throw new ApiError(401,'ACCESS_SESSION_COOKIE_MISSING');
+    },
     deviceOptions(token){
       const challenge=randomBytes(32).toString('base64url'),flowId=randomUUID(),ceremonyId=randomUUID();
       return {receipt:accessReceipts(settings,token).seal('device-login',{challenge,flowId,ceremonyId}),options:{challenge,rpId:new URL(ACCESS_ORIGIN).hostname,allowCredentials:[],userVerification:'required',timeout:120000}};
@@ -180,6 +184,11 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
       }
       if(operation==='continue-login'){
         const saved=accessReceipts(settings,token).open(input.receipt,'login');
+        if(saved.mode==='pin-session'){
+          if(!pinLogin||!config.adminPinLogin)rejected();
+          const principal=await client.access('pinLogin',{...saved.command,tokenHash:hash(token)});
+          return completedOutput({subjectId:saved.command.subjectId,flowId:saved.command.flowId,authorizationVersion:saved.command.authorizationVersion,purpose:'PIN_LOGIN'},principal,digest('access.session.v1',token,'base64url',tokenKey));
+        }
         if(!['biometric','pin'].includes(saved.mode))rejected();
         const prepared=await client.prepareBiometricOptions({...saved.command,tokenHash:hash(token),...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),ceremonyId:randomUUID(),challenge:randomBytes(32).toString('base64url')});
         if(prepared.subjectId!==saved.command.subjectId||prepared.authorizationVersion!==saved.command.authorizationVersion||prepared.kind!=='get')rejected();
@@ -196,6 +205,10 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         const biometric=operation==='biometric';
         const valid=biometric?!!account:await pins.verify(input.pin,account?.subjectId||'00000000-0000-4000-8000-000000000000',account?.record||dummy);
         if(!account||!valid)rejected();
+        if(!biometric&&pinLogin&&config.adminPinLogin){
+          const raw=digest('access.session.v1',token,'base64url',tokenKey),command={flowId:randomUUID(),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion,sessionTokenHash:tokens.hash(raw),verifierHash:createHash('sha256').update(JSON.stringify(account.record)).digest('hex')};
+          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:'pin-session',command})};
+        }
         if(biometric||stagedCompletion){
           const command={flowId:randomUUID(),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion};
           return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:biometric?'biometric':'pin',command})};
@@ -271,7 +284,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         // Deterministic only for this unguessable pre-auth cookie and deployment.
         // A lost acknowledgement retries the SAME session, never a second grant.
         const rawToken = digest('access.session.v1', token, 'base64url', tokenKey), tokenHash = tokens.hash(rawToken);
-        const principal = validateSessionPrincipal(await client.access('commit', { tokenHash: hash(token), sessionTokenHash: tokenHash }));
+        const principal = validateSessionPrincipal(await client.access('commit', { tokenHash: hash(token), sessionTokenHash: tokenHash }),Date.now(),config.adminPinLogin===true);
         if (principal.id !== flow.subjectId || principal.sessionId !== flow.flowId || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role) || principal.assurance !== 'passkey') rejected();
         return completedOutput(flow,principal,rawToken);
       }
@@ -283,7 +296,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
     },
   };
 }
-const shapes = { 'device-login':['response','receipt'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
+const shapes = { cookie:[], 'device-login':['response','receipt'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
 export const OWNER_ACCESS_BUDGET_MS = 55_000;
 export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
 export const OPTIONS_REQUEST_BUDGET_MS = 27_000;
@@ -305,7 +318,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
       settingsLoaded = true;
       client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt, ...(optionsRequest||completionRequest||loginRequest?{timeoutMs:COMPLETION_REQUEST_BUDGET_MS}:{}) });
-      const service = createOwnerAccessService(settings, { client, stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3'||operation==='device-login' });
+      const service = createOwnerAccessService(settings, { client,pinLogin:settings.config.adminPinLogin===true&&request.headers.get('x-access-step-up')!=='passkey', stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3'||operation==='device-login' });
       if (operation === 'state') {
         let fresh = request.headers.get('x-access-view')==='login';
         try { if(fresh)throw new Error('NEW_LOGIN_VIEW'); token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }
@@ -328,13 +341,20 @@ export function createOwnerAccessHandler(dependencies = {}) {
       } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError(400, 'INVALID_AUTH_REQUEST'); } }
       let input; try { input = JSON.parse(text); } catch { throw new ApiError(400, 'INVALID_AUTH_REQUEST'); }
       if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify((operation==='complete'&&request.headers.get('x-access-completion-version')==='3'?['response','receipt']:shapes[operation]).slice().sort())) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      if(operation==='cookie'){
+        let raw;try{raw=readSessionToken(request);}catch{throw new ApiError(401,'ACCESS_SESSION_COOKIE_MISSING');}
+        service.confirmSessionCookie(token,raw);
+        const result=json({data:{stage:'COOKIE_CONFIRMED',csrfToken:service.csrf(token)},requestId});
+        result.headers.set('set-cookie',`${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);return timed(result);
+      }
       // Rotate the flow bearer for every new request/login, after CSRF validation.
       if (['start', 'login','biometric','recover'].includes(operation)) { token = randomBytes(32).toString('base64url'); rotatedFlow = true; }
       const output = await service.execute(operation, input, token, context.ip), { cookie, ...data } = output;
-      const result = json({ data: { ...data,emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation)||data.stage==='COMMITTING' ? 202 : 200);
+      const separateCookie=!!cookie&&request.headers.get('x-access-cookie-mode')==='separate';
+      const result = json({ data: { ...data,...(separateCookie?{cookieConfirmationRequired:true}:{}),emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation)||data.stage==='COMMITTING' ? 202 : 200);
       if (cookie) {
         result.headers.append('set-cookie', cookie);
-        result.headers.append('set-cookie', `${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);
+        if(!separateCookie)result.headers.append('set-cookie', `${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);
       } else if (['start', 'login','biometric','recover'].includes(operation)) result.headers.set('set-cookie', accessCookie(token));
       return timed(result);
     } catch (error) {

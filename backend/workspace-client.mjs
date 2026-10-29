@@ -121,7 +121,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
           if (!data || !Array.isArray(data.products) || data.products.length > 10 || !Number.isSafeInteger(data.total) || data.total < 0 || data.total > 5000 ||
               data.nextOffset !== null && (!Number.isSafeInteger(data.nextOffset) || data.nextOffset !== payload.offset + data.products.length || data.nextOffset >= data.total)) invalid();
           const result={ products: data.products.map(product), total: data.total, nextOffset: data.nextOffset };
-          if(action==='catalog.bootstrap'){result.principal=validateSessionPrincipal(data.principal);result.niches=validatedNiches(data);}
+          if(action==='catalog.bootstrap'){result.principal=validateSessionPrincipal(data.principal,Date.now(),config.adminPinLogin===true);result.niches=validatedNiches(data);}
           return result;
         }
         if(action==='catalog.niches')return {niches:validatedNiches(data)};
@@ -131,7 +131,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
         const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
         const untrusted = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
         const flowResult=value=>{
-          if(!uuid(value?.flowId)||!uuid(value.subjectId)||!Number.isSafeInteger(value.authorizationVersion)||value.authorizationVersion<1||!['ACTIVATE','LOGIN','RECOVER'].includes(value.purpose)||!['EMAIL','PIN','PASSKEY','COMMITTING','COMPLETE'].includes(value.state)||value.ceremonyId!==''&&!uuid(value.ceremonyId)||typeof value.proofReady!=='boolean'||typeof value.replacementAllowed!=='boolean')untrusted();
+          if(!uuid(value?.flowId)||!uuid(value.subjectId)||!Number.isSafeInteger(value.authorizationVersion)||value.authorizationVersion<1||!['ACTIVATE','LOGIN','RECOVER','PIN_LOGIN'].includes(value.purpose)||!['EMAIL','PIN','PASSKEY','COMMITTING','COMPLETE'].includes(value.state)||value.ceremonyId!==''&&!uuid(value.ceremonyId)||typeof value.proofReady!=='boolean'||typeof value.replacementAllowed!=='boolean')untrusted();
           return {flowId:value.flowId,subjectId:value.subjectId,authorizationVersion:value.authorizationVersion,purpose:value.purpose,state:value.state,ceremonyId:value.ceremonyId,proofReady:value.proofReady,replacementAllowed:value.replacementAllowed};
         };
         if(action==='identity.access.loginLookup'){
@@ -147,10 +147,10 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
           if(data?.allowed===false&&Number.isSafeInteger(data.retryAfterSeconds)&&data.retryAfterSeconds>0&&data.retryAfterSeconds<=3600){const error=new ApiError(429,'AUTH_RATE_LIMITED');error.retryAfterSeconds=data.retryAfterSeconds;throw error;}
           if(data?.allowed!==true||typeof data.done!=='boolean')untrusted();
           const flow=flowResult(data.flow);
-          if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)untrusted();
+          if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId&&flow.purpose!=='PIN_LOGIN')untrusted();
           if(data.done){
             const p=data.principal;
-            if(!flow.proofReady||p?.id!==flow.subjectId||p.sessionId!==flow.flowId||p.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(p.role)||p.assurance!=='passkey'||!Number.isSafeInteger(p.authenticatedAt)||!Number.isSafeInteger(p.expiresAt))untrusted();
+            if(!flow.proofReady||p?.id!==flow.subjectId||p.sessionId!==flow.flowId||p.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(p.role)||p.assurance!==(flow.purpose==='PIN_LOGIN'?'pin':'passkey')||!Number.isSafeInteger(p.authenticatedAt)||!Number.isSafeInteger(p.expiresAt))untrusted();
             return {done:true,flow,principal:{id:p.id,sessionId:p.sessionId,authorizationVersion:p.authorizationVersion,role:p.role,assurance:p.assurance,authenticatedAt:p.authenticatedAt,expiresAt:p.expiresAt}};
           }
           if(action==='identity.access.devicePrepare'&&(flow.subjectId!==payload.subjectId||flow.flowId!==payload.flowId||flow.ceremonyId!==payload.ceremonyId||flow.purpose!=='LOGIN'))untrusted();
@@ -186,13 +186,13 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
         if(action==='identity.access.rescueKey'){if(data?.stored!==true)untrusted();return {stored:true};}
         if (action === 'identity.access.read') {
           if (!uuid(data?.flowId) || !uuid(data.subjectId) || !Number.isSafeInteger(data.authorizationVersion) || data.authorizationVersion < 1 ||
-              !['ACTIVATE', 'LOGIN','RECOVER'].includes(data.purpose) || !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE'].includes(data.state) ||
+              !['ACTIVATE', 'LOGIN','RECOVER','PIN_LOGIN'].includes(data.purpose) || !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE'].includes(data.state) ||
               data.ceremonyId !== '' && !uuid(data.ceremonyId) || typeof data.proofReady !== 'boolean') untrusted();
           return { flowId: data.flowId, subjectId: data.subjectId, authorizationVersion: data.authorizationVersion,
             purpose: data.purpose, state: data.state, ceremonyId: data.ceremonyId, proofReady: data.proofReady,replacementAllowed:data.replacementAllowed===true };
         }
-        if (action === 'identity.access.commit') {
-          if (!uuid(data?.id) || !uuid(data.sessionId) || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data.role) || data.assurance !== 'passkey' ||
+        if (['identity.access.commit','identity.access.pinLogin'].includes(action)) {
+          if (!uuid(data?.id) || !uuid(data.sessionId) || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data.role) || !['passkey',...(config.adminPinLogin===true?['pin']:[])].includes(data.assurance) || action==='identity.access.pinLogin'&&data.assurance!=='pin' ||
               !Number.isSafeInteger(data.authenticatedAt) || !Number.isSafeInteger(data.expiresAt) || !Number.isSafeInteger(data.authorizationVersion)) untrusted();
           return { id: data.id, sessionId: data.sessionId, role: data.role, assurance: data.assurance,
             authenticatedAt: data.authenticatedAt, expiresAt: data.expiresAt, authorizationVersion: data.authorizationVersion };
@@ -268,7 +268,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       return invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {
-      if (!['saveProof','rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'ownerLookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      if (!['pinLogin','saveProof','rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'ownerLookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
       return invoke('identity.access.' + operation, null, payload);
     },
     listPasskeys: payload => invoke('identity.passkey.list', null, payload),

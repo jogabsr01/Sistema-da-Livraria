@@ -77,7 +77,7 @@ function accessFlows_(ss) {
   var table = authControlRows_(ss, '_Identity_Flows'), seen = new Set(), hashes = new Set(), ceremonies = new Set();
   table.rows.forEach(function (row) {
     if (!identityUuid_(row.ID) || seen.has(row.ID) || !accessHash_(row.Token_Hash) || hashes.has(row.Token_Hash) ||
-        row.Subject_ID !== '' && !identityUuid_(row.Subject_ID) || !['ACTIVATE', 'LOGIN','RECOVER'].includes(row.Purpose) ||
+        row.Subject_ID !== '' && !identityUuid_(row.Subject_ID) || !['ACTIVATE', 'LOGIN','RECOVER','PIN_LOGIN'].includes(row.Purpose) ||
         !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE', 'REVOKED'].includes(row.State) ||
         !Number.isSafeInteger(row.Attempt_Count) || row.Attempt_Count < 0 || row.Attempt_Count > 5 ||
         !Number.isSafeInteger(row.Authorization_Version) || row.Authorization_Version < 0 ||
@@ -96,7 +96,7 @@ function accessFlowOwner_(c, row) {
   if(row.Purpose==='RECOVER')return recoverySubject_(c,row);
   var owner = row.Subject_ID === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
   if (!owner || owner.row.ID_Usuario !== row.Subject_ID || owner.version !== row.Authorization_Version) accessReject_();
-  if (row.Purpose === 'LOGIN' && owner.row.Primeiro_Acesso_Concluido !== true ||
+  if (['LOGIN','PIN_LOGIN'].includes(row.Purpose) && owner.row.Primeiro_Acesso_Concluido !== true ||
       row.Purpose === 'ACTIVATE' && !['COMMITTING', 'COMPLETE'].includes(row.State) && owner.row.Primeiro_Acesso_Concluido !== false) accessReject_();
   return owner;
 }
@@ -138,6 +138,7 @@ function accessStart_(ss, c, p, now, recovery) {
   return recovery?{accepted:true}:{accepted:true,outcome:outcome};
 }
 function accessCommit_(ss, c, current, p, now) {
+  if(current.row.Purpose==='PIN_LOGIN')return accessPinCommit_(ss,c,current,p,now);
   if(current.row.Purpose==='RECOVER')return recoveryCommit_(ss,c,current,p,now,false);
   var row = current.row, owner = accessFlowOwner_(c, row);
   if (!accessHash_(p.sessionTokenHash) || !['PASSKEY', 'COMMITTING', 'COMPLETE'].includes(row.State)) accessReject_();
@@ -188,6 +189,7 @@ function accessRecoverIntents_(ss, c, now) {
   // Recovery replays only a durable, previously verified intent, never a PIN or
   // email supplied by this request. It never returns a cookie or raw token.
   accessFlows_(ss).rows.filter(function (row) { return row.State === 'COMMITTING'; }).forEach(function (row) {
+    if(row.Purpose==='PIN_LOGIN'&&!devPinLoginEnabled_()){row.State='REVOKED';authControlSave_(accessFlows_(ss),row);return;}
     var owner = row.Subject_ID === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
     if (!owner || row.Subject_ID !== owner.row.ID_Usuario || row.Authorization_Version !== owner.version) return;
     try { accessCommit_(ss, c, { table: accessFlows_(ss), row: row }, { sessionTokenHash: row.Session_Token_Hash }, now); }
@@ -210,6 +212,7 @@ function ownerAccessOperation_(request, c) {
     'identity.access.rescueKey':['tokenHash','sessionTokenHash','ceremonyId','credentialId','publicKey','counter','transports'],
     'identity.access.recover':['email','flowId','tokenHash','codeHash','code'],
     'identity.access.lookup': ['email'], 'identity.access.ownerLookup':['cpfIndex'],
+    'identity.access.pinLogin':['flowId','tokenHash','subjectId','authorizationVersion','sessionTokenHash','verifierHash'],
     'identity.access.login': ['flowId', 'tokenHash', 'subjectId', 'authorizationVersion'],
     'identity.access.read': ['tokenHash'], 'identity.access.email': ['tokenHash', 'codeHash'],
     'identity.access.pin': ['tokenHash', 'record'], 'identity.access.bind': ['tokenHash', 'ceremonyId'],
@@ -231,6 +234,7 @@ function ownerAccessOperation_(request, c) {
     if (pin.length !== 1) failure_('IDENTITY_UNAVAILABLE');
     return { account: { subjectId: owner.row.ID_Usuario, authorizationVersion: owner.version, record: accessPinRecord_(pin[0].Record_JSON) } };
   }
+  if(action==='identity.access.pinLogin')return accessPinLogin_(ss,c,p,now);
   if (action === 'identity.access.login') {
     var owner = p.subjectId === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,p.subjectId);
     if (!owner || !owner.row.Primeiro_Acesso_Concluido || owner.row.ID_Usuario !== p.subjectId || owner.version !== p.authorizationVersion) accessReject_();
@@ -261,7 +265,7 @@ function ownerAccessOperation_(request, c) {
   if(action==='identity.access.rescueBegin')return emergencyBegin_(ss,c,current,p,now);
   if(action==='identity.access.rescueKey')return emergencyStartCommit_(ss,c,current,p,now);
   if (action === 'identity.access.read') return { flowId: row.ID, subjectId: row.Subject_ID, authorizationVersion: row.Authorization_Version,
-    purpose: row.Purpose, state: row.State,replacementAllowed:emergencyFlow_(c,row), ceremonyId: row.Ceremony_ID, proofReady: row.Ceremony_ID !== '' && passkeyCeremonies_(ss).rows.some(function (item) { return item.ID === row.Ceremony_ID && item.Completed_At !== ''; }) };
+    purpose: row.Purpose, state: row.State,replacementAllowed:emergencyFlow_(c,row), ceremonyId: row.Ceremony_ID, proofReady: row.Purpose==='PIN_LOGIN'||row.Ceremony_ID !== '' && passkeyCeremonies_(ss).rows.some(function (item) { return item.ID === row.Ceremony_ID && item.Completed_At !== ''; }) };
   if (action === 'identity.access.pin') {
     if (row.State !== 'PIN' || !['ACTIVATE','RECOVER'].includes(row.Purpose)) accessReject_();
     accessPinRecord_(p.record); row.Pin_JSON = p.record; row.State = 'PASSKEY'; authControlSave_(current.table, row); return { stored: true };
@@ -369,7 +373,7 @@ function accessPrepareCompletion_(request,c) {
     throw error;
   }
   if(flow.proofReady){
-    if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||!flow.ceremonyId)accessReject_();
+    if(!['PASSKEY','COMMITTING','COMPLETE'].includes(flow.state)||(!flow.ceremonyId&&flow.purpose!=='PIN_LOGIN'))accessReject_();
     // This is acknowledgement/recovery of an already verified proof, not a new
     // guess. commit rechecks key, epoch, flow binding and durable projections.
     var principal=ownerAccessOperation_({action:'identity.access.commit',payload:{tokenHash:p.tokenHash,sessionTokenHash:p.sessionTokenHash}},c);
@@ -432,4 +436,43 @@ function accessDevicePrepare_(request,c){
   var ceremony=passkeyOperation_({action:'identity.passkey.take',payload:{subjectId:p.subjectId,authorizationVersion:version,ceremonyId:p.ceremonyId,credentialId:p.credentialId}},c);
   var flow=ownerAccessOperation_({action:'identity.access.read',payload:{tokenHash:p.tokenHash}},c);
   return {allowed:true,done:false,flow:flow,ceremony:ceremony};
+}
+
+function accessPinLogin_(ss,c,p,now){
+  if(c.environment!=='dev'||!devPinLoginEnabled_())failure_('FORBIDDEN');
+  if(!identityUuid_(p.flowId)||!accessHash_(p.tokenHash)||!accessHash_(p.sessionTokenHash)||!accessHash_(p.verifierHash))accessReject_();
+  var owner=p.subjectId===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID')?accessOwner_(c):staffSubject_(c,p.subjectId);
+  if(!owner||owner.row.Primeiro_Acesso_Concluido!==true||owner.version!==p.authorizationVersion)accessReject_();
+  var pins=accessPins_(ss).rows.filter(function(r){return r.Subject_ID===p.subjectId&&r.Authorization_Version===p.authorizationVersion;});
+  if(pins.length!==1||digest_(JSON.stringify(accessPinRecord_(pins[0].Record_JSON)))!==p.verifierHash)accessReject_();
+  var table=accessFlows_(ss),matches=table.rows.filter(function(r){return r.ID===p.flowId||r.Token_Hash===p.tokenHash;});
+  if(matches.length>1)accessReject_();
+  var row=matches[0];
+  if(row){if(row.ID!==p.flowId||row.Token_Hash!==p.tokenHash||row.Purpose!=='PIN_LOGIN'||row.Subject_ID!==p.subjectId||row.Authorization_Version!==p.authorizationVersion||row.Session_Token_Hash!==p.sessionTokenHash)accessReject_();}
+  else {
+    if(table.rows.length>=3000)accessReject_();
+    var at=new Date(now).toISOString();
+    row={ID:p.flowId,Token_Hash:p.tokenHash,Subject_ID:p.subjectId,Purpose:'PIN_LOGIN',State:'COMMITTING',Created_At:at,Expires_At:new Date(now+600000).toISOString(),Email_Code_Hash:'',Attempt_Count:0,Pin_JSON:'',Ceremony_ID:'',Session_Token_Hash:p.sessionTokenHash,Authorization_Version:p.authorizationVersion,Commit_Started_At:at,Completed_At:''};
+    authControlSave_(table,row);
+  }
+  return accessPinCommit_(ss,c,accessCurrent_(ss,p.tokenHash,now),p,now);
+}
+function accessPinCommit_(ss,c,current,p,now){
+  if(c.environment!=='dev'||!devPinLoginEnabled_())failure_('FORBIDDEN');
+  var row=current.row,owner=accessFlowOwner_(c,row);
+  if(row.Purpose!=='PIN_LOGIN'||!['COMMITTING','COMPLETE'].includes(row.State)||row.Ceremony_ID!==''||row.Session_Token_Hash!==p.sessionTokenHash||authControlTime_(row.Expires_At)<=now)accessReject_();
+  var main=storage_(c,false).spreadsheet,sessions=identityRows_(main,'Sessoes'),audit=identityRows_(main,'Logs_Auditoria');
+  if(row.State!=='COMPLETE'){
+    var at=row.Commit_Started_At,value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:at,Expira_Em:new Date(Date.parse(at)+28800000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:at,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'pin',Versao_Autorizacao:row.Authorization_Version};
+    var found=sessions.rows.filter(function(r){return r.ID_Sessao===row.ID||r.Token_Hash===p.sessionTokenHash;});
+    if(found.length>1||found.length&&!sessions.columns.every(function(k){return found[0][k]===value[k];}))accessReject_();
+    if(!found.length){if(sessions.rows.length>=5000)accessReject_();accessSaveMain_(sessions,value);}
+    var entry={ID_Log:row.ID,Data_Hora:at,ID_Usuario:row.Subject_ID,Perfil:owner.row.Perfil,Acao:'IDENTITY_LOGIN',Entidade:'Usuarios',ID_Entidade:row.Subject_ID,Antes:'',Depois:'',Resultado:'SUCESSO',ID_Requisicao:row.ID};
+    var logged=audit.rows.filter(function(r){return r.ID_Log===row.ID;});
+    if(logged.length>1||logged.length&&!audit.columns.every(function(k){return logged[0][k]===entry[k];}))accessReject_();
+    if(!logged.length){if(audit.rows.length>=5000)accessReject_();accessSaveMain_(audit,entry);}
+    owner.row.Ultimo_Acesso=at;accessSaveMain_(owner.users,owner.row);
+    row.State='COMPLETE';row.Completed_At=new Date(now).toISOString();authControlSave_(current.table,row);
+  }
+  return identitySession_(main,p.sessionTokenHash,now).principal;
 }

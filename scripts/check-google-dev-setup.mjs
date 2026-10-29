@@ -79,6 +79,7 @@ export function inspectGoogleDevSetup(env = process.env, phase = "service") {
   );
   const flagNames = [
     "WORKSPACE_BACKEND_ENABLED",
+    "WORKSPACE_ADMIN_PIN_LOGIN_ENABLED",
     "WORKSPACE_VERIFY_CONNECTION",
     "WORKSPACE_ISBN_LOOKUP_ENABLED",
     ...IDENTITY_FLAGS,

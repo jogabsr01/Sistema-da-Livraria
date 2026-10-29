@@ -67,7 +67,7 @@ function recoverStaff_(c) {
   if(pending.length>1)staffFail_('STAFF_UNAVAILABLE');pending.forEach(function(v){staffProject_(ss,v);});
 }
 function staffAdmin_(principal) {
-  if(!['ADMIN','SUPER_ADMIN'].includes(principal.role)||!['mfa','passkey'].includes(principal.assurance)||Date.now()-principal.authenticatedAt>300000)failure_('FORBIDDEN');
+  if(!['ADMIN','SUPER_ADMIN'].includes(principal.role)||!businessAssurance_(principal)||Date.now()-principal.authenticatedAt>300000)failure_('FORBIDDEN');
 }
 function staffOperation_(request,c) {
   recoverStaff_(c);var ss=storage_(c,false).spreadsheet,p=request.payload;

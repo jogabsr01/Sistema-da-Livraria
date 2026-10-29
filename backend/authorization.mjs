@@ -41,8 +41,9 @@ export function requirePermission(principal, operation, { targetUserId, targetRo
   }
   if (!roles.has(principal.role) || !assurances.has(principal.assurance) ||
       typeof operation !== 'string' || !permissions[principal.role].has(operation)) denied();
-  if (principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)) denied(401, 'REAUTHENTICATION_REQUIRED');
-  if (recent.has(operation) && (!strong.has(principal.assurance) || now - principal.authenticatedAt > 300_000)) {
+  const businessPin=principal.assurance==='pin'&&principal.adminPinLogin===true;
+  if (principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
+  if (recent.has(operation) && ((!strong.has(principal.assurance)&&!(businessPin&&operation!=='credentials.self.manage')) || now - principal.authenticatedAt > 300_000)) {
     denied(401, 'REAUTHENTICATION_REQUIRED');
   }
   if (selfOperations.has(operation) && targetUserId !== undefined &&

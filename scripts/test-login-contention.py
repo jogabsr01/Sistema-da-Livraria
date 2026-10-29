@@ -39,14 +39,14 @@ class LoginContention(qa.Home):
     def test_login_slow_session_cannot_overlap_native_login_or_erase_new_session(self):
         self.opening_with_slow_session();self.page.locator('#biometric-login').click();self.page.wait_for_timeout(300)
         self.assertEqual(self.overlap,[],'Google session read must finish before the login RPC starts')
-        self.release_session();expect(self.page).to_have_url(ORIGIN+'/home-dev.html');expect(self.page.locator('#home')).to_be_visible()
+        self.release_session();expect(self.page).to_have_url(ORIGIN+'/home-dev.html?entrada=confirmada');expect(self.page.locator('#home')).to_be_visible()
         self.page.get_by_role('link',name='Adicionar novo produto').click();expect(self.page.locator('#editor')).to_be_visible()
         self.page.go_back();expect(self.page.locator('#home')).to_be_visible();self.assertEqual(self.local('/test/login-state')['sessions'],2);self.assertEqual(self.errors,[])
     def test_login_slow_session_does_not_force_reentry_of_email_and_pin(self):
         self.opening_with_slow_session();self.page.locator('#login-email').fill('owner@example.invalid');self.page.locator('#login-pin').fill('8274')
         self.page.get_by_role('button',name='Entrar na minha conta',exact=True).click();self.page.wait_for_timeout(300)
         self.assertEqual(self.overlap,[]);self.release_session();expect(self.page.locator('#passkey')).to_be_visible()
-        self.page.locator('#passkey-button').click();expect(self.page).to_have_url(ORIGIN+'/home-dev.html');expect(self.page.locator('#home')).to_be_visible()
+        self.page.locator('#passkey-button').click();expect(self.page).to_have_url(ORIGIN+'/home-dev.html?entrada=confirmada');expect(self.page.locator('#home')).to_be_visible()
         self.assertEqual(self.step_posts.get('login'),1);self.assertEqual(self.errors,[])
     def test_login_busy_before_native_prepare_retains_one_signature_and_retry(self):
         self.activate();self.logout();self.busy_device=2

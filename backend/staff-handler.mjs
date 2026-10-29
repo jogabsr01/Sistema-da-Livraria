@@ -17,7 +17,7 @@ export function createStaffHandler(dependencies={}){
   const settings=(dependencies.loadSettings||loadStaffSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),vault=createPersonalDataVault(settings),sessions=createSessionService(settings,{client});
   if(op==='bootstrap'){
    if([...url.searchParams.keys()].some(k=>k!=='offset'||url.searchParams.getAll(k).length!==1)||!/^\d{1,4}$/.test(url.searchParams.get('offset')||'0')||Number(url.searchParams.get('offset')||0)>5000)staffInvalid();
-   const context=sessionTransportContext(request,settings),data=await client.staff('bootstrap',context.actor,{offset:Number(url.searchParams.get('offset')||0)}),principal=validateSessionPrincipal(data?.principal);requirePermission(principal,'users.attendant.manage',{targetRole:'ATENDENTE'});
+   const context=sessionTransportContext(request,settings),data=await client.staff('bootstrap',context.actor,{offset:Number(url.searchParams.get('offset')||0)}),principal=validateSessionPrincipal(data?.principal,Date.now(),settings.config.adminPinLogin===true);requirePermission(principal,'users.attendant.manage',{targetRole:'ATENDENTE'});
    if(!Array.isArray(data.users)||data.users.length>25||!Number.isSafeInteger(data.total)||data.total<0||data.total>5000||data.nextOffset!==null&&(!Number.isSafeInteger(data.nextOffset)||data.nextOffset!==Number(url.searchParams.get('offset')||0)+data.users.length||data.nextOffset>=data.total))throw new ApiError(502,'UPSTREAM_UNTRUSTED');
    return json({data:{total:data.total,nextOffset:data.nextOffset,users:data.users.map(row=>staffDto(row,vault)),user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken:context.csrfToken},requestId});
   }

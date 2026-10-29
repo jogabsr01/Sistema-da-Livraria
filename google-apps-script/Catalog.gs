@@ -229,7 +229,7 @@ function catalogOperation_(request, c) {
   recoverSales_(ss);
   if (request.action === 'catalog.receive') return receiveStock_(request, c, principal, ss);
   if (request.action === 'catalog.remove') {
-    if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance)) failure_('FORBIDDEN');
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !businessAssurance_(principal)) failure_('FORBIDDEN');
     authControlExact_(p, ['commandId', 'id', 'expectedVersion']);
     if (!identityUuid_(p.commandId) || !identityUuid_(p.id) || !Number.isSafeInteger(p.expectedVersion) || p.expectedVersion < 1 || p.expectedVersion > 1000000000) catalogFail_();
     var prior = catalogJournal_(c).rows.filter(function (row) { return row.Command_ID === p.commandId; });

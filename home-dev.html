@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/app-theme.css">
 </head>
 <body class="app-shell page-home"><main>
-  <header class="home-masthead"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><span class="home-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 9C12 6 7 6 3 7v18c5-1 9 0 13 3 4-3 8-4 13-3V7c-4-1-9-1-13 2Zm0 0v19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7 11h5M7 15h5M20 11h5M20 15h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span>Livraria IPB<small>Jardim Bonfiglioli</small></span></a><div class="header-end"><span class="environment-tag">DEV · Testes</span><nav id="account-navigation" aria-label="Sua conta" hidden></nav></div></header>
+  <header class="home-masthead"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><img class="church-brand-logo" src="/brand/ipb-jardim-bonfiglioli.png" width="252" height="81" alt="Igreja Presbiteriana JD Bonfiglioli"></a><div class="header-end"><span class="environment-tag">DEV · Testes</span><nav id="account-navigation" aria-label="Sua conta" hidden></nav></div></header>
   <section id="welcome" class="welcome" aria-labelledby="welcome-title">
     <div class="welcome-story">
       <p class="welcome-eyebrow"><span></span> LIVROS QUE CONECTAM</p>
@@ -33,6 +33,12 @@
   </section>
   <section id="member-intro" class="home-intro" aria-labelledby="home-title" hidden><div><p class="badge">SUA LIVRARIA, MAIS PERTO</p><h1 id="home-title">Vamos fazer <em>acontecer.</em></h1></div><span class="member-label">INÍCIO</span></section>
   <div class="access-status"><p id="status" role="status" aria-live="polite">Conferindo seu acesso…</p><button id="retry" type="button" hidden>Tentar novamente</button></div>
+  <section id="entry-failure" class="entry-failure" hidden>
+    <h2>Sua entrada não foi mantida</h2>
+    <p>Não conseguimos confirmar sua sessão ao abrir a livraria. Clique em “Conferir sessão” antes de tentar entrar novamente.</p>
+    <details><summary>Informações para o suporte</summary><p id="entry-diagnostic"></p><button id="download-entry-diagnostic" class="secondary" type="button">Baixar diagnóstico desta abertura</button></details>
+    <a href="/acesso-dev.html?verificar=1#entrar">Abrir verificação do acesso</a>
+  </section>
   <section id="home" aria-label="Início da livraria" hidden>
     <div class="main-actions">
       <button id="new-purchase" class="action-card purchase" type="button"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M3 5h4l4 17h14l4-12H8M12 16h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="27" r="2" fill="currentColor"/><circle cx="24" cy="27" r="2" fill="currentColor"/></svg></span><span><strong>Nova compra</strong><small>Encontre livros e monte a compra</small></span><span aria-hidden="true">→</span></button>

@@ -36,7 +36,7 @@ export function createCatalogHandler(dependencies = {}) {
         if(!/^\d{1,5}$/.test(offset)||Number(offset)>5000||search.length>100||nicheId&&!catalogUuid(nicheId)||['inactive','create'].some(k=>query.has(k)&&!['true','false'].includes(query.get(k))))throw new ApiError(400,'INVALID_PRODUCT');
         const rawToken=readSessionToken(request),tokens=createSessionTokens({...settings.config,tokenKey:settings.tokenKey});
         const data=await client.catalog('bootstrap',{sessionTokenHash:tokens.hash(rawToken)},{search,offset:Number(offset),nicheId,includeInactive:query.get('inactive')==='true',create:query.get('create')==='true'});
-        const principal=validateSessionPrincipal(data.principal);requirePermission(principal,query.get('create')==='true'?'products.write':'products.read');
+        const principal=validateSessionPrincipal(data.principal,Date.now(),settings.config.adminPinLogin===true);requirePermission(principal,query.get('create')==='true'?'products.write':'products.read');
         const csrfToken=createHmac('sha256',settings.tokenKey).update(JSON.stringify(['csrf.v1',settings.config.environment,settings.config.installationId,rawToken])).digest('base64url');
         const {principal:_,...catalog}=data;
         return json({data:{...catalog,niches:catalog.niches.map(n=>({...n,imageUrl:settings.nichesEnabled&&n.hasImage?'/api/v1/niches/image?id='+n.id+'&v='+n.version:''})),user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken,lookupEnabled:settings.lookupEnabled===true,photosEnabled:settings.photosEnabled===true,nichesEnabled:settings.nichesEnabled===true,checkoutEnabled:settings.checkoutEnabled===true,customersEnabled:settings.customersEnabled===true},requestId});

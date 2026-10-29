@@ -5,6 +5,10 @@
 function identityUuid_(value) {
   return typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 }
+// DEV policy explicitly authorized by the project owner: PIN is an alternate
+// sign-in method. Other environments retain the strong administrator policy.
+function devPinLoginEnabled_(){var p=scriptProperties_().getProperties();return p.APP_ENV==='dev'&&(p.ADMIN_PIN_LOGIN_ENABLED===undefined||p.ADMIN_PIN_LOGIN_ENABLED==='true');}
+function businessAssurance_(principal){return ['mfa','passkey'].includes(principal.assurance)||principal.assurance==='pin'&&devPinLoginEnabled_();}
 function identityRows_(spreadsheet, name) {
   var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
@@ -52,7 +56,7 @@ function identitySession_(spreadsheet, tokenHash, now) {
   var user = userMatches[0];
   if (user.Status !== 'ATIVO' || user.Primeiro_Acesso_Concluido !== true ||
       !['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(user.Perfil)) failure_('UNAUTHENTICATED');
-  if (user.Perfil !== 'ATENDENTE' && !['mfa', 'passkey'].includes(session.Nivel_Autenticacao)) failure_('UNAUTHENTICATED');
+  if (user.Perfil !== 'ATENDENTE' && !['mfa', 'passkey'].includes(session.Nivel_Autenticacao)&&!(session.Nivel_Autenticacao==='pin'&&devPinLoginEnabled_())) failure_('UNAUTHENTICATED');
   var versions = identityRows_(spreadsheet, 'Configuracoes').rows.filter(function (row) { return row.Chave === 'identity.version.' + user.ID_Usuario; });
   if (versions.length !== 1 || !Number.isSafeInteger(versions[0].Valor) || versions[0].Valor < 1) failure_('IDENTITY_UNAVAILABLE');
   if (session.Versao_Autorizacao !== versions[0].Valor) failure_('UNAUTHENTICATED');
