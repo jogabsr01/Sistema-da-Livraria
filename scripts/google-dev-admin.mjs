@@ -82,6 +82,13 @@ export function safeTimings(entries) {
     }
     if(['START','LOGIN_LOOKUP','LOGIN_FLOW','STATE','EMAIL','PIN_READ','PIN_SAVE','OPTIONS','COMPLETE_PREPARE','COMMIT','PASSKEY_TAKE','PASSKEY_REGISTER','PASSKEY_COUNTER','GUARD','OTHER'].includes(p.operation))result.operation=p.operation;
     if(Number.isSafeInteger(p.schemaBatchReads)&&p.schemaBatchReads>=0&&p.schemaBatchReads<=2)result.schemaBatchReads=p.schemaBatchReads;
+    if(['BINDING','SCHEMA','NONCE','DISPATCH'].includes(p.phase))result.phase=p.phase;
+    if(['OK','ERROR'].includes(p.outcome))result.outcome=p.outcome;
+    if(p.outcome==='ERROR'){
+      if(['SCRIPT_REFERENCE','SCRIPT_TYPE','GOOGLE_QUOTA','GOOGLE_PERMISSION','GOOGLE_TIMEOUT','GOOGLE_SERVICE','APP_REJECTED','UNKNOWN'].includes(p.faultClass))result.faultClass=p.faultClass;
+      if(['REPLAY','SERVICE_CAPACITY','MAINTENANCE_ACTIVE','SCHEMA_REQUIRED','SCHEMA_CONFLICT','BINDING_MISMATCH','FORBIDDEN','UNAUTHENTICATED','IDENTITY_UNAVAILABLE','ACCESS_REJECTED','PASSKEY_REJECTED','SECURITY_AUDIT_UNAVAILABLE'].includes(p.faultCode))result.faultCode=p.faultCode;
+      if(Number.isSafeInteger(p.faultLine)&&p.faultLine>0&&p.faultLine<=100000)result.faultLine=p.faultLine;
+    }
     return [result];
   });
 }
@@ -94,7 +101,7 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
     let response;
     try { response=await fetchImpl(url,{...options,redirect:'error',signal:AbortSignal.timeout(20000)}); }
     catch { fail(code); }
-    if (!response.ok) fail(code);
+    if (!response.ok) { const error=new Error(code);if(Number.isInteger(response.status)&&response.status>=100&&response.status<=599)error.providerStatus=response.status;throw error; }
     // Provider error bodies/exception text/headers never enter Actions output.
     let data; try { const body=await response.text(); if(Buffer.byteLength(body)>5000000)fail(code); data=JSON.parse(body); } catch { fail(code); }
     return data;
@@ -148,7 +155,7 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
     try {
       const processes=await requestJson('https://script.googleapis.com/v1/processes:listScriptProcesses?'+new URLSearchParams({scriptId:config.scriptId,pageSize:'50'}),{headers:{authorization:'Bearer '+token.access_token}},'PROCESSES_UNAVAILABLE');
       report.processes=safeProcesses(processes.processes);report.processHistory=report.processes.length?'SAMPLED':'NO_EXECUTIONS_IN_SAMPLE';
-    } catch { report.processHistory='UNAVAILABLE'; }
+    } catch(error) { report.processHistory='UNAVAILABLE';if(Number.isInteger(error.providerStatus)&&error.providerStatus>=100&&error.providerStatus<=599)report.processHistoryHttpStatus=error.providerStatus; }
     return report;
   }
   if (request.candidateHash !== candidateHash) fail('CANDIDATE_CHANGED');
