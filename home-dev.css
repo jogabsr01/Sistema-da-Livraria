@@ -69,3 +69,80 @@ body.page-home { padding: 28px 24px 56px; }
   .page-home #status { margin: 10px 0; }
 }
 @media (prefers-reduced-motion: reduce) { .page-home .action-card { transition: none; } }
+
+/* Welcome is public; account navigation and modules start after session validation. */
+body.page-home{min-height:100dvh;padding:28px 32px 48px}
+.page-home main{max-width:1180px}
+.header-end{display:flex;align-items:center;gap:20px}
+.environment-tag{color:#71571f;background:#f0eadc;border:1px solid #e3d7bd;padding:7px 11px;border-radius:30px;font-size:.66rem;font-weight:700;letter-spacing:.06em;white-space:nowrap}
+.welcome{display:grid;grid-template-columns:1.16fr 1fr;margin-top:32px;min-height:580px;border:1px solid #e1e5db;border-radius:28px;overflow:hidden;background:#fffefa;box-shadow:0 24px 70px #193d330a}
+.welcome-story{position:relative;isolation:isolate;overflow:hidden;background:radial-gradient(ellipse at 90% 100%,#35735b,transparent 65%),#153f33;color:#fffefa;padding:42px 44px 0}
+.welcome-eyebrow{display:flex;align-items:center;gap:9px;margin:0;font-size:.61rem;letter-spacing:.15em;font-weight:650;color:#dfdfbd}
+.welcome-eyebrow>span{width:6px;height:6px;border-radius:50%;background:#d5b977}
+.page-home .welcome h1{color:#fffefa;font-family:inherit;font-size:clamp(2.3rem,4vw,3.5rem);line-height:1.07;letter-spacing:-.055em;font-weight:650;margin:28px 0 18px;text-wrap:initial}
+.welcome h1 em{font-family:Georgia,serif;font-weight:400;color:#e7ca91}
+.page-home .welcome-description{font-size:.9rem;line-height:1.7;color:#cfddd4;margin:0}
+.welcome-art{height:258px;position:relative;margin-top:24px}
+.art-orbit{position:absolute;width:290px;height:290px;border:1px solid #d2dfce26;border-radius:50%;top:0;left:60px}
+.art-orbit::after{content:'';position:absolute;inset:23px;border:1px solid #d2dfce1a;border-radius:50%}
+.art-book{position:absolute;width:146px;height:190px;border-radius:4px 12px 12px 4px;border-left:8px solid #00000015;box-shadow:12px 16px 24px #082b2b35;display:flex;flex-direction:column;justify-content:space-between;padding:22px 16px;font-family:Georgia,serif;font-size:1.22rem;line-height:1.2}
+.book-one{left:22%;top:20px;background:#e6ce98;color:#253f33;transform:rotate(-13deg)}
+.book-two{left:48%;top:52px;background:#e7ebdf;color:#274a3e;transform:rotate(13deg)}
+.art-book i{width:48px;height:48px;border:1px solid currentColor;border-radius:50%;position:relative;opacity:.65}
+.art-book i::before{content:'';position:absolute;inset:8px;border:1px solid currentColor;border-radius:50%}
+.art-star svg{width:42px;height:42px}
+.art-star{position:absolute;left:83%;top:12px;font-size:2.7rem;color:#dabb7a;font-weight:300}
+.art-caption{position:absolute;bottom:15px;left:0;font:500 .52rem system-ui,sans-serif;letter-spacing:.17em;color:#bacdc0}
+.welcome-entry{align-self:center;padding:48px 48px 46px}
+.entry-number{display:block;font-size:.62rem;letter-spacing:.12em;color:#708074;font-weight:650;margin-bottom:38px}
+.page-home .welcome-entry h2{font-family:inherit;font-weight:650;font-size:clamp(1.65rem,2.5vw,2rem);letter-spacing:-.045em;line-height:1.15;margin:0 0 14px}
+.welcome-entry>p{font-size:.9rem;color:#5e7066;margin:0 0 28px;max-width:28ch}
+.page-home .entry-button{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:58px;padding:17px 22px;background:#205b46;color:#fffefa;border:1px solid #205b46;border-radius:12px;box-shadow:0 5px 14px #193d3321;text-decoration:none;font-size:.9rem;font-weight:650;transition:background-color .16s,box-shadow .16s}
+.entry-button>svg{width:22px;height:22px;flex:0 0 22px}
+.page-home .entry-button:hover{background:#164332;box-shadow:0 8px 22px #193d3330}
+.entry-note{display:flex;align-items:center;gap:12px;margin-top:22px;color:#617266;font-size:.72rem;line-height:1.6}
+.entry-note svg{width:23px;height:23px;flex:0 0 23px;color:#50745f}
+.entry-divider{height:1px;background:#e1e6dc;margin:28px 0 20px}
+.page-home .entry-help{font-size:.78rem;font-weight:600;line-height:1.6;margin:0;color:#294c3e;max-width:none}
+.entry-help span{font-size:.72rem;font-weight:400;color:#617266}
+.access-status{display:flex;align-items:center;gap:16px;justify-content:center;min-height:42px;margin-top:10px}
+.page-home .access-status #status{margin:0;font-size:.75rem;text-align:center}
+.access-status #retry{font-size:.75rem;min-height:40px;padding:8px 12px}
+.is-member .access-status{justify-content:start;margin:0 0 18px;min-height:24px}
+.is-member .access-status #status{text-align:left}
+.page-home .home-intro h1{font-family:inherit;font-weight:600;letter-spacing:-.045em;font-size:clamp(1.7rem,3.6vw,2.8rem)}
+.home-intro h1 em{font-family:Georgia,serif}
+.member-label{font-size:.65rem;color:#647b6c;letter-spacing:.12em;border:1px solid #cbd8c7;border-radius:30px;padding:8px 14px}
+.page-home .action-card strong{font-family:inherit;font-weight:650;font-size:1.5rem;letter-spacing:-.03em}
+.page-home .purchase{background:linear-gradient(125deg,#153f33,#286b51);border-left-width:1px}
+.page-home .search{background:#fffefa}
+@media(min-width:701px){.page-home .main-actions .card-icon{width:60px;height:60px;flex-basis:60px}.page-home .main-actions .action-card{min-height:164px}}
+@media(max-width:900px) and (min-width:701px){.welcome-story{padding:36px 28px 0}.welcome-entry{padding:40px 28px}.art-book{width:122px;height:170px;font-size:1.1rem}.art-orbit{left:0}.book-one{left:10%}.book-two{left:44%}.page-home .action-card strong{font-size:1.3rem}}
+@media(max-width:700px){
+ body.page-home{padding:18px 16px 32px}
+ .header-end{gap:12px}.environment-tag{font-size:.56rem;padding:6px 9px}
+ .welcome{grid-template-columns:1fr;margin-top:20px;border-radius:20px;min-height:0}
+ .welcome-story{padding:28px 26px 30px}
+ .welcome-eyebrow{font-size:.55rem}
+ .page-home .welcome h1{font-size:2.4rem;margin:20px 0 14px}
+ .page-home .welcome-description{font-size:.8rem}
+ .welcome-art{position:absolute;width:135px;height:170px;right:-30px;bottom:-25px;opacity:.2;z-index:-1;margin:0}
+ .art-book{width:90px;height:125px;padding:12px;font-size:.85rem}.book-one{left:0}.book-two{left:45px}.art-orbit,.art-caption,.art-star{display:none}
+ .welcome-entry{padding:26px}
+ .entry-number{margin-bottom:18px;font-size:.57rem}
+ .page-home .welcome-entry h2{font-size:1.55rem}
+ .welcome-entry>p{font-size:.83rem;max-width:none;margin-bottom:22px}
+ .page-home .entry-button{font-size:.85rem;min-height:56px;padding:15px 18px}
+ .entry-note{font-size:.67rem;margin-top:18px}
+ .entry-divider{margin:20px 0 16px}
+ .page-home .entry-help{font-size:.75rem}.entry-help span{font-size:.68rem}
+ .access-status{flex-wrap:wrap;gap:8px;margin-top:12px}
+ .page-home .home-intro h1{font-size:1.65rem}.member-label{display:none}
+ .page-home .action-card strong{font-size:1.2rem}
+ .is-member .access-status{margin-bottom:12px}
+}
+@media(max-width:700px) and (max-height:700px){
+ .welcome-story{padding:22px 24px}.page-home .welcome h1{font-size:2.1rem;margin:14px 0 10px}.welcome-entry{padding:24px}.entry-number{display:none}.entry-note{margin-top:14px}.entry-divider{margin:16px 0 12px}
+}
+@media(max-width:700px) and (max-height:560px){body.page-home{padding-top:10px}.page-home .home-intro h1{font-size:1.5rem}.is-member .access-status{margin-bottom:10px}}
+@media(prefers-reduced-motion:reduce){.page-home .entry-button{transition:none}}

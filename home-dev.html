@@ -6,15 +6,33 @@
   <title>Início — Livraria IPB DEV</title>
   <link rel="stylesheet" href="/home-dev.css"><link rel="stylesheet" href="/account-menu.css">
   <script src="/vendor/zxing-0.21.3.min.js" defer></script><script src="/home-dev.js" defer></script>
-  <script src="/account-menu.js" defer></script><script src="/notification-badge.js" defer></script>
+
 <link rel="stylesheet" href="/app-theme.css">
 </head>
 <body class="app-shell page-home"><main>
-  <header class="home-masthead"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><span class="home-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 9C12 6 7 6 3 7v18c5-1 9 0 13 3 4-3 8-4 13-3V7c-4-1-9-1-13 2Zm0 0v19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7 11h5M7 15h5M20 11h5M20 15h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span>Livraria IPB<small>Jardim Bonfiglioli</small></span></a><nav aria-label="Sua conta"></nav></header>
-  <section class="home-intro" aria-labelledby="home-title"><div><p class="badge">AMBIENTE DE TESTES — DEV</p><h1 id="home-title">Cuidar de cada <em>história.</em></h1></div><div class="book-spines" aria-hidden="true"><span></span><span></span><span></span></div></section>
-  <p id="status" role="status" aria-live="polite">Conferindo seu acesso…</p>
-  <a id="sign-in" href="/acesso-dev.html#entrar" hidden>Entrar na minha conta</a>
-  <button id="retry" type="button" hidden>Tentar novamente</button>
+  <header class="home-masthead"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><span class="home-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 9C12 6 7 6 3 7v18c5-1 9 0 13 3 4-3 8-4 13-3V7c-4-1-9-1-13 2Zm0 0v19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7 11h5M7 15h5M20 11h5M20 15h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span>Livraria IPB<small>Jardim Bonfiglioli</small></span></a><div class="header-end"><span class="environment-tag">DEV · Testes</span><nav id="account-navigation" aria-label="Sua conta" hidden></nav></div></header>
+  <section id="welcome" class="welcome" aria-labelledby="welcome-title">
+    <div class="welcome-story">
+      <p class="welcome-eyebrow"><span></span> LIVROS QUE CONECTAM</p>
+      <h1 id="welcome-title">Sua livraria.<br>Em um só <em>lugar.</em></h1>
+      <p class="welcome-description">Mais tempo para as pessoas.<br>Mais cuidado com cada história.</p>
+      <div class="welcome-art" aria-hidden="true">
+        <div class="art-orbit"></div><div class="art-book book-one"><span>Histórias<br>que ficam.</span><i></i></div>
+        <div class="art-book book-two"><span>Cada página,<br>um encontro.</span><i></i></div>
+        <span class="art-star"><svg viewBox="0 0 40 40" fill="none"><path d="M20 3v34M3 20h34M8 8l24 24M8 32 32 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span><span class="art-caption">LIVRARIA IPB · JARDIM BONFIGLIOLI</span>
+      </div>
+    </div>
+    <div class="welcome-entry">
+      <span class="entry-number" aria-hidden="true">01 / BEM-VINDO</span>
+      <h2>Bom ter você aqui.</h2>
+      <p>Entre na sua conta para continuar na livraria.</p>
+      <a id="sign-in" class="entry-button" href="/acesso-dev.html#entrar">Entrar na minha conta <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="entry-note"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.5"/></svg><span>Seu acesso, protegido.<br>Use seu CPF ou e-mail e PIN cadastrado.</span></div>
+      <div class="entry-divider"></div><p class="entry-help">Primeira vez por aqui?<br><span>Na próxima tela, escolha “É meu primeiro acesso”.</span></p>
+    </div>
+  </section>
+  <section id="member-intro" class="home-intro" aria-labelledby="home-title" hidden><div><p class="badge">SUA LIVRARIA, MAIS PERTO</p><h1 id="home-title">Vamos fazer <em>acontecer.</em></h1></div><span class="member-label">INÍCIO</span></section>
+  <div class="access-status"><p id="status" role="status" aria-live="polite">Conferindo seu acesso…</p><button id="retry" type="button" hidden>Tentar novamente</button></div>
   <section id="home" aria-label="Início da livraria" hidden>
     <div class="main-actions">
       <button id="new-purchase" class="action-card purchase" type="button"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M3 5h4l4 17h14l4-12H8M12 16h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="27" r="2" fill="currentColor"/><circle cx="24" cy="27" r="2" fill="currentColor"/></svg></span><span><strong>Nova compra</strong><small>Encontre livros e monte a compra</small></span><span aria-hidden="true">→</span></button>

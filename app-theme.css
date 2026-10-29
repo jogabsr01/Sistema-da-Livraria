@@ -21,7 +21,7 @@ body.app-shell {
   text-wrap: balance;
   letter-spacing: -.025em;
 }
-.app-shell h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 500; line-height: 1.12; }
+.app-shell h1 { font-family: inherit; font-weight: 650; line-height: 1.12; letter-spacing: -.045em; }
 .app-shell p { line-height: 1.6; }
 .app-shell .badge, .app-shell .eyebrow { letter-spacing: .09em; font-size: .7rem; font-weight: 750; }
 .app-shell > header, .app-shell main > header:not(.home-masthead) {
