@@ -146,6 +146,19 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         if (!result.verified) rejected();
         return {stage:'PIN'};
       }
+      if(operation==='login'&&typeof client.lookupAccessLogin==='function'){
+        const value=identifier(input.email),isEmail=value.includes('@');
+        const result=await client.lookupAccessLogin({...guard.attemptKeys({identifier:value,originAddress:ip}),email:isEmail?value:'',emailIndex:isEmail&&settings.staffEnabled?vault.index('email',value):'',cpfIndex:isEmail?'':vault.index('cpf',value),staffLookup:settings.staffEnabled===true});
+        const account=result.account;
+        if(result.kind==='STAFF'&&account){
+          let contact;try{contact=normalizeStaffContact(vault.open('users',account.subjectId,account.contact));}catch{throw new ApiError(502,'UPSTREAM_UNTRUSTED');}
+          if((isEmail?contact.email:contact.cpf)!==value)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+        }
+        const valid=await pins.verify(input.pin,account?.subjectId||'00000000-0000-4000-8000-000000000000',account?.record||dummy);
+        if(!account||!valid)rejected();
+        await client.access('login',{flowId:randomUUID(),tokenHash:hash(token),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion});
+        return {stage:'PASSKEY'};
+      }
       let pinFlow;
       if (operation === 'pin' && typeof client.readAccessForPin === 'function') pinFlow=await client.readAccessForPin({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token)});
       if (operation === 'start' && !settings.staffEnabled && typeof client.startOwnerAccess === 'function' && typeof input.email === 'string' && input.email.includes('@')) {
@@ -232,8 +245,9 @@ export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
 export function createOwnerAccessHandler(dependencies = {}) {
   return async (request, context = {}) => {
     const requestId = randomUUID(), startedAt = performance.now();
+    const loginRequest=new URL(request.url).pathname.split('/').at(-1)==='login';
     const completionRequest=new URL(request.url).pathname.split('/').at(-1)==='complete'&&request.headers.get('x-access-completion-version')==='2';
-    const deadlineAt=startedAt+(completionRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
+    const deadlineAt=startedAt+(completionRequest||loginRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
     let operation, settingsLoaded = false, client, token, rotatedFlow = false;
     const timed=response=>{const metrics=client?.timings?.();response.headers.set('server-timing',`app;dur=${Math.round(performance.now()-startedAt)}`+(metrics?`, google;dur=${metrics.durationMs}, rpc;desc="${metrics.calls}"`:''));return response;};
     try {

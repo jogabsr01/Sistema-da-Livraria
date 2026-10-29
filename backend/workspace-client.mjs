@@ -130,6 +130,15 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
           if(!uuid(value?.flowId)||!uuid(value.subjectId)||!Number.isSafeInteger(value.authorizationVersion)||value.authorizationVersion<1||!['ACTIVATE','LOGIN','RECOVER'].includes(value.purpose)||!['EMAIL','PIN','PASSKEY','COMMITTING','COMPLETE'].includes(value.state)||value.ceremonyId!==''&&!uuid(value.ceremonyId)||typeof value.proofReady!=='boolean'||typeof value.replacementAllowed!=='boolean')untrusted();
           return {flowId:value.flowId,subjectId:value.subjectId,authorizationVersion:value.authorizationVersion,purpose:value.purpose,state:value.state,ceremonyId:value.ceremonyId,proofReady:value.proofReady,replacementAllowed:value.replacementAllowed};
         };
+        if(action==='identity.access.loginLookup'){
+          if(data?.allowed===false&&Number.isSafeInteger(data.retryAfterSeconds)&&data.retryAfterSeconds>0&&data.retryAfterSeconds<=3600){const error=new ApiError(429,'AUTH_RATE_LIMITED');error.retryAfterSeconds=data.retryAfterSeconds;throw error;}
+          if(data?.allowed!==true||!['OWNER','STAFF'].includes(data.kind)||!Object.hasOwn(data,'account'))untrusted();
+          if(data.account===null)return {kind:data.kind,account:null};
+          const a=data.account,r=a.record;
+          if(!uuid(a.subjectId)||!Number.isSafeInteger(a.authorizationVersion)||a.authorizationVersion<1||r?.version!==1||r.algorithm!=='scrypt-N32768-r8-p1'||!/^[a-f0-9]{64}$/.test(r.salt)||!/^[a-f0-9]{64}$/.test(r.hash))untrusted();
+          if(data.kind==='STAFF'&&(payload.staffLookup!==true||a.activated!==true||typeof a.contact!=='string'||a.contact.length>10000))untrusted();
+          return {kind:data.kind,account:{subjectId:a.subjectId,authorizationVersion:a.authorizationVersion,record:{version:1,algorithm:r.algorithm,salt:r.salt,hash:r.hash},...(data.kind==='STAFF'?{contact:a.contact}: {})}};
+        }
         if(action==='identity.access.prepareCompletion'){
           if(data?.allowed===false&&Number.isSafeInteger(data.retryAfterSeconds)&&data.retryAfterSeconds>0&&data.retryAfterSeconds<=3600){const error=new ApiError(429,'AUTH_RATE_LIMITED');error.retryAfterSeconds=data.retryAfterSeconds;throw error;}
           if(data?.allowed!==true||typeof data.done!=='boolean')untrusted();
@@ -267,6 +276,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     timings: () => Object.freeze({calls,durationMs:Math.round(durationMs)}),
     verifyAccessEmail: payload => invoke('identity.access.emailGuarded', null, payload),
     readAccessForPin: payload => invoke('identity.access.pinReadGuarded', null, payload),
+    lookupAccessLogin: payload => invoke('identity.access.loginLookup', null, payload),
     prepareAccessOptions: payload => invoke('identity.access.options', null, payload),
     prepareAccessCompletion: payload => invoke('identity.access.prepareCompletion', null, payload),
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),

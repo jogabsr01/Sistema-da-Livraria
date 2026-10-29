@@ -57,7 +57,7 @@ export function safeTimings(entries) {
       if (!Number.isSafeInteger(p[key]) || p[key]<0 || p[key]>3600000) return [];
       result[key]=p[key];
     }
-    if(['START','STATE','EMAIL','PIN_READ','PIN_SAVE','OPTIONS','COMPLETE_PREPARE','COMMIT','PASSKEY_TAKE','PASSKEY_REGISTER','PASSKEY_COUNTER','GUARD','OTHER'].includes(p.operation))result.operation=p.operation;
+    if(['START','LOGIN_LOOKUP','LOGIN_FLOW','STATE','EMAIL','PIN_READ','PIN_SAVE','OPTIONS','COMPLETE_PREPARE','COMMIT','PASSKEY_TAKE','PASSKEY_REGISTER','PASSKEY_COUNTER','GUARD','OTHER'].includes(p.operation))result.operation=p.operation;
     if(Number.isSafeInteger(p.schemaBatchReads)&&p.schemaBatchReads>=0&&p.schemaBatchReads<=2)result.schemaBatchReads=p.schemaBatchReads;
     return [result];
   });

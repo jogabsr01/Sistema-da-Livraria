@@ -1,6 +1,8 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id), message = text => { $('status').textContent = text; };
+  const entryParams = new URL(location.href).searchParams;
+  $('query').value = (entryParams.get('q') || '').slice(0,100);
   let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false, lookupGeneration = 0, lookupController = null, photosEnabled = false, pendingPhoto, photoPreview = '', cameraStream = null, cameraGeneration = 0;
   const pendingImages = new Set();
   let canDelete = false, stockTarget = null, pendingStock = null, stockStorageKey = '', archiveCommand = null;
@@ -376,7 +378,7 @@
           if (first) {
             const params = new URL(location.href).searchParams, focusId = params.get('livro'), stockId = params.get('entrada');
             const validId = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
-            if (validId(stockId)) await openStock(stockId); else if (validId(focusId)) await openBook(focusId);
+            if (validId(stockId)) await openStock(stockId); else if (validId(focusId)) await openBook(focusId); else if (entryParams.get('novo') === '1') await openBook(null);
           }
         }
       } finally { reconciling = false; }

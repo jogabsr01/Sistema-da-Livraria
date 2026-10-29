@@ -294,6 +294,29 @@ function accessOptions_(request, c) {
   return {allowed:true, subjectId:user.subjectId, authorizationVersion:user.authorizationVersion, kind:kind, credentials:credentials, ceremonyId:p.ceremonyId, challenge:p.challenge, replacementAllowed:flow.replacementAllowed};
 }
 
+// One locked lookup reserves the durable guess budget before reading a PIN
+// verifier. It never accepts a subject/role/PIN and never creates a flow/session.
+function accessLoginLookup_(request,c) {
+  var p=request.payload;
+  authControlExact_(p,['accountKey','originKey','email','emailIndex','cpfIndex','staffLookup']);
+  if(typeof p.staffLookup!=='boolean'||typeof p.email!=='string'||typeof p.emailIndex!=='string'||typeof p.cpfIndex!=='string'||
+      (p.email!==''&&accessEmail_(p.email)!==p.email)||
+      (p.email===''?!accessHash_(p.cpfIndex):p.cpfIndex!=='')||
+      (p.staffLookup&&p.email!==''?!accessHash_(p.emailIndex):p.emailIndex!==''))accessReject_();
+  if(p.staffLookup&&!staffEnabled_())failure_('STAFF_UNAVAILABLE');
+  recoverSecurityIntent_(c);
+  var attempt=authAttempt_(authControlStore_(c),{accountKey:p.accountKey,originKey:p.originKey},Date.now());
+  if(!attempt.allowed)return {allowed:false,retryAfterSeconds:attempt.retryAfterSeconds};
+  if(p.staffLookup){
+    var staff=staffAccessOperation_({action:'identity.staffAccess.lookup',payload:{emailIndex:p.emailIndex,cpfIndex:p.cpfIndex}},c).account;
+    if(staff)return {allowed:true,kind:'STAFF',account:staff.activated&&staff.record?staff:null};
+  }
+  var email=p.email;
+  if(!email)email=ownerAccessOperation_({action:'identity.access.ownerLookup',payload:{cpfIndex:p.cpfIndex}},c).email;
+  var account=email?ownerAccessOperation_({action:'identity.access.lookup',payload:{email:email}},c).account:null;
+  return {allowed:true,kind:'OWNER',account:account};
+}
+
 function accessStartGuarded_(request,c) {
   var p=request.payload;
   authControlExact_(p,['accountKey','originKey','email','flowId','tokenHash','codeHash','code']);

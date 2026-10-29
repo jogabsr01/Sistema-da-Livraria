@@ -28,8 +28,19 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
     }
     await writeFile(resolve(destination,'cover-references.js'),'globalThis.LivrariaCoverReferences=Object.freeze('+JSON.stringify(publicRefs)+');\n');
   }
+  const vendor = resolve(root, 'vendor');
+  const vendorInfo = await lstat(vendor).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  if (vendorInfo) {
+    if (!vendorInfo.isDirectory() || vendorInfo.isSymbolicLink()) throw Error('Invalid barcode asset directory');
+    await mkdir(resolve(destination, 'vendor'));
+    for (const file of ['zxing-0.21.3.min.js', 'zxing-LICENSE.txt']) {
+      const input = resolve(vendor, file), info = await lstat(input);
+      if (!info.isFile() || info.isSymbolicLink()) throw Error('Invalid barcode asset');
+      await copyFile(input, resolve(destination, 'vendor', file));
+    }
+  }
   // Explicit allowlist: backend, Apps Script, tests and configuration are never published.
-  for (const file of ['index.html', 'teste-dev.txt', 'acesso-dev.html', 'acesso-dev.js', 'acesso-dev.css', 'catalogo-dev.html', 'catalogo-dev.js', 'catalogo-dev.css', 'caixa-dev.html', 'caixa-dev.js', 'caixa-dev.css', 'notificacoes-dev.html', 'notificacoes-dev.js', 'notificacoes-dev.css', 'notification-badge.js', 'clientes-compras-dev.html','clientes-compras-dev.css','clientes-compras-dev.js','relatorios-dev.html','relatorios-dev.js','relatorios-dev.css','auditoria-dev.html','auditoria-dev.js','auditoria-dev.css','escalas-dev.html','escalas-dev.js','escalas-dev.css','nichos-dev.html','nichos-dev.js','nichos-dev.css','equipe-dev.html', 'equipe-dev.js', 'equipe-dev.css', 'minhas-chaves-dev.html','minhas-chaves-dev.css','minhas-chaves-dev.js','meu-perfil-dev.html', 'meu-perfil-dev.js', 'meu-perfil-dev.css', 'account-menu.js', 'email-change-dev.js', 'account-menu.css', 'operacoes-dev.html', 'operacoes-dev.js', 'operacoes-dev.css']) {
+  for (const file of ['index.html', 'home-dev.html', 'home-dev.js', 'home-dev.css', 'teste-dev.txt', 'acesso-dev.html', 'acesso-dev.js', 'acesso-dev.css', 'catalogo-dev.html', 'catalogo-dev.js', 'catalogo-dev.css', 'caixa-dev.html', 'caixa-dev.js', 'caixa-dev.css', 'notificacoes-dev.html', 'notificacoes-dev.js', 'notificacoes-dev.css', 'notification-badge.js', 'clientes-compras-dev.html','clientes-compras-dev.css','clientes-compras-dev.js','relatorios-dev.html','relatorios-dev.js','relatorios-dev.css','auditoria-dev.html','auditoria-dev.js','auditoria-dev.css','escalas-dev.html','escalas-dev.js','escalas-dev.css','nichos-dev.html','nichos-dev.js','nichos-dev.css','equipe-dev.html', 'equipe-dev.js', 'equipe-dev.css', 'minhas-chaves-dev.html','minhas-chaves-dev.css','minhas-chaves-dev.js','meu-perfil-dev.html', 'meu-perfil-dev.js', 'meu-perfil-dev.css', 'account-menu.js', 'email-change-dev.js', 'account-menu.css', 'operacoes-dev.html', 'operacoes-dev.js', 'operacoes-dev.css']) {
     const input = resolve(root, file);
     const info = await lstat(input).catch(e => { if (e.code !== 'ENOENT') throw e; });
     if (!info && file !== 'index.html') continue;

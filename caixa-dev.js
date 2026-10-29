@@ -3,6 +3,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id), ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
+  $('query').value = (new URL(location.href).searchParams.get('q') || '').slice(0,100);
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const methods = { PIX:'PIX', DINHEIRO:'Dinheiro', DEBITO:'Débito', CREDITO:'Crédito' };
   const records = new Map(), cart = new Map();
