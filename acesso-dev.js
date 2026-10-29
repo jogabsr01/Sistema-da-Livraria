@@ -5,7 +5,7 @@
   let pendingMessage = null;
   const message = (text, tone = 'info') => { if (busy) { pendingMessage = { text, tone }; return; } $('status').textContent = text; $('status').dataset.tone = tone; $('status').hidden = false; };
   let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
-  const diagnosticCodes = new Set(['UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
+  const diagnosticCodes = new Set(['HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
@@ -39,7 +39,8 @@
     const code = error.code || '';
     if (uncertainCodes.has(code) && ['state','session'].includes(error.transport?.operation)) return 'Não conseguimos carregar seu acesso agora. Aguarde alguns instantes e clique em “Tentar carregar novamente”. Se continuar, peça ajuda à administração.';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
-    if (uncertainCodes.has(code) && error.transport?.operation === 'options') return 'Não conseguimos preparar a confirmação do aparelho agora. Aguarde alguns instantes e tente novamente em “Confirmar no meu aparelho”. Se continuar, peça ajuda à administração.';
+    if (code === 'HOST_ACCESS_REQUIRED') return 'O Netlify precisa autorizar o acesso a este ambiente de testes. Abra o ambiente pelo botão abaixo e depois tente carregar novamente.';
+    if (uncertainCodes.has(code) && error.transport?.operation === 'options') return 'Não conseguimos preparar a confirmação do aparelho. Clique em “Tentar novamente”.';
     if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
     if (code === 'INVALID_CPF') return 'CPF inválido. Confira os números digitados.';
     if (code === 'INVALID_AUTH_REQUEST') {
@@ -80,6 +81,11 @@
     try {
       try { response = await fetch(operation === 'session' ? '/api/v1/session' : '/api/v1/access/' + operation, {...options, signal: controller.signal}); }
       catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_NETWORK_UNAVAILABLE'); }
+      if (response.status === 401 && (response.headers.get('content-type') || '').toLowerCase().includes('text/html')) {
+        let body; try { body = await response.text(); } catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
+        if (body.length <= 65536 && body.includes('app.netlify.com') && body.includes('edge-access') && body.includes('Login Redirect')) throw failure('HOST_ACCESS_REQUIRED');
+        throw failure('ACCESS_RESPONSE_INVALID');
+      }
       if (operation === 'session' && [401,403].includes(response.status)) return {response, result:null, failure};
       let result; try { result = await response.json(); }
       catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
@@ -113,11 +119,11 @@
     maskPins();
     busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
     const detail = document.getElementById('access-diagnostic'); if (detail) { detail.hidden = true; detail.textContent = ''; }
-    $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true;
+    $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true; $('environment-access').hidden = true;
     pendingMessage = null; $('status').hidden = true; $('access-progress').hidden = false;
     document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'true'));
-    try { await action(); if (!$('passkey').hidden && !preparedDevice) await prepareDevice(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = error.transport?.operation === 'options' ? 'Preparar confirmação novamente' : ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = !uncertainCodes.has(error.code); }
-    finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
+    try { await action(); if (!$('passkey').hidden && !preparedDevice) await prepareDevice(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = error.transport?.operation === 'options' ? 'Preparar confirmação novamente' : ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = error.transport?.operation === 'options' || !uncertainCodes.has(error.code); $('environment-access').hidden = error.code !== 'HOST_ACCESS_REQUIRED'; if (error.transport?.operation === 'options') $('passkey-button').textContent = 'Tentar novamente'; }
+    finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); if (!$('passkey').hidden && !preparedDevice && $('passkey-button').textContent === 'Preparando confirmação…') $('passkey-button').textContent = 'Tentar novamente'; const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
   }
   function clearFieldError(field) {
     $(field).removeAttribute('aria-invalid');
@@ -245,6 +251,7 @@
   });
   async function prepareDevice() {
     accessPhase = 'PREPARE';
+    $('passkey-button').textContent = 'Preparando confirmação…';
     if (!window.PublicKeyCredential || !navigator.credentials) throw unavailable('DEVICE_NOT_SUPPORTED');
     const data = await api('options', {}), options = data.options;
     if (!['create', 'get'].includes(data.kind) || !options || typeof options.challenge !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
@@ -252,6 +259,7 @@
     if (data.kind === 'create') { options.user.id = decode(options.user.id); options.excludeCredentials = (options.excludeCredentials || []).map(key => ({ ...key, id: decode(key.id) })); }
     else options.allowCredentials = (options.allowCredentials || []).map(key => ({ ...key, id: decode(key.id) }));
     preparedDevice = {kind:data.kind, options}; preparedAt = performance.now();
+    $('passkey-button').textContent = 'Confirmar no meu aparelho';
   }
   $('passkey-button').addEventListener('click', () => run(async () => {
     // The Google round trip happens before this button is enabled. Call the

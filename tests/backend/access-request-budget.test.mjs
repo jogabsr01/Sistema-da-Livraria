@@ -9,6 +9,7 @@ import {
   ACCESS_ORIGIN,
   OWNER_ACCESS_BUDGET_MS,
   COMPLETION_REQUEST_BUDGET_MS,
+  OPTIONS_REQUEST_BUDGET_MS,
 } from "../../backend/owner-access.mjs";
 import { ApiError } from "../../backend/errors.mjs";
 import { ownerFixture } from "../helpers/owner-access-fixture.mjs";
@@ -154,4 +155,23 @@ test('staged completion reserves hosting response margin and returns a structure
  const fresh=await handler(new Request(ACCESS_ORIGIN+'/api/v1/access/state'));const cookie=fresh.headers.get('set-cookie').split(';')[0],csrf=(await fresh.json()).data.csrfToken;
  const before=performance.now();const result=await handler(new Request(ACCESS_ORIGIN+'/api/v1/access/complete',{method:'POST',headers:{cookie,origin:ACCESS_ORIGIN,'content-type':'application/json','x-csrf-token':csrf,'x-access-completion-version':'2'},body:JSON.stringify({response:null})}),{ip:'192.0.2.42'});
  assert.equal(COMPLETION_REQUEST_BUDGET_MS,27000);assert.ok(options.deadlineAt>=before+27000&&options.deadlineAt<=performance.now()+27000);assert.equal(calls,1);assert.equal(result.status,502);assert.equal((await result.json()).error.code,'UPSTREAM_TIMEOUT');assert.equal(result.headers.get('set-cookie'),null);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
+});
+
+test('device options alone reserve a 27-second transport and request budget for observed 19-second Google work plus redirect',async()=>{
+ const s=ownerFixture();let options,calls=0;
+ const handler=createOwnerAccessHandler({loadSettings:()=>s.settings,createClient:(_c,o)=>{options=o;return {...s.client,prepareAccessOptions:async()=>{calls++;throw new ApiError(502,'UPSTREAM_TIMEOUT');}};}});
+ const fresh=await handler(new Request(ACCESS_ORIGIN+'/api/v1/access/state')),cookie=fresh.headers.get('set-cookie').split(';')[0],csrf=(await fresh.json()).data.csrfToken;
+ assert.equal(Object.hasOwn(options,'timeoutMs'),false);
+ const before=performance.now(),response=await handler(new Request(ACCESS_ORIGIN+'/api/v1/access/options',{method:'POST',headers:{cookie,origin:ACCESS_ORIGIN,'content-type':'application/json','x-csrf-token':csrf},body:'{}'}),{ip:'192.0.2.42'});
+ assert.equal(OPTIONS_REQUEST_BUDGET_MS,27000);assert.equal(options.timeoutMs,27000);assert.ok(options.deadlineAt>=before+27000&&options.deadlineAt<=performance.now()+27000);assert.equal(calls,1);assert.equal(response.status,502);assert.equal((await response.json()).error.code,'UPSTREAM_TIMEOUT');assert.equal(response.headers.get('set-cookie'),null);
+});
+test('options margin shares a single signal across the signed POST and approved content redirect without a replay',async t=>{
+ const s=ownerFixture(),signal=new AbortController().signal,budgets=[],signals=[];let clock=0,envelope,calls=0;
+ t.mock.method(AbortSignal,'timeout',ms=>{budgets.push(ms);return signal;});
+ const client=createWorkspaceClient(s.settings.config,{timeoutMs:OPTIONS_REQUEST_BUDGET_MS,deadlineAt:27000,now:()=>clock,fetchImpl:async(_url,options)=>{
+  signals.push(options.signal);calls++;
+  if(calls===1){envelope=JSON.parse(options.body);clock=19127;return new Response(null,{status:303,headers:{location:'https://script.googleusercontent.com/macros/echo?opaque=test'}});}
+  clock=21500;return new Response(JSON.stringify(s.gas.post(envelope)));
+ }});
+ assert.equal((await client.ping()).ready,true);assert.deepEqual(budgets,[27000]);assert.equal(signals[0],signals[1]);assert.equal(calls,2);assert.equal(WORKSPACE_RPC_TIMEOUT_MS,20000);
 });
