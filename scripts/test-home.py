@@ -23,7 +23,9 @@ class Home(qa.Checkout):
             for selector in ['#new-purchase','#search-product']:
                 box=self.page.locator(selector).bounding_box();self.assertGreaterEqual(box['y'],0);self.assertLessEqual(box['y']+box['height'],height);self.assertGreaterEqual(box['height'],48)
             self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
-        self.page.set_viewport_size({'width':360,'height':640});(ROOT/'work/qa-home').mkdir(exist_ok=True)
+        (ROOT/'work/qa-home').mkdir(exist_ok=True)
+        self.page.screenshot(path=str(ROOT/'work/qa-home/home-desktop.png'),full_page=True)
+        self.page.set_viewport_size({'width':360,'height':640})
         self.page.screenshot(path=str(ROOT/'work/qa-home/home-mobile.png'),full_page=True)
         self.assertEqual(self.errors,[])
     def test_home_name_search_routes_purchase_and_catalog_without_creating_sale(self):

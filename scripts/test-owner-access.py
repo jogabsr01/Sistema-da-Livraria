@@ -93,7 +93,7 @@ class OwnerAccess(unittest.TestCase):
             if result['cookies']:
                 result['headers']['set-cookie'] = '\n'.join(result['cookies'])
             route.fulfill(status=result['status'], headers=result['headers'], body=result['body']); return
-        files = {'/acesso-dev.html': 'text/html', '/acesso-dev.js': 'application/javascript', '/acesso-dev.css': 'text/css'}
+        files = {'/app-theme.css': 'text/css', '/acesso-dev.html': 'text/html', '/acesso-dev.js': 'application/javascript', '/acesso-dev.css': 'text/css'}
         if path in files:
             headers = {}
             for rule in tomllib.loads((ROOT / 'netlify.toml').read_text()).get('headers', []):

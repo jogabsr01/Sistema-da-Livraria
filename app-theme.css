@@ -1,0 +1,117 @@
+/* Shared visual language for the authenticated DEV app. No external assets. */
+:root {
+  --ink: #193d33;
+  --green: #205b46;
+  --muted: #5e7066;
+  --paper: #f7f5ef;
+  --cream: #f7f5ef;
+  --line: #dbe1d8;
+  --gold: #b99145;
+  --app-white: #fffefa;
+  --app-shadow: 0 8px 28px #193d3308;
+}
+body.app-shell {
+  background: radial-gradient(ellipse at 0 0, #e9eee4 0, transparent 48rem), var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.app-shell h1, .app-shell h2, .app-shell h3 {
+  color: var(--ink);
+  text-wrap: balance;
+  letter-spacing: -.025em;
+}
+.app-shell h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 500; line-height: 1.12; }
+.app-shell p { line-height: 1.6; }
+.app-shell .badge, .app-shell .eyebrow { letter-spacing: .09em; font-size: .7rem; font-weight: 750; }
+.app-shell > header, .app-shell main > header:not(.home-masthead) {
+  background: var(--app-white);
+  border-color: var(--line);
+  box-shadow: var(--app-shadow);
+}
+.app-shell .masthead { border-top: 3px solid var(--green); }
+.app-shell .brand { color: var(--ink); }
+.app-shell .brand-mark { background: var(--green); color: #f2dcaa; }
+.app-shell > header nav, .app-shell main > header:not(.home-masthead) nav {
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+.app-shell > header nav > a, .app-shell main > header:not(.home-masthead) nav > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  color: var(--green);
+  font-size: .85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.app-shell > header nav > a:hover, .app-shell main > header:not(.home-masthead) nav > a:hover { background: #edf1e9; }
+.app-shell button, .app-shell .button, .app-shell .action-link {
+  font-family: inherit;
+  letter-spacing: -.01em;
+  font-weight: 650;
+  border-radius: 10px;
+  min-height: 46px;
+  touch-action: manipulation;
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.app-shell button:not(.secondary):not(.quiet):not(.pin-visibility):not(.action-card):not(.danger) {
+  background: var(--green);
+  color: white;
+  border-color: var(--green);
+  box-shadow: 0 2px 3px #193d3312;
+}
+.app-shell button.secondary, .app-shell .button.secondary, .app-shell .action-link.secondary {
+  background: #edf1e9;
+  color: var(--ink);
+  border: 1px solid #bdcdbd;
+}
+.app-shell button:not(:disabled):hover { filter: brightness(.96); }
+.app-shell button:disabled { cursor: not-allowed; }
+.app-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]):not([type="range"]),
+.app-shell textarea, .app-shell select {
+  border: 1px solid #b4c5b6;
+  border-radius: 9px;
+  background: #fffefa;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 1rem;
+  min-height: 46px;
+  max-width: 100%;
+}
+.app-shell input[aria-invalid="true"] { border-color: #a74035 !important; }
+.app-shell input[type="checkbox"], .app-shell input[type="radio"] { accent-color: var(--green); }
+.app-shell :focus-visible { outline: 3px solid #aa7d26; outline-offset: 3px; }
+.app-shell .filters, .app-shell .book, .app-shell .profile-card, .app-shell .cart,
+.app-shell .panel, .app-shell .summary-card {
+  border-color: var(--line);
+  background: var(--app-white);
+  border-radius: 16px;
+  box-shadow: var(--app-shadow);
+}
+.app-shell dialog { border: 1px solid #c5d1c1; border-radius: 18px; box-shadow: 0 24px 90px #0c2c3152; }
+.app-shell dialog::backdrop { background: #122d26a6; }
+.app-shell .account-menu summary { background: #e9eddf; color: var(--green); box-shadow: 0 0 0 1px #d3ddce; }
+.app-shell .account-options { border-color: var(--line); background: var(--app-white); border-radius: 14px; box-shadow: 0 16px 48px #193d3324; }
+.app-shell .account-options button { min-height: 44px; box-shadow: none; }
+.app-shell footer { color: var(--muted); font-size: .8rem; }
+.app-shell.page-access main { background: var(--app-white); border-color: var(--line); border-top: 4px solid var(--green); box-shadow: var(--app-shadow); }
+.app-shell.page-access h1 { font-size: clamp(2rem, 7vw, 2.8rem); }
+.app-shell.page-access .pin-visibility { min-height: 0; }
+@media (max-width: 600px) {
+  .app-shell > header { gap: 14px; }
+  .app-shell > header nav { width: 100%; }
+  .app-shell > header nav > a { padding: 8px 9px; }
+  .app-shell .filters, .app-shell .profile-card, .app-shell .cart { border-radius: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell button, .app-shell .button, .app-shell .action-link { transition: none; }
+}
+@media print {
+  body.app-shell { background: white; }
+  .app-shell .filters, .app-shell .book, .app-shell .panel { box-shadow: none; }
+}

@@ -7,11 +7,12 @@
   <link rel="stylesheet" href="/catalogo-dev.css"><link rel="stylesheet" href="/caixa-dev.css">
   <script src="/caixa-dev.js" defer></script>
   <script src="/notification-badge.js" defer></script>
-<link rel="stylesheet" href="/account-menu.css"><script src="/account-menu.js" defer></script></head>
-<body><main>
+<link rel="stylesheet" href="/account-menu.css"><script src="/account-menu.js" defer></script><link rel="stylesheet" href="/app-theme.css">
+</head>
+<body class="app-shell page-caixa"><main>
   <header><p class="badge">AMBIENTE DE TESTES — DEV</p><h1>Frente de Caixa</h1>
     <p>Vendas com ou sem identificação do cliente. Use apenas livros e operações de teste nesta homologação.</p>
-    <nav><a href="/operacoes-dev.html">Histórico e operações</a> · <a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a> · <a href="/catalogo-dev.html">Catálogo compartilhado</a> · <a href="/acesso-dev.html">Minha conta verificada</a> · <a href="/">Protótipo</a></nav>
+    <nav><a class="home-link" href="/home-dev.html">Início</a><a href="/operacoes-dev.html">Histórico e operações</a> · <a href="/notificacoes-dev.html">🔔 Notificações <span data-notification-count></span></a> · <a href="/catalogo-dev.html">Catálogo compartilhado</a> · <a href="/acesso-dev.html">Minha conta verificada</a> · <a href="/index.html">Protótipo</a></nav>
   </header>
   <p id="status" role="status" aria-live="polite">Conferindo acesso…</p>
   <section id="checkout" hidden>

@@ -171,3 +171,10 @@
     X-Frame-Options = "DENY"
     Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
     Permissions-Policy = "camera=(self), microphone=()"
+
+# The DEV domain opens the real app; the standalone prototype remains /index.html.
+[[redirects]]
+  from = "https://dev--merry-chimera-49a1f3.netlify.app/"
+  to = "/home-dev.html"
+  status = 302
+  force = true
