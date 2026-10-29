@@ -16,7 +16,7 @@
     $('support-details').hidden = false;
   }
   function unavailable(code) { const error = new Error('ACCESS_FAILED'); error.code = code; return error; }
-  let csrfToken = '', busy = false, sessionCsrf = '', pendingResponse = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
+  let csrfToken = '', busy = false, pendingResponse = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
   const panels = ['initial', 'email-form', 'pin-form', 'passkey', 'retry', 'complete'];
   function feedbackIn(id) {
     const target = $(id), feedback = $('access-feedback');
@@ -185,7 +185,7 @@
     const data = result?.data;
     if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || data.user.assurance !== 'passkey' || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (!shouldApply()) return false;
-    sessionCsrf = data.csrfToken; show('COMPLETE'); message('Acesso verificado com sucesso.', 'success');
+    show('COMPLETE'); message('Acesso verificado com sucesso.', 'success');
     $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role); return true;
   }
   async function finish() {
@@ -198,7 +198,7 @@
     pendingResponse=null;clearSecrets();
     if(typeof result.sessionCsrfToken==='string'){
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||result.user.assurance!=='passkey'||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
-      sessionCsrf=result.sessionCsrfToken;show('COMPLETE');message('Acesso verificado com sucesso.','success');
+      show('COMPLETE');message('Acesso verificado com sucesso.','success');
       $('identity-result').textContent='Sua conta está pronta para uso.';$('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(result.user.role);
     }else if(!await current())throw new Error('SESSION_NOT_CONFIRMED');
   }
@@ -276,11 +276,6 @@
   }));
   $('retry-button').addEventListener('click', () => run(finish));
   $('restart').addEventListener('click', () => { clearSecrets(); pendingResponse = null; show('INITIAL'); message('Solicite um novo código ou entre na conta já ativada.'); });
-  $('logout-button').addEventListener('click', () => run(async () => {
-    const response = await fetch('/api/v1/session/logout', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': sessionCsrf }, body: '{}' });
-    if (!response.ok) throw new Error('LOGOUT_FAILED'); sessionCsrf = ''; show('INITIAL'); message('Você saiu da conta verificada.', 'success');
-    const state = await api('state'); csrfToken = state.csrfToken;
-  }));
   function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
   window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;});
   window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state');accessPhase='RENDER';requestedView(state);});});

@@ -7,9 +7,18 @@ h1 { font-size: 1.7rem; } h2 { font-size: 1.2rem; } p { line-height: 1.55; overf
 label { display: block; margin: 18px 0 6px; font-weight: 600; }
 input, button { width: 100%; font: inherit; min-height: 48px; border-radius: 8px; }
 input { border: 1px solid #9cb3a5; padding: 12px; }
-button { margin: 18px 0 8px; padding: 12px; border: 0; background: #205b43; color: white; cursor: pointer; font-weight: 600; }
+button, .action-link { border: 1px solid #164832; background: #205b43; color: white; cursor: pointer; font-weight: 700; box-shadow: 0 3px 0 #163e2e; transition: background-color .15s, box-shadow .15s; }
+button { margin: 18px 0 8px; padding: 14px 16px; }
+button:not(:disabled):hover, .action-link:hover { background: #174832; box-shadow: 0 4px 8px #173b3026; }
+button:not(:disabled):active, .action-link:active { box-shadow: none; }
 button:disabled { opacity: .6; cursor: wait; }
-button.secondary { background: #e6eee8; color: #173b30; }
+button.secondary, .action-link.secondary { background: #edf4ef; color: #173b30; border-color: #9cb3a5; box-shadow: 0 2px 0 #d5e1d9; }
+button.secondary:not(:disabled):hover, .action-link.secondary:hover { background: #dcebe1; }
+.action-link { display: flex; justify-content: center; align-items: center; gap: 12px; min-height: 50px; padding: 14px 18px; border-radius: 10px; text-align: center; text-decoration: none; line-height: 1.4; overflow-wrap: anywhere; }
+.access-navigation { margin: 22px 0; }
+.complete-actions { display: grid; gap: 14px; margin: 26px 0 12px; }
+.app-entry { justify-content: space-between; min-height: 64px; border-color: #164832; border-left: 5px solid #c79a2e; font-size: 1.1rem; }
+.app-entry > :last-child { font-size: 1.5rem; }
 a { color: #205b43; } summary { cursor: pointer; padding: 18px 0; }
 #status { padding: 14px; background: #eef5ef; border-radius: 8px; }
 [hidden] { display: none !important; }
@@ -25,13 +34,15 @@ a { color: #205b43; } summary { cursor: pointer; padding: 18px 0; }
 
 .pin-field { position: relative; }
 .pin-field input { padding-right: 58px; }
-button.pin-visibility { position: absolute; top: 0; right: 0; width: 48px; height: 100%; margin: 0; padding: 10px; background: transparent; color: #205b43; display: grid; place-items: center; }
+button.pin-visibility { position: absolute; top: 0; right: 0; width: 48px; height: 100%; margin: 0; padding: 10px; border: 0; box-shadow: none; background: transparent; color: #205b43; display: grid; place-items: center; }
+button.pin-visibility:not(:disabled):hover { background: #edf4ef; box-shadow: none; }
 button.pin-visibility[aria-pressed="true"] { background: #e6eee8; }
 
 .access-progress { display: flex; align-items: center; gap: 12px; padding: 18px 14px; margin: 16px 0; background: #eef5ef; border-radius: 8px; }
 .access-spinner { width: 24px; height: 24px; flex: 0 0 24px; border: 3px solid #c8dcd0; border-top-color: #205b43; border-radius: 50%; animation: access-spin .8s linear infinite; }
 @keyframes access-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .access-spinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { button, .action-link { transition: none; } }
 #status[data-tone="error"] { background: #fff1ee; color: #853d31; }
 #status[data-tone="success"] { background: #e6f3e9; color: #174d30; }
 
