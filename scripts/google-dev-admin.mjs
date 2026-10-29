@@ -41,6 +41,28 @@ function configuration(env,pins) {
   if (!c || ['client_id','client_secret','refresh_token'].some(key=>typeof c[key] !== 'string' || !c[key].length || c[key].length > 10000 || /[\r\n]/.test(c[key]))) fail('INVALID_CREDENTIALS');
   return config;
 }
+function safeTimestamp(value) {
+  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)||!Number.isFinite(Date.parse(value)))return null;
+  return new Date(value).toISOString();
+}
+export function safeProcesses(values) {
+  return (Array.isArray(values)?values:[]).slice(0,50).flatMap(p=>{
+    const timestamp=safeTimestamp(p?.startTime);
+    if(!timestamp||!['COMPLETED','FAILED','RUNNING','TIMED_OUT','CANCELED','DELAYED','UNKNOWN'].includes(p.processStatus)||typeof p.duration!=='string'||!/^\d{1,6}(?:\.\d{1,9})?s$/.test(p.duration))return [];
+    const durationMs=Math.round(parseFloat(p.duration)*1000);if(durationMs>3600000)return [];
+    return [{timestamp,durationMs,status:p.processStatus,function:['doPost','doGet','inspectDevelopmentSchema'].includes(p.functionName)?p.functionName:'OTHER',type:['WEBAPP','EXECUTION_API','EDITOR','TRIGGER','TIME_DRIVEN','ADD_ON','BATCH_TASK','SIMPLE_TRIGGER','MENU'].includes(p.processType)?p.processType:'OTHER'}];
+  });
+}
+export function safeFailures(entries) {
+  return (Array.isArray(entries)?entries:[]).slice(0,50).flatMap(entry=>{
+    const timestamp=safeTimestamp(entry?.timestamp);
+    if(!timestamp||!['ERROR','CRITICAL','ALERT','EMERGENCY'].includes(entry.severity))return [];
+    const message=typeof entry.jsonPayload?.message==='string'?entry.jsonPayload.message:typeof entry.textPayload==='string'?entry.textPayload:'';
+    const text=message.slice(0,16000);
+    const category=/ReferenceError/.test(text)?'SCRIPT_REFERENCE':/TypeError/.test(text)?'SCRIPT_TYPE':/quota|too many times|rate.limit|RESOURCE_EXHAUSTED/i.test(text)?'GOOGLE_QUOTA':/permission|PERMISSION_DENIED|not have permission/i.test(text)?'GOOGLE_PERMISSION':/maximum execution|timed out|timeout/i.test(text)?'EXECUTION_TIMEOUT':'EXECUTION_ERROR';
+    return [{timestamp,severity:entry.severity,category}];
+  });
+}
 export function safeTimings(entries) {
   return (Array.isArray(entries)?entries:[]).slice(0,50).flatMap(entry=>{
     let p=entry?.jsonPayload;
@@ -53,6 +75,7 @@ export function safeTimings(entries) {
     }
     if (p?.metric !== 'rpc.duration') return [];
     const result={};
+    const timestamp=safeTimestamp(entry?.timestamp);if(timestamp)result.timestamp=timestamp;
     for (const key of ['lockMs','bindingsMs','schemaMs','workMs','totalMs']) {
       if (!Number.isSafeInteger(p[key]) || p[key]<0 || p[key]>3600000) return [];
       result[key]=p[key];
@@ -118,10 +141,14 @@ export async function runAdmin({env=process.env,request,source,fetchImpl=fetch,p
     try {
       const logs=await requestJson('https://logging.googleapis.com/v2/entries:list',{
         method:'POST',headers:{authorization:'Bearer '+token.access_token,'content-type':'application/json'},
-        body:JSON.stringify({resourceNames:['projects/'+config.cloudProjectId],filter:'resource.type="app_script_function" AND (jsonPayload.metric="rpc.duration" OR jsonPayload.message:"rpc.duration" OR textPayload:"rpc.duration") AND timestamp>="'+new Date(Date.now()-3600000).toISOString()+'"',orderBy:'timestamp desc',pageSize:50})
+        body:JSON.stringify({resourceNames:['projects/'+config.cloudProjectId],filter:'resource.type="app_script_function" AND (jsonPayload.metric="rpc.duration" OR jsonPayload.message:"rpc.duration" OR textPayload:"rpc.duration" OR severity>=ERROR) AND timestamp>="'+new Date(Date.now()-3600000).toISOString()+'"',orderBy:'timestamp desc',pageSize:50})
       },'LOGS_UNAVAILABLE');
-      report.timings=safeTimings(logs.entries);report.logging=report.timings.length?'SAMPLED':'NO_METRICS_IN_LAST_HOUR';
+      report.timings=safeTimings(logs.entries);report.failures=safeFailures(logs.entries);report.logging=report.timings.length?'SAMPLED':'NO_METRICS_IN_LAST_HOUR';
     } catch { report.logging='UNAVAILABLE'; }
+    try {
+      const processes=await requestJson('https://script.googleapis.com/v1/processes:listScriptProcesses?'+new URLSearchParams({scriptId:config.scriptId,pageSize:'50'}),{headers:{authorization:'Bearer '+token.access_token}},'PROCESSES_UNAVAILABLE');
+      report.processes=safeProcesses(processes.processes);report.processHistory=report.processes.length?'SAMPLED':'NO_EXECUTIONS_IN_SAMPLE';
+    } catch { report.processHistory='UNAVAILABLE'; }
     return report;
   }
   if (request.candidateHash !== candidateHash) fail('CANDIDATE_CHANGED');
