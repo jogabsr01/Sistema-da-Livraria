@@ -27,15 +27,15 @@ export function readSessionToken(request) {
   if (!validToken(token)) denied();
   return token;
 }
-export function validateSessionPrincipal(value, now = Date.now()) {
+export function validateSessionPrincipal(value, now = Date.now(), adminPinLogin = false) {
   if (!value || !uuid.test(value.id) || !uuid.test(value.sessionId) ||
       !['SUPER_ADMIN', 'ADMIN', 'ATENDENTE'].includes(value.role) || !['pin', 'mfa', 'passkey'].includes(value.assurance) ||
       !Number.isSafeInteger(value.authenticatedAt) || value.authenticatedAt > now ||
       !Number.isSafeInteger(value.expiresAt) || value.expiresAt <= now || value.expiresAt <= value.authenticatedAt ||
       value.expiresAt - value.authenticatedAt > MAX_AGE_SECONDS * 1000 ||
       !Number.isSafeInteger(value.authorizationVersion) || value.authorizationVersion < 1 ||
-      (value.role !== 'ATENDENTE' && value.assurance === 'pin')) denied();
-  return Object.freeze({ id: value.id, sessionId: value.sessionId, role: value.role, assurance: value.assurance,
+      (value.role !== 'ATENDENTE' && value.assurance === 'pin' && adminPinLogin!==true)) denied();
+  return Object.freeze({ ...(adminPinLogin===true&&value.assurance==='pin'?{adminPinLogin:true}:{}),id: value.id, sessionId: value.sessionId, role: value.role, assurance: value.assurance,
     authenticatedAt: value.authenticatedAt, expiresAt: value.expiresAt, authorizationVersion: value.authorizationVersion });
 }
 export function createSessionService(settings, { client, now = () => Date.now() }) {
@@ -55,7 +55,7 @@ export function createSessionService(settings, { client, now = () => Date.now() 
   async function resolve(request) {
     checkHost(request);
     const rawToken = readSessionToken(request), tokenHash = tokens.hash(rawToken);
-    const principal = validateSessionPrincipal(await client.readSession(tokenHash), now());
+    const principal = validateSessionPrincipal(await client.readSession(tokenHash), now(), config.adminPinLogin===true);
     return { principal, rawToken, tokenHash };
   }
   async function mutation(request) {

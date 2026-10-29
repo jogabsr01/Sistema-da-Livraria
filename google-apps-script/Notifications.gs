@@ -96,7 +96,7 @@ function stockReport_(request, ss, principal, notifications) {
   var p = request.payload;
   authControlExact_(p, ['scope', 'supplier', 'format']);
   if (!['zero', 'low'].includes(p.scope) || p.supplier !== null && (typeof p.supplier !== 'string' || p.supplier.length > 160) || !['view', 'csv', 'print', 'copy'].includes(p.format)) failure_('INVALID_NOTIFICATION');
-  if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !businessAssurance_(principal) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
   function supplier(value) { catalogText_(value, 160, false); return value.normalize('NFC').replace(/\s+/g, ' ').trim(); }
   var products = catalogProducts_(ss).rows, groups = Object.create(null), count = 0, units = 0, missing = 0;
   products.forEach(function (product) {

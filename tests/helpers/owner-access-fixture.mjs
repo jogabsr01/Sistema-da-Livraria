@@ -5,10 +5,10 @@ import { properties, environment } from '../backend/fixtures.mjs';
 import { createWorkspaceClient } from '../../backend/workspace-client.mjs';
 import { createOwnerAccessHandler, loadOwnerAccessSettings, createOwnerAccessService } from '../../backend/owner-access.mjs';
 import { createSessionHandler } from '../../backend/session-handler.mjs';
-export function ownerFixture() {
-  const gas = createGasEmulator({ ...properties, IDENTITY_ACCESS_ENABLED: 'true', IDENTITY_SESSIONS_ENABLED: 'true', IDENTITY_GUARDS_ENABLED: 'true', IDENTITY_PASSKEYS_ENABLED: 'true' });
+export function ownerFixture({adminPinLogin=process.env.LIVRARIA_TEST_ADMIN_PIN_LOGIN==='1'}={}) {
+  const gas = createGasEmulator({ ...properties, ADMIN_PIN_LOGIN_ENABLED:String(adminPinLogin), IDENTITY_ACCESS_ENABLED: 'true', IDENTITY_SESSIONS_ENABLED: 'true', IDENTITY_GUARDS_ENABLED: 'true', IDENTITY_PASSKEYS_ENABLED: 'true' });
   const install = gas.call('provisionDevelopment'); gas.call('provisionDevelopmentAuthControls'); gas.call('prepareDevelopmentOwnerAccess');
-  const env = environment({ WORKSPACE_IDENTITY_ACCESS_ENABLED: 'true', WORKSPACE_IDENTITY_SESSIONS_ENABLED: 'true', WORKSPACE_IDENTITY_GUARDS_ENABLED: 'true', WORKSPACE_IDENTITY_PASSKEYS_ENABLED: 'true',
+  const env = environment({ WORKSPACE_ADMIN_PIN_LOGIN_ENABLED:String(adminPinLogin), WORKSPACE_IDENTITY_ACCESS_ENABLED: 'true', WORKSPACE_IDENTITY_SESSIONS_ENABLED: 'true', WORKSPACE_IDENTITY_GUARDS_ENABLED: 'true', WORKSPACE_IDENTITY_PASSKEYS_ENABLED: 'true',
     WORKSPACE_PIN_PEPPER: randomBytes(32).toString('hex'), WORKSPACE_SESSION_TOKEN_KEY: randomBytes(32).toString('hex'), WORKSPACE_AUTH_GUARD_KEY: randomBytes(32).toString('hex'),
     WORKSPACE_SPREADSHEET_ID: install.spreadsheetId, WORKSPACE_DRIVE_ROOT_ID: install.driveRootId });
   const settings = loadOwnerAccessSettings(env);

@@ -25,7 +25,7 @@ export function createProfileHandler(dependencies={}){return async request=>{con
  if([...url.searchParams.keys()].some(k=>op!=='photo'||k!=='v'||url.searchParams.getAll(k).length!==1)||url.searchParams.has('v')&&!/^\d{1,7}$/.test(url.searchParams.get('v')))invalid();
  const settings=(dependencies.loadSettings||loadProfileSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),sessions=createSessionService(settings,{client}),vault=createPersonalDataVault(settings);if(method==='POST')requireSameOriginMutation(request,ORIGIN);
  if(op==='bootstrap'){
-  const context=sessionTransportContext(request,settings),result=await client.profile('bootstrap',context.actor,{}),principal=validateSessionPrincipal(result?.principal);requirePermission(principal,'profile.self.read');
+  const context=sessionTransportContext(request,settings),result=await client.profile('bootstrap',context.actor,{}),principal=validateSessionPrincipal(result?.principal,Date.now(),settings.config.adminPinLogin===true);requirePermission(principal,'profile.self.read');
   const d=unpackProfile(result.profile,vault,principal.id);if(d.role!==principal.role)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
   return json({data:{id:d.id,role:d.role,owner:d.owner,name:d.record.name,email:d.email,phone:d.record.phone,cpfMasked:d.cpfMasked,lastAccess:d.lastAccess,revision:d.revision,photoUrl:d.hasPhoto?'/api/v1/profile/photo?v='+d.revision:'',recoveryEnabled:settings.recoveryEnabled===true,emailChangeEnabled:settings.emailChangeEnabled===true,schedulesEnabled:settings.schedulesEnabled===true,user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken:context.csrfToken},requestId});
  }

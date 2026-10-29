@@ -115,3 +115,11 @@ body.app-shell {
   body.app-shell { background: white; }
   .app-shell .filters, .app-shell .book, .app-shell .panel { box-shadow: none; }
 }
+
+/* Original church identity, recovered unchanged from the prototype. */
+.app-shell .church-brand,.app-shell .home-brand{display:inline-flex;align-items:center;max-width:100%;text-decoration:none}
+.app-shell .church-brand-logo{display:block;width:196px;height:auto;max-width:100%;object-fit:contain;flex:none}
+.page-access .church-brand{margin-bottom:18px}
+.entry-failure{padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--paper);margin:18px 0}
+.entry-failure h2{font-size:1.35rem}.entry-failure details{margin:18px 0}.entry-failure> a{display:inline-block;margin-top:12px}
+@media(max-width:600px){.app-shell .church-brand-logo{width:156px}.page-access .church-brand-logo{width:196px}}

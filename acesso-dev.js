@@ -8,22 +8,22 @@
   const verificationView=new URLSearchParams(location.search).get('verificar')==='1',forceAuthentication=new URLSearchParams(location.search).get('confirmar')==='1';
   const identifierStorage='livraria.access.identifier.v1';
   function rememberIdentifier(){try{const value=(lastIdentifier||$('login-email').value).trim();if(!$('remember-identifier').checked){localStorage.removeItem(identifierStorage);return;}if(value&&!identifierError(value))localStorage.setItem(identifierStorage,JSON.stringify({value,expires:Date.now()+2592000000}));}catch{}}
-  function enterApp(){rememberIdentifier();if(!verificationView)location.replace('/home-dev.html');}
+  function enterApp(){rememberIdentifier();$('enter-app').href='/home-dev.html?entrada=confirmada';if(!verificationView)location.replace('/home-dev.html?entrada=confirmada');}
   try{const saved=JSON.parse(localStorage.getItem(identifierStorage)||'null');if(saved&&typeof saved.value==='string'&&saved.value.length<=254&&Number.isFinite(saved.expires)&&saved.expires>Date.now()&&!identifierError(saved.value))$('login-email').value=saved.value;else localStorage.removeItem(identifierStorage);}catch{}
   $('remember-identifier').addEventListener('change',()=>{if(!$('remember-identifier').checked)try{localStorage.removeItem(identifierStorage);}catch{}});
   let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
-  const diagnosticCodes = new Set(['WORKSPACE_BUSY','ACCESS_CONTINUATION_EXPIRED','HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
+  const diagnosticCodes = new Set(['ACCESS_SESSION_COOKIE_MISSING','WORKSPACE_BUSY','ACCESS_CONTINUATION_EXPIRED','HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
     if (!node || location.hostname !== DEV) return;
     node.textContent = 'Referência para suporte: ' + accessPhase + ' / ' + (diagnosticCodes.has(error?.code) ? error.code : 'ACCESS_PAGE_UNAVAILABLE');
     const info = error.transport;
-    if (info && ['state','start','recover','login','device-login','biometric','continue-login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
+    if (info && ['state','start','recover','login','device-login','cookie','biometric','continue-login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
     node.hidden = false;
     $('support-details').hidden = false;
   }
   function unavailable(code) { const error = new Error('ACCESS_FAILED'); error.code = code; return error; }
-  let csrfToken = '', busy = false, pendingResponse = null, pendingReceipt = null, pendingDeviceCommand = null, pendingLogin = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
+  let csrfToken = '', busy = false, pendingResponse = null, pendingReceipt = null, pendingDeviceCommand = null, pendingConfirmation = null, pendingLogin = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
   const panels = ['initial', 'email-form', 'pin-form', 'passkey', 'retry', 'complete'];
   function feedbackIn(id) {
     const target = $(id), feedback = $('access-feedback');
@@ -43,8 +43,8 @@
     $('restart').hidden = !panel || ['initial', 'complete'].includes(panel);
   }
   const busyCodes=new Set(['WORKSPACE_BUSY']);
-  const uncertainCodes = new Set(['WORKSPACE_BUSY','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
-  function describe(error) { if(busyCodes.has(error.code))return pendingDeviceCommand||pendingReceipt?'O serviço está ocupado. Sua confirmação pelo aparelho foi preservada nesta aba. Clique em “Tentar concluir entrada” para continuar.':'O serviço está ocupado. Aguarde alguns instantes e tente entrar novamente.'; const common = globalThis.LivrariaMessages?.describe(error); if (common && !uncertainCodes.has(error.code)) return common;
+  const uncertainCodes = new Set(['ACCESS_SESSION_COOKIE_MISSING','WORKSPACE_BUSY','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
+  function describe(error) { if(error.code==='ACCESS_SESSION_COOKIE_MISSING')return 'A confirmação foi aceita, mas sua sessão não ficou salva no navegador. Clique em “Tentar concluir entrada” para conferir novamente.'; if(busyCodes.has(error.code))return pendingDeviceCommand||pendingReceipt?'O serviço está ocupado. Sua confirmação pelo aparelho foi preservada nesta aba. Clique em “Tentar concluir entrada” para continuar.':'O serviço está ocupado. Aguarde alguns instantes e tente entrar novamente.'; const common = globalThis.LivrariaMessages?.describe(error); if (common && !uncertainCodes.has(error.code)) return common;
     const code = error.code || '';
     if (uncertainCodes.has(code) && ['state','session'].includes(error.transport?.operation)) return 'Não conseguimos carregar seu acesso agora. Aguarde alguns instantes e clique em “Tentar carregar novamente”. Se continuar, peça ajuda à administração.';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
@@ -123,9 +123,9 @@
     }
   }
   async function api(operation, body, canRenew = true, openLogin = false, busyAttempt = 0) {
-    if(busy)$('access-progress').querySelector('span:last-child').textContent=({'state':'Preparando acesso…','device-login':'Entrando na livraria…','complete':'Finalizando sua entrada…','login':'Conferindo acesso…','continue-login':'Preparando confirmação…','options':'Preparando confirmação…'})[operation]||'Aguarde…';
+    if(busy)$('access-progress').querySelector('span:last-child').textContent=({'state':'Preparando acesso…','device-login':'Entrando na livraria…','complete':'Finalizando sua entrada…','cookie':'Conferindo sua sessão…','login':'Conferindo acesso…','continue-login':'Preparando confirmação…','options':'Preparando confirmação…'})[operation]||'Aguarde…';
     const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-      headers: body === undefined ? (openLogin?{'x-access-view':'login'}:{}) : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(['complete','login'].includes(operation)?{'x-access-completion-version':'3'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      headers: body === undefined ? (openLogin?{'x-access-view':'login'}:{}) : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(['complete','login'].includes(operation)?{'x-access-completion-version':'3'}:{}),...(['complete','continue-login'].includes(operation)?{'x-access-cookie-mode':'separate'}:{}),...(operation==='login'&&forceAuthentication?{'x-access-step-up':'passkey'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (!response.ok) {
       // A signed WORKSPACE_BUSY is returned only before acquiring ScriptLock;
       // that command did not execute. Retry once, never replay ambiguous failures.
@@ -228,12 +228,26 @@
     if ([401,403].includes(response.status)) return false;
     if (!response.ok) throw failure('UPSTREAM_UNAVAILABLE');
     const data = result?.data;
-    if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || data.user.assurance !== 'passkey' || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
+    if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || !['pin','mfa','passkey'].includes(data.user.assurance) || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (!shouldApply()) return false;
     show('COMPLETE'); message('Acesso verificado com sucesso.', 'success');
     $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role);enterApp(); return true;
   }
+  async function confirmEntry(result){
+    if(result.cookieConfirmationRequired){
+      try{const checked=await api('cookie',{});if(checked.stage!=='COOKIE_CONFIRMED')throw unavailable('ACCESS_RESPONSE_INVALID');}
+      catch(error){
+        if(error.code==='ACCESS_CONTEXT_EXPIRED'&&await current()){pendingConfirmation=null;return;}
+        if(error.code==='ACCESS_SESSION_COOKIE_MISSING')pendingConfirmation=null;
+        throw error;
+      }
+    }
+    if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||!['pin','mfa','passkey'].includes(result.user.assurance)||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
+    pendingConfirmation=null;show('COMPLETE');message('Acesso verificado com sucesso.','success');
+    $('identity-result').textContent='Sua conta está pronta para uso.';$('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(result.user.role);enterApp();
+  }
   async function finish() {
+    if(pendingConfirmation){await confirmEntry(pendingConfirmation);return;}
     if(pendingDeviceCommand){
       let prepared;try{prepared=await api('device-login',pendingDeviceCommand);}
       catch(error){if(!busyCodes.has(error.code))pendingDeviceCommand=null;throw error;}
@@ -242,6 +256,7 @@
     }
     if(pendingLogin){
       const result=await api('continue-login',{receipt:pendingLogin});pendingLogin=null;
+      if(result.stage==='COMPLETE'){pendingResponse=null;pendingReceipt=null;clearSecrets();pendingConfirmation=result;await confirmEntry(result);return;}
       if(result.stage!=='PASSKEY')throw unavailable('ACCESS_RESPONSE_INVALID');
       show('PASSKEY');if(result.options)applyDeviceOptions(result);message('Use a biometria do aparelho cadastrado para entrar.');return;
     }
@@ -253,12 +268,8 @@
     }
     if(result.stage!=='COMPLETE')throw unavailable('ACCESS_RESPONSE_INVALID');
     pendingResponse=null;pendingReceipt=null;clearSecrets();
-    if(typeof result.sessionCsrfToken==='string'){
-      if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||result.user.assurance!=='passkey'||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
-      show('COMPLETE');message('Acesso verificado com sucesso.','success');
-      $('identity-result').textContent='Sua conta está pronta para uso.';$('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(result.user.role);
-    }else {if(!await current())throw new Error('SESSION_NOT_CONFIRMED');return;}
-    enterApp();
+    if(typeof result.sessionCsrfToken==='string'){pendingConfirmation=result;await confirmEntry(result);}
+    else {if(!await current())throw new Error('SESSION_NOT_CONFIRMED');}
   }
   $('check-step').addEventListener('click', () => run(async () => {
     const state = await api('state');
@@ -352,7 +363,7 @@
     show('COMMITTING'); accessPhase = 'COMPLETE'; await finish();
   }));
   $('retry-button').addEventListener('click',()=>run(async()=>{
-    if(pendingDeviceCommand||pendingLogin||pendingReceipt){await finish();return;}
+    if(pendingConfirmation||pendingDeviceCommand||pendingLogin||pendingReceipt){await finish();return;}
     const state=await api('state');
     if(state.stage==='PASSKEY'){
       pendingResponse=null;show('PASSKEY');message('A confirmação não foi salva. Confirme novamente pelo aparelho para entrar.');return;
@@ -360,10 +371,10 @@
     if(['COMMITTING','COMPLETE'].includes(state.stage)){await finish();return;}
     pendingResponse=null;show(state.stage);message('Continue pela etapa indicada abaixo.');
   }));
-  $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('Escolha como deseja entrar.');}));
-  function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingLogin=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
+  $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('Escolha como deseja entrar.');}));
+  function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
   window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-pin')run(async()=>{if(!await current()){await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');}});});
-  window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingLogin=null;});
+  window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;});
   window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
   run(async () => {

@@ -2,6 +2,15 @@
 (() => {
   const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
   const $=id=>document.getElementById(id);
+  const recentEntry=new URLSearchParams(location.search).get('entrada')==='confirmada';
+  let entryDiagnostic=null;
+  function failedEntry(http,code,elapsedMs){
+    $('welcome').hidden=true;$('sign-in').hidden=true;$('entry-failure').hidden=false;$('retry').hidden=false;$('retry').textContent='Conferir sessão';
+    $('status').textContent='Sua entrada ainda não pôde ser confirmada.';
+    entryDiagnostic={version:1,environment:'dev',page:'home',at:new Date().toISOString(),http,code,elapsedMs};
+    $('entry-diagnostic').textContent='Sessão / '+code+' / HTTP: '+http+' / espera: '+(elapsedMs/1000).toFixed(1)+'s';
+  }
+  $('download-entry-diagnostic').addEventListener('click',()=>{if(!entryDiagnostic)return;const url=URL.createObjectURL(new Blob([JSON.stringify(entryDiagnostic,null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='livraria-diagnostico-home.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
   let memberAssetsLoaded=false;
   function memberAssets(){
     if(memberAssetsLoaded)return;memberAssetsLoaded=true;
@@ -54,20 +63,22 @@
     }
   });
   async function load(){
-    if(checking)return;checking=true;authenticated=false;$('home').hidden=true;$('welcome').hidden=false;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
+    if(checking)return;const started=performance.now();let http=0;checking=true;authenticated=false;$('entry-failure').hidden=true;$('sign-in').hidden=recentEntry;$('retry').textContent='Tentar novamente';$('home').hidden=true;$('welcome').hidden=false;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
     document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=true);
     if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço DEV da livraria para continuar.';checking=false;return;}
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
     try{
       $('status').textContent='Conferindo seu acesso…';
       const response=await fetch('/api/v1/session',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
-      if(response.status===401||response.status===403){$('status').textContent='Entre na sua conta para abrir a livraria.';$('sign-in').hidden=false;return;}
+      http=response.status;
+      if((response.headers.get('content-type')||'').includes('text/html')){failedEntry(http,'SESSION_RESPONSE_HTML',Math.round(performance.now()-started));return;}
+      if(response.status===401||response.status===403){if(recentEntry){let code='SESSION_REJECTED';try{const failure=await response.json();if(['UNAUTHENTICATED','WORKSPACE_UNAUTHENTICATED','FORBIDDEN','WORKSPACE_FORBIDDEN','REAUTHENTICATION_REQUIRED'].includes(failure?.error?.code))code=failure.error.code;}catch{}failedEntry(http,code,Math.round(performance.now()-started));return;}$('status').textContent='Entre na sua conta para abrir a livraria.';$('sign-in').hidden=false;return;}
       if(!response.ok)throw Error('UNAVAILABLE');
       const {data}=await response.json();
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role))throw Error('INVALID_SESSION');
       authenticated=true;document.body.dataset.sessionRole=data.user.role;$('welcome').hidden=true;$('member-intro').hidden=false;$('account-navigation').hidden=false;document.body.classList.add('is-member');$('home').hidden=false;$('status').textContent='O que você quer fazer agora?';memberAssets();
       document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role));
-    }catch{$('status').textContent='Não foi possível conferir seu acesso. Tente novamente.';$('retry').hidden=false;}
+    }catch{if(recentEntry)failedEntry(http,'SESSION_UNAVAILABLE',Math.round(performance.now()-started));else{$('status').textContent='Não foi possível conferir seu acesso. Tente novamente.';$('retry').hidden=false;}}
     finally{clearTimeout(timer);checking=false;}
   }
   $('retry').addEventListener('click',load);

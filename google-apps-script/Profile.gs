@@ -45,7 +45,7 @@ function profileOperation_(request,c){
   return request.action==='profile.bootstrap'?{principal:principal,profile:data}:data;
  }
  if(request.action==='profile.photo'){authControlExact_(p,[]);if(!user.Foto_Perfil_Drive_ID)profileFail_('PROFILE_NOT_FOUND');var photo=profilePhotoFile_(c,user.Foto_Perfil_Drive_ID,user.ID_Usuario,null,false);return {bytes:photo.bytes,sha256:photo.sha256};}
- if(request.action!=='profile.save')failure_('FORBIDDEN');if(!['passkey','mfa'].includes(principal.assurance)||Date.now()-principal.authenticatedAt>300000)failure_('FORBIDDEN');
+ if(request.action!=='profile.save')failure_('FORBIDDEN');if(!businessAssurance_(principal)||Date.now()-principal.authenticatedAt>300000)failure_('FORBIDDEN');
  var hasPhoto=Object.prototype.hasOwnProperty.call(p,'photo'),hasCpf=Object.prototype.hasOwnProperty.call(p,'ownerCpfIndex');authControlExact_(p,['commandId','expectedRevision','contact','fingerprint'].concat(hasPhoto?['photo']:[]).concat(hasCpf?['ownerCpfIndex','ownerEmailIndex']:[]));
  if(hasCpf){if(!owner)failure_('FORBIDDEN');if(!accessHash_(p.ownerCpfIndex)||!accessHash_(p.ownerEmailIndex))profileFail_();if(user.CPF_Indice&&user.CPF_Indice!==p.ownerCpfIndex)profileFail_('PROFILE_CPF_LOCKED');if(found.table.rows.some(function(r){return r.ID_Usuario!==user.ID_Usuario&&(r.CPF_Indice===p.ownerCpfIndex||r.Email_Indice===p.ownerEmailIndex);}))profileFail_('PROFILE_CPF_DUPLICATE');}
  if(!identityUuid_(p.commandId)||!Number.isSafeInteger(p.expectedRevision)||p.expectedRevision<0||p.expectedRevision>1000000||!staffSealed_(p.contact)||!accessHash_(p.fingerprint))profileFail_();

@@ -9,6 +9,13 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
   if (stat?.isSymbolicLink()) throw new Error('dist must not be a symlink');
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination);
+  for(const folder of ['public','public/brand']){const info=await lstat(resolve(root,folder));if(!info.isDirectory()||info.isSymbolicLink())throw Error('Invalid brand directory');}
+  const churchLogo=resolve(root,'public/brand/ipb-jardim-bonfiglioli.png'),logoStat=await lstat(churchLogo);
+  if(!logoStat.isFile()||logoStat.isSymbolicLink())throw Error('Invalid church logo');
+  const logoBytes=await readFile(churchLogo);
+  if(createHash('sha256').update(logoBytes).digest('hex')!=='5b1e9aa6d4efbd19a3ae7324146ec835a8e1899eff73d93af99c001f7165a091')throw Error('Changed original church identity');
+  await mkdir(resolve(destination,'brand'));
+  await copyFile(churchLogo,resolve(destination,'brand/ipb-jardim-bonfiglioli.png'));
   const manifestPath = resolve(root,'data/editorial-covers.json');
   const manifestStat = await lstat(manifestPath).catch(error => {if(error.code !== 'ENOENT')throw error;});
   if(manifestStat){

@@ -93,6 +93,8 @@ class OwnerAccess(unittest.TestCase):
             if result['cookies']:
                 result['headers']['set-cookie'] = '\n'.join(result['cookies'])
             route.fulfill(status=result['status'], headers=result['headers'], body=result['body']); return
+        if path=='/brand/ipb-jardim-bonfiglioli.png':
+            route.fulfill(status=200,content_type='image/png',body=(ROOT/'dist/brand/ipb-jardim-bonfiglioli.png').read_bytes());return
         files = {'/app-theme.css': 'text/css', '/acesso-dev.html': 'text/html', '/acesso-dev.js': 'application/javascript', '/acesso-dev.css': 'text/css'}
         if path in files:
             headers = {}
@@ -147,12 +149,12 @@ class OwnerAccess(unittest.TestCase):
         self.activate()
         expect(self.page.locator('#logout-button')).to_have_count(0)
         entry = self.page.get_by_role('link', name='Entrar no app Livraria')
-        expect(entry).to_have_attribute('href', '/home-dev.html')
+        expect(entry).to_have_attribute('href', '/home-dev.html?entrada=confirmada')
         entry.focus(); self.assertEqual(self.page.evaluate('document.activeElement.id'), 'enter-app')
         self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
         self.page.screenshot(path=str(ARTIFACTS / 'entrada-app-mobile.png'), full_page=True)
-        self.page.route(ORIGIN + '/home-dev.html', lambda route: route.fulfill(status=200, content_type='text/html', body='<h1>Catálogo da livraria</h1>'))
-        entry.press('Enter'); expect(self.page).to_have_url(ORIGIN + '/home-dev.html')
+        self.page.route(ORIGIN + '/home-dev.html?entrada=confirmada', lambda route: route.fulfill(status=200, content_type='text/html', body='<h1>Catálogo da livraria</h1>'))
+        entry.press('Enter'); expect(self.page).to_have_url(ORIGIN + '/home-dev.html?entrada=confirmada')
         self.assertEqual(self.step_posts.get('logout', 0), 0)
         self.assertEqual(self.local('/test/state')['activeSessions'], 1)
         self.assertEqual(self.errors, [])

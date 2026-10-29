@@ -8,6 +8,7 @@ import {build} from '../../scripts/build-public.mjs';
 const manifest=JSON.parse(await readFile(new URL('../../data/editorial-covers.json',import.meta.url),'utf8'));
 async function fixture(t){
  const root=await mkdtemp(join(tmpdir(),'editorial-build-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'public/brand'),{recursive:true});await writeFile(join(root,'public/brand/ipb-jardim-bonfiglioli.png'),await readFile(new URL('../../public/brand/ipb-jardim-bonfiglioli.png',import.meta.url)));
  await mkdir(join(root,'data'));await mkdir(join(root,'public/covers'),{recursive:true});await writeFile(join(root,'index.html'),'<html>test public output</html>');
  const refs=structuredClone(manifest);await writeFile(join(root,'data/editorial-covers.json'),JSON.stringify(refs));
  for(const ref of refs)await writeFile(join(root,'public',ref.path),await readFile(new URL('../../public'+ref.path,import.meta.url)));
@@ -16,7 +17,7 @@ async function fixture(t){
 test('build publishes the verified raster bytes and minimal reference map without source/config files',async t=>{
  const {root,refs}=await fixture(t);await writeFile(join(root,'public','DO_NOT_PUBLISH.env'),'PRIVATE_TEST_ONLY');await build(root);
  for(const ref of refs){const bytes=await readFile(join(root,'dist',ref.path));assert.equal(createHash('sha256').update(bytes).digest('hex'),ref.sha256);assert.equal(bytes.readUInt32BE(16),660);assert.equal(bytes.readUInt32BE(20),1008);}
- assert.deepEqual((await readdir(join(root,'dist'))).sort(),['cover-references.js','covers','index.html']);const script=await readFile(join(root,'dist/cover-references.js'),'utf8');assert.ok(script.includes(refs[0].referenceUrl));assert.ok(!script.includes('PRIVATE_TEST_ONLY'));
+ assert.deepEqual((await readdir(join(root,'dist'))).sort(),['brand','cover-references.js','covers','index.html']);const script=await readFile(join(root,'dist/cover-references.js'),'utf8');assert.ok(script.includes(refs[0].referenceUrl));assert.ok(!script.includes('PRIVATE_TEST_ONLY'));
 });
 test('corrupt, replaced or mismatched raster bytes fail the build instead of publishing an unverified cover',async t=>{
  for(const change of ['bytes','dimensions','hash']){

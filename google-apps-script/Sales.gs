@@ -47,7 +47,7 @@ function checkoutOperation_(request, c) {
   if (c.environment !== 'dev' || !request.actor || !same_(Object.keys(request.actor), ['sessionTokenHash']) || !accessHash_(request.actor.sessionTokenHash)) failure_('UNAUTHENTICATED');
   // Authorize again under the same ScriptLock as the stock decision.
   var principal = identitySessionOperation_({ action: 'identity.session.read', payload: { tokenHash: request.actor.sessionTokenHash } }, c);
-  if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(principal.role) || principal.role !== 'ATENDENTE' && !['mfa', 'passkey'].includes(principal.assurance)) failure_('FORBIDDEN');
+  if (!['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(principal.role) || principal.role !== 'ATENDENTE' && !businessAssurance_(principal)) failure_('FORBIDDEN');
   var command = checkoutCommand_(request.payload), hash = digest_(JSON.stringify(command));
   recoverCatalog_(c);
   var ss = storage_(c, false).spreadsheet;

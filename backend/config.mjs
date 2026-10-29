@@ -30,7 +30,10 @@ export function loadConfig(env = process.env, built = env === process.env ? depl
   if (deployment.protocol !== 'https:' || deployment.hostname !== expectedHost || deployment.port || deployment.username || deployment.password || deployment.pathname !== '/' || deployment.search || deployment.hash) invalid();
   if (script.protocol !== 'https:' || script.hostname !== 'script.google.com' || script.port || script.username || script.password || script.search || script.hash || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(script.pathname)) invalid();
   if (!UUID.test(env.WORKSPACE_INSTALLATION_ID || '') || !RESOURCE.test(env.WORKSPACE_SPREADSHEET_ID || '') || !RESOURCE.test(env.WORKSPACE_DRIVE_ROOT_ID || '') || !/^[a-f0-9]{64}$/i.test(env.WORKSPACE_HMAC_SECRET || '')) invalid();
-  return Object.freeze({ environment, installationId: env.WORKSPACE_INSTALLATION_ID,
+  const pinPolicy=env.WORKSPACE_ADMIN_PIN_LOGIN_ENABLED;
+  if(pinPolicy!==undefined&&!['true','false'].includes(pinPolicy))invalid();
+  const adminPinLogin=environment==='dev'&&pinPolicy!=='false';
+  return Object.freeze({ environment, adminPinLogin, installationId: env.WORKSPACE_INSTALLATION_ID,
     scriptUrl: script.href, spreadsheetId: env.WORKSPACE_SPREADSHEET_ID,
     driveRootId: env.WORKSPACE_DRIVE_ROOT_ID, secret: env.WORKSPACE_HMAC_SECRET });
 }
