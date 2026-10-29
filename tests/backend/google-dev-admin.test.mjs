@@ -17,6 +17,7 @@ function fixture() {
     const path=new URL(url).pathname,method=options.method||'GET';
     calls.push({url,path,method,body:options.body,redirect:options.redirect});
     if(state.fault)await state.fault({path,method,options,state});
+    if(path==='/v1/processes:listScriptProcesses'&&state.processHttpStatus)return {ok:false,status:state.processHttpStatus,text:async()=>'private-provider-marker'};
     let value;
     if(path==='/token')value={access_token:'access-marker-123456789'};
     else if(path==='/v2/entries:list')value=state.logs;
@@ -168,4 +169,8 @@ test('process history fails independently and malformed diagnostic values cannot
  const f=fixture();f.state.fault=({path})=>{if(path==='/v1/processes:listScriptProcesses')throw Error('secret-marker');};const r=await f.inspect();assert.equal(r.processHistory,'UNAVAILABLE');assert.equal(r.logging,'NO_METRICS_IN_LAST_HOUR');assert.ok(!JSON.stringify(r).includes('secret-marker'));
  assert.deepEqual(safeProcesses([{startTime:'secret-marker',processStatus:'FAILED',duration:'1s'}]),[]);assert.deepEqual(safeProcesses([{startTime:'2026-10-29T12:30:00Z',processStatus:'secret-marker',duration:'1s'}]),[]);assert.deepEqual(safeFailures([{timestamp:'secret-marker',severity:'ERROR',textPayload:'TypeError'}]),[]);
  const metric={metric:'rpc.duration',lockMs:0,bindingsMs:1,schemaMs:2,workMs:3,totalMs:6};assert.equal(safeTimings([{timestamp:'2026-10-29T12:30:00.123456789Z',jsonPayload:metric}])[0].timestamp,'2026-10-29T12:30:00.123Z');assert.equal(Object.hasOwn(safeTimings([{timestamp:'secret-marker',jsonPayload:metric}])[0],'timestamp'),false);
+});
+
+test('process API denial records only its numeric status, never the provider response body',async()=>{
+ const f=fixture();f.state.processHttpStatus=403;const r=await f.inspect();assert.equal(r.processHistory,'UNAVAILABLE');assert.equal(r.processHistoryHttpStatus,403);assert.ok(!JSON.stringify(r).includes('private-provider-marker'));
 });

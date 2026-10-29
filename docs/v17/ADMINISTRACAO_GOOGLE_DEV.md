@@ -60,3 +60,5 @@ A resposta de erro de START/LOGIN/RECOVER agora pode entregar o novo cookie pré
 
 
 A inspeção também permite correlacionar horários UTC dos registros de duração, categorias fechadas de falhas e as últimas 50 execuções da API Apps Script (horário, duração, status, tipo e função de uma lista fixa). Campos de identidade, IDs de processo e mensagens brutas de exceção são descartados. Cada fonte informa indisponibilidade separadamente; uma execução marcada COMPLETED não comprova sucesso do fluxo, pois o doPost pode devolver erro assinado. A inspeção não executa funções nem altera recursos Google.
+
+A telemetria de cada RPC agora diferencia BINDING, SCHEMA, NONCE e DISPATCH, registra OK/ERROR e uma classe fechada de falha. Códigos internos conhecidos e número de linha validado ajudam a localizar a instrução, sem registrar texto da exceção, argumentos, credenciais ou identidade. A execução mantém os mesmos erros e o mesmo comportamento; o registro não recupera detalhes de falhas anteriores à publicação.

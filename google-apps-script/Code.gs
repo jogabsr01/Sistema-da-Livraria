@@ -236,18 +236,38 @@ function registerNonce_(request, spreadsheet) {
   sheet.appendRow([hash, new Date(now).toISOString(), new Date(now + 300000).toISOString(), request.requestId]);
   SpreadsheetApp.flush();
 }
+// Closed diagnostics only: never log exception messages, payloads or identities.
+function rpcFault_(error) {
+  var message=error&&typeof error.message==='string'?error.message.slice(0,10000):'';
+  var name=error&&typeof error.name==='string'?error.name:'';
+  var category=name==='ReferenceError'?'SCRIPT_REFERENCE':name==='TypeError'?'SCRIPT_TYPE':
+    /quota|too many times|rate.limit|RESOURCE_EXHAUSTED/i.test(message)?'GOOGLE_QUOTA':
+    /permission|PERMISSION_DENIED|not have permission/i.test(message)?'GOOGLE_PERMISSION':
+    /maximum execution|timed out|timeout/i.test(message)?'GOOGLE_TIMEOUT':
+    /service.*unavailable|internal error|try again later/i.test(message)?'GOOGLE_SERVICE':'UNKNOWN';
+  var known=['REPLAY','SERVICE_CAPACITY','MAINTENANCE_ACTIVE','SCHEMA_REQUIRED','SCHEMA_CONFLICT','BINDING_MISMATCH','FORBIDDEN','UNAUTHENTICATED','IDENTITY_UNAVAILABLE','ACCESS_REJECTED','PASSKEY_REJECTED','SECURITY_AUDIT_UNAVAILABLE'];
+  var result={faultClass:known.includes(message)?'APP_REJECTED':category};
+  if(known.includes(message))result.faultCode=message;
+  var stack=error&&typeof error.stack==='string'?error.stack.slice(0,10000):'';
+  var line=stack.match(/\((?:[^()\n]*\/)?(?:Code|Codigo|Código)(?:\.gs)?:([1-9]\d{0,5})(?::\d+)?\)/);
+  if(line&&Number(line[1])<=100000)result.faultLine=Number(line[1]);
+  return result;
+}
 function processRequest_(request, c) {
   var started=Date.now();
   return withLock_(function () {
-    var acquired=Date.now(),bound=acquired,validated=acquired;
+    var acquired=Date.now(),bound=acquired,validated=acquired,phase='BINDING',fault=null;
     var previousScope = RPC_STORAGE_SCOPE_;
     RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, batchReads:0 };
     try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
     var ss;
     try { ss=storage_(c, false).spreadsheet; } finally { bound=Date.now();validated=bound; }
+    phase='SCHEMA';
     try { assertSchema_(ss); } finally { validated=Date.now(); }
+    phase='NONCE';
     registerNonce_(request, ss);
+    phase='DISPATCH';
     // Service readiness is not a user login: no roles, PII or table names.
     // Full installation bindings, schema, signature and durable nonce still apply.
     if (request.action === 'system.ping' && c.environment === 'dev') {
@@ -327,11 +347,14 @@ function processRequest_(request, c) {
     if (actor.id !== principal.id || actor.role !== principal.role || actor.assurance !== principal.assurance || actor.authenticatedAt !== principal.authenticatedAt ||
         !['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !['mfa', 'passkey'].includes(principal.assurance) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
     return { schemaVersion: LIVRARIA_SCHEMA.version, tables: LIVRARIA_SCHEMA.tables.map(function (t) { return t.name; }) };
+    } catch(error) {
+      try { fault=rpcFault_(error); } catch (_) { fault={faultClass:'UNKNOWN'}; }
+      throw error;
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
       var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.options':'OPTIONS','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
       var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
-      try { console.info(JSON.stringify({metric:'rpc.duration',operation:operation,schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started})); }
+      try { console.info(JSON.stringify(Object.assign({metric:'rpc.duration',operation:operation,phase:phase,outcome:fault?'ERROR':'OK',schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started},fault||{}))); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }
     }
   }, 5000);
