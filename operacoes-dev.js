@@ -65,7 +65,7 @@
   async function session() {
     const data=await api('/api/v1/session');
     if(userId&&data.user.id!==userId){accessValid=false;invalidate();throw Object.assign(Error('ACCOUNT_CHANGED'),{status:401});}
-    userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);accessValid=true;
+    userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);accessValid=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
     $('scope').textContent=admin?'Todas as vendas da livraria. Operações administrativas exigem acesso confirmado há menos de cinco minutos.':'Somente as vendas realizadas pela sua conta.';
     $('access-help').hidden=true;
   }

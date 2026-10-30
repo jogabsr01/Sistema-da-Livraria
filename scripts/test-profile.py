@@ -45,6 +45,31 @@ class Profile(qa.Catalog):
         expect(self.page.locator('.account-menu summary')).to_have_attribute('aria-label','Abrir menu de Conta proprietária')
         self.assertEqual(len(calls),2,'opening the menu performs one authorized profile request')
 
+    def test_profile_bootstrap_is_the_only_opening_auth_read_and_menu_keeps_admin_actions(self):
+        self.activate();self.local('/test/enable-profile',{});calls=[]
+        self.page.on('request',lambda req:calls.append(urlsplit(req.url).path))
+        self.page.goto(qa.ORIGIN+'/meu-perfil-dev.html');expect(self.page.locator('#profile')).to_be_visible()
+        self.assertEqual(calls.count('/api/v1/profile/bootstrap'),1);self.assertEqual(calls.count('/api/v1/session'),0)
+        self.page.locator('.account-menu summary').click()
+        for name in ['Meu perfil','Gerenciar equipe','Relatórios']:expect(self.page.locator('.account-menu').get_by_role('link',name=name,exact=True)).to_be_visible()
+        self.page.get_by_text('Catálogo',exact=True).click();expect(self.page.get_by_role('link',name='Adicionar novo produto',exact=True)).to_be_visible()
+        self.page.keyboard.press('Escape');self.page.get_by_text('Rotina',exact=True).click();expect(self.page.get_by_role('link',name='Histórico e operações',exact=True)).to_be_visible()
+        self.assertEqual(self.errors,[])
+
+    def test_profile_disabled_does_not_remove_administrative_account_menu(self):
+        self.activate();self.page.goto(qa.ORIGIN+'/meu-perfil-dev.html');expect(self.page.locator('#status')).to_contain_text('ainda não está disponível')
+        expect(self.page.locator('.account-menu summary')).to_be_visible();self.page.locator('.account-menu summary').click()
+        expect(self.page.locator('.account-menu').get_by_role('link',name='Gerenciar equipe',exact=True)).to_be_visible()
+        expect(self.page.locator('.account-menu').get_by_role('link',name='Relatórios',exact=True)).to_be_visible()
+        expect(self.page.locator('#profile')).to_be_hidden();self.assertEqual(self.errors,[])
+
+    def test_profile_mobile_grouped_menus_stay_inside_screen(self):
+        self.profile();self.page.set_viewport_size({'width':320,'height':480})
+        for label in ['Catálogo','Rotina']:
+            self.page.get_by_text(label,exact=True).click();group=self.page.locator('header .module-menu[open] .account-options');expect(group).to_be_visible();box=group.bounding_box();self.assertGreaterEqual(box['x'],0);self.assertLessEqual(box['x']+box['width'],320);self.assertLessEqual(box['y']+box['height'],480);self.page.keyboard.press('Escape')
+        self.page.locator('.account-menu summary').click();expect(self.page.locator('.account-menu .account-options')).to_be_visible();box=self.page.locator('.account-menu .account-options').bounding_box();self.assertGreaterEqual(box['x'],0);self.assertLessEqual(box['x']+box['width'],320);self.assertLessEqual(box['y']+box['height'],480)
+        target=qa.ROOT/'work/qa-module-menus';target.mkdir(exist_ok=True);self.page.screenshot(path=str(target/'perfil-menu-mobile.png'),full_page=True);self.assertEqual(self.errors,[])
+
     def test_profile_master_cpf_error_stays_in_form_and_success_links_once_with_masked_display(self):
         self.profile()
         self.page.locator('#owner-cpf-input').fill('123')

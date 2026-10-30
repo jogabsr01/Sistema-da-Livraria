@@ -2,7 +2,7 @@
   if (location.origin !== 'https://dev--merry-chimera-49a1f3.netlify.app') return;
   let busy = false, again = false;
   async function refresh() {
-    if (document.hidden) return; if (busy) { again = true; return; } busy = true;
+    if (document.hidden || navigator.onLine===false || !['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(document.body.dataset.sessionRole) || ![...document.querySelectorAll('[data-notification-count]')].some(el=>!el.closest('details:not([open])')&&el.getClientRects().length)) return; if (busy) { again = true; return; } busy = true;
     try {
       const response = await fetch('/api/v1/notifications/summary',{credentials:'same-origin',cache:'no-store'});
       if (!response.ok) { document.querySelectorAll('[data-notification-count]').forEach(el => el.textContent=''); return; } const { data } = await response.json();

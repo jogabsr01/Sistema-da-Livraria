@@ -28,6 +28,11 @@ class Home(qa.Checkout):
         self.page.set_viewport_size({'width':360,'height':640})
         self.page.screenshot(path=str(ROOT/'work/qa-home/home-mobile.png'),full_page=True)
         self.assertEqual(self.errors,[])
+    def test_home_collapsed_notification_counter_does_not_compete_with_entry(self):
+        calls=[];self.page.on('request',lambda request:calls.append(urlsplit(request.url).path))
+        self.home();self.page.wait_for_timeout(100)
+        self.assertNotIn('/api/v1/notifications/summary',calls)
+
     def test_home_name_search_routes_purchase_and_catalog_without_creating_sale(self):
         self.home();self.page.locator('#new-purchase').click();expect(self.page.locator('#lookup-title')).to_have_text('Nova compra')
         self.page.locator('#search-name').click();expect(self.page.locator('#book-query')).to_be_focused();self.page.locator('#book-query').fill('Livro de teste do Caixa');self.page.get_by_role('button',name='Buscar livro',exact=True).click()

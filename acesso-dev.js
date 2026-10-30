@@ -230,7 +230,7 @@
     const data = result?.data;
     if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || !['pin','mfa','passkey'].includes(data.user.assurance) || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (!shouldApply()) return false;
-    show('COMPLETE'); message('Acesso verificado com sucesso.', 'success');
+    if(verificationView){show('COMPLETE');message('Acesso verificado com sucesso.','success');}else message('Abrindo sua livraria…');
     $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role);enterApp(); return true;
   }
   async function confirmEntry(result){
@@ -243,7 +243,7 @@
       }
     }
     if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||!['pin','mfa','passkey'].includes(result.user.assurance)||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
-    pendingConfirmation=null;show('COMPLETE');message('Acesso verificado com sucesso.','success');
+    pendingConfirmation=null;if(verificationView){show('COMPLETE');message('Acesso verificado com sucesso.','success');}else message('Abrindo sua livraria…');
     $('identity-result').textContent='Sua conta está pronta para uso.';$('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(result.user.role);enterApp();
   }
   async function finish() {

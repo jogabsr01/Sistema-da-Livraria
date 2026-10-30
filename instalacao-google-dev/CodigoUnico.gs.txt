@@ -548,7 +548,7 @@ function activateDevelopmentStorefront(){
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=4ba276b36b6d15890df85710a875f67e25d835cd056ec860ca30615aadea708c
+// BEGIN Code.gs sha256=9875c4b4b862b7afbe739c5b30fee0c589c2d7a8c199970271b5c11bc40b046c
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -696,9 +696,15 @@ function assertSchema_(spreadsheet) {
   // Conflicting nonempty headers still take precedence over missing sheets.
   var missing = false;
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
-    var sheet = rpcSheet_(spreadsheet, table.name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
-    if (!sheet || !lastRow) { missing = true; return; }
-    if (!same_(rowValues_(sheet, lastRow), table.columns)) failure_('SCHEMA_CONFLICT');
+    var sheet = rpcSheet_(spreadsheet, table.name);
+    if (!sheet) { missing = true; return; }
+    // A valid, freshly batched header already proves row 1 exists. Avoid a
+    // separate remote getLastRow for every unused table. Width still comes
+    // from getLastColumn, so extra data beyond the schema remains rejected.
+    var batched=RPC_STORAGE_SCOPE_&&RPC_STORAGE_SCOPE_.headers.has(sheet);
+    var header=batched?rowValues_(sheet,1):rowValues_(sheet);
+    if (!header.length&&!rpcLastRow_(sheet)) { missing = true; return; }
+    if (!same_(header, table.columns)) failure_('SCHEMA_CONFLICT');
   });
   if (missing) failure_('SCHEMA_REQUIRED');
 }
@@ -956,7 +962,7 @@ function doGet() { return jsonOutput_({ error: { code: 'METHOD_NOT_ALLOWED' } })
 ;
 // END Code.gs
 
-// BEGIN ConfigurationAudit.gs sha256=2179f9aba33f0774f2d866882305fa59e5e166eda81414d7e3822a8ec7b51426
+// BEGIN ConfigurationAudit.gs sha256=b34510c27faa0565625dfbf30f4f3d1e8bac98c4d4aa6689f78556b1c07a00a3
 /* Owner-editor only. Fixed names/statuses; never property values, hashes or IDs.
  * This function only reads Script Properties; it never provisions or enables. */
 function inspectDevelopmentConfiguration(){
@@ -972,6 +978,24 @@ function inspectDevelopmentConfiguration(){
   [['CATALOG','CATALOG_JOURNAL_ID'],['COVER_PHOTOS','COVERS_FOLDER_ID'],['PROFILE','PROFILES_FOLDER_ID']].forEach(function(pair){if(p[pair[0]+'_ENABLED']==='true')checks.push({name:pair[1],status:!p[pair[1]]?'MISSING':resource.test(p[pair[1]])?'FORMAT_OK':'INVALID_FORMAT'});});
   var result={environment:'dev',readOnly:true,scope:'SCRIPT_PROPERTIES_FORMAT_AND_FLAGS_ONLY',checks:checks,flags:flags,missingDependencies:missingDependencies,maintenance:p.MAINTENANCE_MODE==='true'?'ACTIVE':'INACTIVE',netlifyInspected:false,resourceAccessChecked:false};
   console.info(JSON.stringify(result));return result;
+}
+
+// Owner editor only; never dispatched by the HTTP API. Activates the complete
+// implemented DEV business workspace without resetting users, keys or sessions.
+function activateDevelopmentWorkspace(){
+  var c=baseSettings_();requireOwnerDev_(c);
+  var props=scriptProperties_();
+  if(['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(k){return props.getProperty(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');
+  provisionDevelopmentCatalog();provisionDevelopmentProfile();
+  return withLock_(function(){
+    var ss=storage_(c,false).spreadsheet;assertSchema_(ss);authControlStore_(c);catalogJournal_(c);
+    var id=props.getProperty('COVERS_FOLDER_ID');
+    if(!id){var folder=resourceFolder_(c.driveRootId).createFolder('Capas privadas');folder.setDescription(marker_(c,'covers'));id=folder.getId();props.setProperty('COVERS_FOLDER_ID',id);}
+    assertMarker_(resourceFolder_(id),c,'covers');
+    var names=['CATALOG','CHECKOUT','COVER_PHOTOS','NOTIFICATIONS','STAFF','CUSTOMERS','OPERATIONS','PROFILE','RECOVERY','EMAIL_CHANGE','NICHES','SCHEDULES','AUDIT','REPORTS','CUSTOMER_INSIGHTS','KEY_MANAGEMENT'],flags={};
+    names.forEach(function(name){flags[name+'_ENABLED']='true';});props.setProperties(flags);
+    var result={environment:'dev',businessModulesReady:true,enabled:names.map(function(name){return name+'_ENABLED';}),netlifyStillRequiresMatchingFlags:true};console.info(JSON.stringify(result));return result;
+  });
 }
 
 ;

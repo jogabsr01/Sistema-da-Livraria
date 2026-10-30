@@ -63,12 +63,12 @@
     }
   });
   async function load(){
-    if(checking)return;const started=performance.now();let http=0;checking=true;authenticated=false;$('entry-failure').hidden=true;$('sign-in').hidden=recentEntry;$('retry').textContent='Tentar novamente';$('home').hidden=true;$('welcome').hidden=false;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
+    if(checking)return;const started=performance.now();let http=0;checking=true;authenticated=false;$('entry-failure').hidden=true;$('sign-in').hidden=recentEntry;$('retry').textContent='Tentar novamente';$('home').hidden=true;$('welcome').hidden=recentEntry;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
     document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=true);
     if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço DEV da livraria para continuar.';checking=false;return;}
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
     try{
-      $('status').textContent='Conferindo seu acesso…';
+      $('status').textContent=recentEntry?'Abrindo sua livraria…':'Conferindo seu acesso…';
       const response=await fetch('/api/v1/session',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
       http=response.status;
       if((response.headers.get('content-type')||'').includes('text/html')){failedEntry(http,'SESSION_RESPONSE_HTML',Math.round(performance.now()-started));return;}

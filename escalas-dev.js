@@ -29,7 +29,7 @@
   const current=await request('/api/v1/session'),nextAdmin=['ADMIN','SUPER_ADMIN'].includes(current.user.role);
   if(userId&&userId!==current.user.id){resetPrivate(true);throw {status:401};}
   if(admin&&!nextAdmin){resetPrivate(true);refreshAgain=true;}
-  userId=current.user.id;csrf=current.csrfToken;admin=nextAdmin;access=true;
+  userId=current.user.id;csrf=current.csrfToken;admin=nextAdmin;access=true;document.body.dataset.sessionRole=current.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
   $('new-shift').hidden=!admin;document.querySelector('.legend .draft').hidden=!admin;
   $('scope-note').textContent=admin?'Calendário geral da equipe. Rascunhos permanecem na administração.':'Sua escala publicada e seu histórico de alterações.';
  }

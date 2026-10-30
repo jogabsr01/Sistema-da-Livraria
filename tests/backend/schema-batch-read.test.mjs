@@ -55,3 +55,9 @@ test('private bindings are rechecked before batching private headers, and privat
   assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
  }
 });
+test('fresh valid batched headers avoid redundant last-row probes on all unused main tables',async()=>{
+ const s=await fixture();batches(s);let probes=0;
+ const unused=['Produtos','Clientes','Vendas','Itens_Venda','Movimentacoes_Estoque'];
+ for(const name of unused){const table=s.main.getSheetByName(name);if(!table)continue;const original=table.getLastRow;table.getLastRow=function(){probes++;return original.call(this);};}
+ assert.equal((await s.service().state(s.token)).stage,'EMAIL');assert.equal(probes,0);
+});

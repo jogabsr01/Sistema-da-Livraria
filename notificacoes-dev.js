@@ -52,7 +52,7 @@
   async function session() {
     const data=await requestData('/api/v1/session');
     if(userId&&userId!==data.user.id){revokeView();invalidate();throw Object.assign(Error('SESSION_CHANGED'),{status:401});}
-    userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);access=true;
+    userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);access=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
     $('report-tools').hidden = !admin||!available; if (!admin) clearReport();
   }
   function clearReport() {clearTimeout(reportTimer);report=null;$('report').hidden=true;$('report-groups').replaceChildren();for(const id of ['report-meta','report-summary','supplier-warning'])$(id).textContent='';$('draft-label').hidden=true;$('draft').value='';['export','print','copy'].forEach(id=>$(id).disabled=true);}

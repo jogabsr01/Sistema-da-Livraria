@@ -145,9 +145,15 @@ function assertSchema_(spreadsheet) {
   // Conflicting nonempty headers still take precedence over missing sheets.
   var missing = false;
   LIVRARIA_SCHEMA.tables.forEach(function (table) {
-    var sheet = rpcSheet_(spreadsheet, table.name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
-    if (!sheet || !lastRow) { missing = true; return; }
-    if (!same_(rowValues_(sheet, lastRow), table.columns)) failure_('SCHEMA_CONFLICT');
+    var sheet = rpcSheet_(spreadsheet, table.name);
+    if (!sheet) { missing = true; return; }
+    // A valid, freshly batched header already proves row 1 exists. Avoid a
+    // separate remote getLastRow for every unused table. Width still comes
+    // from getLastColumn, so extra data beyond the schema remains rejected.
+    var batched=RPC_STORAGE_SCOPE_&&RPC_STORAGE_SCOPE_.headers.has(sheet);
+    var header=batched?rowValues_(sheet,1):rowValues_(sheet);
+    if (!header.length&&!rpcLastRow_(sheet)) { missing = true; return; }
+    if (!same_(header, table.columns)) failure_('SCHEMA_CONFLICT');
   });
   if (missing) failure_('SCHEMA_REQUIRED');
 }

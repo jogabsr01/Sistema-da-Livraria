@@ -35,7 +35,7 @@
   const current=await request('/api/v1/session');
   if(userId&&current.user.id!==userId){invalidate();throw {status:401};}
   if(!['ADMIN','SUPER_ADMIN'].includes(current.user.role)){invalidate();throw {status:403};}
-  userId=current.user.id;csrf=current.csrfToken;access=true;
+  userId=current.user.id;csrf=current.csrfToken;access=true;document.body.dataset.sessionRole=current.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
  }
  async function api(op,p){return request('/api/v1/reports/'+op,p,op==='export');}
  function cents(id){const t=$(id).value.trim();if(!t)return null;if(!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(t))throw {code:'INVALID_REPORT'};const [a,b='']=t.replace(/\./g,'').split(',');return Number(a)*100+Number(b.padEnd(2,'0'));}
