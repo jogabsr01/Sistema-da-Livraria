@@ -1,6 +1,6 @@
 /* DEV staff management. Dispatcher owns ScriptLock. Contact data is AEAD-sealed
  * in Node; no plaintext personal fields, PINs or bearer tokens in this journal. */
-function staffEnabled_() { return scriptProperties_().getProperty('STAFF_ENABLED') === 'true'; }
+function staffEnabled_() { return scriptFlag_('STAFF_ENABLED') === 'true'; }
 function staffFail_(code) { failure_(code || 'INVALID_STAFF'); }
 function staffSealed_(value) { return typeof value === 'string' && value.length <= 16000 && /^pd1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$/.test(value); }
 function staffConfig_(ss, key) {
@@ -56,8 +56,12 @@ function staffProject_(ss,v) {
   staffPut_(ss,'identity.version.'+v.id,v.epoch,v.at,v.actor);
   if(!same_(values,v.after)){var row={number:found.length?found[0].number:undefined};columns.forEach(function(k,i){row[k]=v.after[i];});accessSaveMain_(users,row);}
   staffPut_(ss,'staff.revision.'+v.id,v.revision,v.at,v.actor);
+  // Record the PRIOR role/status too: without it, a promotion to ADMIN or a
+  // deactivation cannot be distinguished from a no-op resave in the audit trail.
   var audit=identityRows_(ss,'Logs_Auditoria'),logged=audit.rows.filter(function(r){return r.ID_Log===v.commandId;}),log={ID_Log:v.commandId,Data_Hora:v.at,ID_Usuario:v.actor,Perfil:v.role,
-    Acao:v.before===null?'STAFF_CREATE':'STAFF_UPDATE',Entidade:'Usuarios',ID_Entidade:v.id,Antes:JSON.stringify({revision:v.revision-1}),Depois:JSON.stringify({revision:v.revision,role:v.after[columns.indexOf('Perfil')],status:v.after[columns.indexOf('Status')],reenrollmentRequired:v.reenrollmentRequired,reasonRecorded:true}),Resultado:'SUCESSO',ID_Requisicao:v.commandId};
+    Acao:v.before===null?'STAFF_CREATE':'STAFF_UPDATE',Entidade:'Usuarios',ID_Entidade:v.id,
+    Antes:JSON.stringify({revision:v.revision-1,role:v.before?v.before[columns.indexOf('Perfil')]:null,status:v.before?v.before[columns.indexOf('Status')]:null}),
+    Depois:JSON.stringify({revision:v.revision,role:v.after[columns.indexOf('Perfil')],status:v.after[columns.indexOf('Status')],reenrollmentRequired:v.reenrollmentRequired,reasonRecorded:true}),Resultado:'SUCESSO',ID_Requisicao:v.commandId};
   if(logged.length>1||logged.length&&!audit.columns.every(function(k){return logged[0][k]===log[k];}))staffFail_('STAFF_UNAVAILABLE');
   if(!logged.length)accessSaveMain_(audit,log);
   v.state='COMPLETE';staffPut_(ss,'staff.command.'+v.commandId,JSON.stringify(v),v.at,v.actor);

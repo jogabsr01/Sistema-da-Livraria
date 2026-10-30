@@ -129,6 +129,11 @@
     $('book-form').reset(); $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar livro'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = 'A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.';
     const mappings = { isbn:'isbn',title:'title',author:'author',publisher:'publisher',edition:'edition',supplier:'supplier',category:'category',cover:'coverUrl',synopsis:'synopsis' };
     Object.entries(mappings).forEach(([input,key]) => { $(input).value = editing?.[key] || ''; });
+    // A barcode scanned on the Home screen (or typed there) arrives here only
+    // as the catalog search term, since "not found" is the common path into a
+    // new registration. Carry it into the ISBN field so the very next click on
+    // "Consultar ISBN" can fetch metadata and a cover without retyping/rescanning.
+    if (!editing) { const scanned = $('query').value.trim(); if (/^[0-9]{6,32}$/.test(scanned)) $('isbn').value = scanned; }
     $('price').value = editing ? (editing.priceCents / 100).toFixed(2).replace('.',',') : '';
     $('minimum-stock').value = editing?.minimumStock ?? 0; $('year').value = editing?.year || ''; $('pages').value = editing?.pages || ''; $('active').checked = editing?.active ?? true;
     $('active').disabled = !canDelete;

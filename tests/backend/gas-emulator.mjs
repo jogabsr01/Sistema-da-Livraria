@@ -9,6 +9,25 @@ export function createGasEmulator(initialProperties = {}, {sourceMode = process.
   const triggers=[];
   const resources = new Map(), sheets = new Map(), props = { ...initialProperties }, outbox = [];
   let mailQuota = 100, mailFailure = false, activeOwner=null;
+  // Faithful-enough ScriptCache double: in-memory, string-only, TTL-expiring.
+  // No quotas or cross-execution persistence are simulated; tests that need
+  // staleness drive the clock explicitly via cacheClock.
+  let cacheClock = () => Date.now();
+  const cacheStore = new Map();
+  const scriptCache = {
+    get(key) {
+      const entry = cacheStore.get(key);
+      if (!entry) return null;
+      if (entry.expiresAt <= cacheClock()) { cacheStore.delete(key); return null; }
+      return entry.value;
+    },
+    put(key, value, ttlSeconds) {
+      if (typeof value !== 'string') throw new Error('INVALID_CACHE_VALUE');
+      const ttl = Number.isSafeInteger(ttlSeconds) ? ttlSeconds : 600;
+      cacheStore.set(key, { value, expiresAt: cacheClock() + ttl * 1000 });
+    },
+    remove(key) { cacheStore.delete(key); },
+  };
   class Sheet {
     constructor(name) { this.name = name; this.rows = []; this.formats = []; }
     getName(){return this.name;}
@@ -79,6 +98,7 @@ export function createGasEmulator(initialProperties = {}, {sourceMode = process.
     ContentService: { MimeType: { JSON: 'application/json' }, createTextOutput: text => ({ text, setMimeType() { return this; } }) },
     ScriptApp:{getProjectTriggers:()=>[...triggers],deleteTrigger:t=>{triggers.splice(triggers.indexOf(t),1);},newTrigger:name=>{let hours;const builder={timeBased:()=>builder,everyHours:n=>{hours=n;return builder;},create:()=>{const id=randomUUID(),t={getUniqueId:()=>id,getHandlerFunction:()=>name,hours};triggers.push(t);return t;}};return builder;}},
     MailApp: { getRemainingDailyQuota: () => mailQuota, sendEmail: value => { if (mailFailure) throw Error('FAKE_MAIL_FAILURE'); outbox.push(value); mailQuota--; } },
+    CacheService: { getScriptCache: () => scriptCache },
   });
   context.Utilities.getUuid = randomUUID;
   if(sourceMode==='single') vm.runInContext(readFileSync(new URL('../../instalacao-google-dev/CodigoUnico.gs.txt',import.meta.url),'utf8'),context);
@@ -92,5 +112,6 @@ export function createGasEmulator(initialProperties = {}, {sourceMode = process.
     set failOnSheet(value) { failOnSheet = value; }, set locked(value) { locked = value; }, set owner(value) { owner = value; },
     set activeOwner(value){activeOwner=value;},
     set mailQuota(value) { mailQuota = value; }, set mailFailure(value) { mailFailure = value; },
+    set cacheClock(fn) { cacheClock = fn; }, get cacheStore() { return cacheStore; },
   };
 }

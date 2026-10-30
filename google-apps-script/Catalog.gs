@@ -85,14 +85,22 @@ function catalogNiches_(ss) {
   }); return table;
 }
 function catalogLinks_(ss) {
-  var table = identityRows_(ss, 'Produto_Nichos'), seen = new Set();
+  var table = identityRows_(ss, 'Produto_Nichos'), seen = new Set(), byProduct = Object.create(null);
   table.rows.forEach(function (row) {
     if (row.ID_Produto === '' && row.ID_Nicho === '') return;
     var key = row.ID_Produto + ':' + row.ID_Nicho;
-    if (!identityUuid_(row.ID_Produto) || !identityUuid_(row.ID_Nicho) || seen.has(key)) catalogFail_('CATALOG_UNAVAILABLE'); seen.add(key);
-  }); return table;
+    if (!identityUuid_(row.ID_Produto) || !identityUuid_(row.ID_Nicho) || seen.has(key)) catalogFail_('CATALOG_UNAVAILABLE');
+    seen.add(key);
+    (byProduct[row.ID_Produto] || (byProduct[row.ID_Produto] = [])).push(row.ID_Nicho);
+  });
+  Object.keys(byProduct).forEach(function (id) { byProduct[id].sort(); });
+  table.byProduct = byProduct;
+  return table;
 }
-function catalogLinkIds_(table, id) { return table.rows.filter(function (row) { return row.ID_Produto === id; }).map(function (row) { return row.ID_Nicho; }).sort(); }
+function catalogLinkIds_(table, id) {
+  if (table.byProduct && table.byProduct[id]) return table.byProduct[id].slice();
+  return table.rows.filter(function (row) { return row.ID_Produto === id; }).map(function (row) { return row.ID_Nicho; }).sort();
+}
 function catalogReferences_(products, links, niches) {
   var ids = new Set(products.rows.map(function (row) { return row.ID_Produto; })), targets = new Set(niches.rows.map(function (row) { return row.ID_Nicho; }));
   links.rows.forEach(function (row) { if (row.ID_Produto !== '' && (!ids.has(row.ID_Produto) || !targets.has(row.ID_Nicho))) catalogFail_('CATALOG_UNAVAILABLE'); });
@@ -159,6 +167,8 @@ function catalogProject_(c, command) {
   if (logged.length > 1 || logged.length && !audit.columns.every(function (key) { return logged[0][key] === log[key]; }) || !logged.length && audit.rows.length >= 5000) catalogFail_('CATALOG_UNAVAILABLE');
   if (!actual || !same_(actual.values, after.values)) { if (found.length) desired.number = found[0].number; accessSaveMain_(products, desired); }
   // Each relation is its own recoverable row; other products are never cleared.
+  // A crash between any two of these writes must still leave every relation
+  // durably resolvable on the next recovery pass, so they are never batched.
   links.rows.filter(function (row) { return row.ID_Produto === command.Product_ID && after.nicheIds.indexOf(row.ID_Nicho) < 0; }).forEach(function (row) { links.sheet.getRange(row.number, 1, 1, 2).setValues([['', '']]); SpreadsheetApp.flush(); });
   after.nicheIds.forEach(function (id) {
     var current = catalogLinks_(ss);
@@ -278,7 +288,7 @@ function activateDevelopmentStorefront(){
   provisionDevelopmentCatalog();
   return withLock_(function(){
     var ss=storage_(c,false).spreadsheet;assertSchema_(ss);authControlStore_(c);catalogJournal_(c);recoverSales_(ss);
-    scriptProperties_().setProperties({CATALOG_ENABLED:'true',CHECKOUT_ENABLED:'true'});
+    setFeatureFlags_({CATALOG_ENABLED:'true',CHECKOUT_ENABLED:'true'});
     return {environment:'dev',catalog:true,checkout:true};
   });
 }

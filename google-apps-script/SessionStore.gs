@@ -7,14 +7,17 @@ function identityUuid_(value) {
 }
 // DEV policy explicitly authorized by the project owner: PIN is an alternate
 // sign-in method. Other environments retain the strong administrator policy.
-function devPinLoginEnabled_(){var p=scriptProperties_().getProperties();return p.APP_ENV==='dev'&&(p.ADMIN_PIN_LOGIN_ENABLED===undefined||p.ADMIN_PIN_LOGIN_ENABLED==='true');}
+function devPinLoginEnabled_(){return scriptProperties_().getProperty('APP_ENV')==='dev'&&(scriptFlag_('ADMIN_PIN_LOGIN_ENABLED')===null||scriptFlag_('ADMIN_PIN_LOGIN_ENABLED')==='true');}
 function businessAssurance_(principal){return ['mfa','passkey'].includes(principal.assurance)||principal.assurance==='pin'&&devPinLoginEnabled_();}
 function identityRows_(spreadsheet, name) {
   var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
   if (!sheet || !definition || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 5001) failure_('IDENTITY_UNAVAILABLE');
   var values = rpcRows_(sheet, lastRow, definition.columns.length);
-  return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
+  // Carries the schema's append_only marker onto the table object so every
+  // writer (accessSaveMain_) can enforce it, instead of relying on each of the
+  // ~20 call sites never happening to pass a row.number by convention alone.
+  return { sheet: sheet, columns: definition.columns, appendOnly: definition.append_only === true, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (column, columnIndex) { row[column] = values[columnIndex]; });
     return row;

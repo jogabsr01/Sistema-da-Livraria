@@ -25,6 +25,10 @@ function reportBuildSource_(ss,c,f){
   identityRows_(ss,'Movimentacoes_Estoque').rows.forEach(function(r){if(r.Data_Hora<f.from||r.Data_Hora>f.to||f.employeeId&&r.ID_Usuario!==f.employeeId||f.movementType&&r.Tipo!==f.movementType||!reportProductMatch_(productMap.get(r.ID_Produto),f))return;productIds.add(r.ID_Produto);peopleIds.add(r.ID_Usuario);movements.push({id:r.ID_Movimentacao,at:r.Data_Hora,operatorId:r.ID_Usuario,productId:r.ID_Produto,type:r.Tipo,quantity:r.Quantidade,before:r.Saldo_Anterior,after:r.Saldo_Posterior,saleId:r.ID_Venda});});
  }
  var products=allProducts.filter(function(p){return productIds.has(p.id);}),nicheIds=new Set();products.forEach(function(p){p.nicheIds.forEach(function(id){nicheIds.add(id);});});var data={products:products,sales:sales,movements:movements,people:auditPeople_(ss,peopleIds),customers:customerTable.rows.filter(function(r){return customerIds.has(r.ID_Cliente);}).map(function(r){return {id:r.ID_Cliente,contact:r.Nome};}),niches:catalogNiches_(ss).rows.filter(function(n){return nicheIds.has(n.ID_Nicho);}).map(function(n){return {id:n.ID_Nicho,name:n.Nome};}),legacyExcluded:legacy};
+ // Row-count ceiling independent of the byte-size one below: a report made of
+ // many small rows could otherwise stay under the byte cap while still being
+ // an unbounded bulk export of commercial/customer data.
+ if(products.length+sales.length+movements.length>5000)reportFail_('REPORT_CAPACITY');
  data.snapshot=hmac_(JSON.stringify([c.environment,c.installationId,f,data]),c.secret,'reports.source');data.generatedAt=new Date().toISOString();if(Utilities.base64Encode(Utilities.newBlob(JSON.stringify(data)).getBytes()).length>3500000)reportFail_('REPORT_CAPACITY');return data;
 }
 function reportsOperation_(request,c){

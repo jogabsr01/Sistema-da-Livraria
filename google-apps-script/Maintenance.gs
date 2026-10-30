@@ -6,6 +6,42 @@ function scriptProperties_() {
     ? MAINTENANCE_CONTEXT_.properties
     : PropertiesService.getScriptProperties();
 }
+
+// Feature flags are read several times per RPC (dispatcher gate, nested
+// helpers). Memoize them for the lifetime of the current locked request only
+// -- RPC_STORAGE_SCOPE_ is rebuilt from scratch at the top of every
+// processRequest_ call, so this NEVER outlives one request and can never
+// mask a Script Properties edit (console or script) from the next request.
+// Deliberately NOT backed by CacheService: these flags gate security-relevant
+// modules (sessions, guards, passkeys), and an owner disabling a module must
+// take effect on the very next request, not after a cache TTL.
+var SCRIPT_FLAG_KEYS_ = [
+  'ADMIN_PIN_LOGIN_ENABLED', 'IDENTITY_SESSIONS_ENABLED', 'IDENTITY_GUARDS_ENABLED',
+  'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_ACCESS_ENABLED', 'CATALOG_ENABLED',
+  'COVER_PHOTOS_ENABLED', 'CHECKOUT_ENABLED', 'NOTIFICATIONS_ENABLED',
+  'STAFF_ENABLED', 'CUSTOMERS_ENABLED', 'OPERATIONS_ENABLED', 'PROFILE_ENABLED',
+  'RECOVERY_ENABLED', 'EMAIL_CHANGE_ENABLED', 'NICHES_ENABLED', 'SCHEDULES_ENABLED',
+  'AUDIT_ENABLED', 'REPORTS_ENABLED', 'CUSTOMER_INSIGHTS_ENABLED',
+  'KEY_MANAGEMENT_ENABLED', 'EMERGENCY_RECOVERY_ENABLED'
+];
+function scriptFlagSnapshot_() {
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.flags) return RPC_STORAGE_SCOPE_.flags;
+  var properties = scriptProperties_().getProperties(), flags = {};
+  SCRIPT_FLAG_KEYS_.forEach(function (key) { flags[key] = properties[key] === undefined ? null : properties[key]; });
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.flags = flags;
+  return flags;
+}
+function scriptFlag_(key) { return scriptFlagSnapshot_()[key]; }
+function invalidateScriptFlagCache_() {
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.flags = null;
+}
+// Flag writes still go through here so a later read within the SAME locked
+// request (e.g. activateDevelopmentWorkspace reading its own just-set flags)
+// never sees the pre-write snapshot it memoized moments earlier.
+function setFeatureFlags_(values) {
+  scriptProperties_().setProperties(values);
+  invalidateScriptFlagCache_();
+}
 function maintenanceId_(id) {
   return (MAINTENANCE_CONTEXT_ && MAINTENANCE_CONTEXT_.aliases[id]) || id;
 }

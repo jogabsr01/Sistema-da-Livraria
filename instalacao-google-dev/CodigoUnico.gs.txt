@@ -45,7 +45,7 @@ function auditOperation_(request,c){
 ;
 // END Audit.gs
 
-// BEGIN AuthControl.gs sha256=5dc543dd870cca7bf8efc0fa7a33e89ac4e38c075b9ead178e8f37386ca05b3c
+// BEGIN AuthControl.gs sha256=781378c82a414a8cf62771188e006b84ce230fb4f29757980b1cdb457e2b7069
 /* DEV-only private identity controls. Public callers never access this store.
  * All operations run under the installation ScriptLock in processRequest_. */
 var AUTH_CONTROL_SCHEMA = {
@@ -150,6 +150,11 @@ function provisionDevelopmentAuthControls() {
 function authControlExact_(payload, keys) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !same_(Object.keys(payload).sort(), keys.slice().sort())) failure_('CHALLENGE_REJECTED');
 }
+// Each row is written and flushed on its own. The project's recovery tests
+// depend on every one of these rows being durably visible one at a time, so
+// a crash between two related writes (e.g. a rate-limit counter and its
+// sibling policy row) always leaves a consistently resumable partial state.
+// Do NOT batch these into a single setValues call across unrelated rows.
 function authControlSave_(table, row) {
   invalidateRpcRows_(table.sheet);
   var values = table.columns.map(function (key) { return row[key]; });
@@ -259,7 +264,7 @@ function authControlOperation_(request, c) {
 ;
 // END AuthControl.gs
 
-// BEGIN Catalog.gs sha256=238f1db1c05b83c2e0ff2b58946ecaaff3428922e91f8be6e1a2c7d53e3f5f17
+// BEGIN Catalog.gs sha256=ac7b8ba42634db90b636600bc33a273d1c0816f15610f13dd7007e035dcb250f
 /* Authenticated DEV catalog, positive stock receipts and admin-only removal.
  * Dispatcher owns the installation lock; durable intent precedes projections. */
 var CATALOG_COLUMNS = ['Command_ID', 'Actor_ID', 'Actor_Role', 'Product_ID', 'Expected_Version', 'Command_Hash', 'Before_JSON', 'After_JSON', 'Created_At', 'State', 'Completed_At', 'Record_Hash'];
@@ -347,14 +352,22 @@ function catalogNiches_(ss) {
   }); return table;
 }
 function catalogLinks_(ss) {
-  var table = identityRows_(ss, 'Produto_Nichos'), seen = new Set();
+  var table = identityRows_(ss, 'Produto_Nichos'), seen = new Set(), byProduct = Object.create(null);
   table.rows.forEach(function (row) {
     if (row.ID_Produto === '' && row.ID_Nicho === '') return;
     var key = row.ID_Produto + ':' + row.ID_Nicho;
-    if (!identityUuid_(row.ID_Produto) || !identityUuid_(row.ID_Nicho) || seen.has(key)) catalogFail_('CATALOG_UNAVAILABLE'); seen.add(key);
-  }); return table;
+    if (!identityUuid_(row.ID_Produto) || !identityUuid_(row.ID_Nicho) || seen.has(key)) catalogFail_('CATALOG_UNAVAILABLE');
+    seen.add(key);
+    (byProduct[row.ID_Produto] || (byProduct[row.ID_Produto] = [])).push(row.ID_Nicho);
+  });
+  Object.keys(byProduct).forEach(function (id) { byProduct[id].sort(); });
+  table.byProduct = byProduct;
+  return table;
 }
-function catalogLinkIds_(table, id) { return table.rows.filter(function (row) { return row.ID_Produto === id; }).map(function (row) { return row.ID_Nicho; }).sort(); }
+function catalogLinkIds_(table, id) {
+  if (table.byProduct && table.byProduct[id]) return table.byProduct[id].slice();
+  return table.rows.filter(function (row) { return row.ID_Produto === id; }).map(function (row) { return row.ID_Nicho; }).sort();
+}
 function catalogReferences_(products, links, niches) {
   var ids = new Set(products.rows.map(function (row) { return row.ID_Produto; })), targets = new Set(niches.rows.map(function (row) { return row.ID_Nicho; }));
   links.rows.forEach(function (row) { if (row.ID_Produto !== '' && (!ids.has(row.ID_Produto) || !targets.has(row.ID_Nicho))) catalogFail_('CATALOG_UNAVAILABLE'); });
@@ -421,6 +434,8 @@ function catalogProject_(c, command) {
   if (logged.length > 1 || logged.length && !audit.columns.every(function (key) { return logged[0][key] === log[key]; }) || !logged.length && audit.rows.length >= 5000) catalogFail_('CATALOG_UNAVAILABLE');
   if (!actual || !same_(actual.values, after.values)) { if (found.length) desired.number = found[0].number; accessSaveMain_(products, desired); }
   // Each relation is its own recoverable row; other products are never cleared.
+  // A crash between any two of these writes must still leave every relation
+  // durably resolvable on the next recovery pass, so they are never batched.
   links.rows.filter(function (row) { return row.ID_Produto === command.Product_ID && after.nicheIds.indexOf(row.ID_Nicho) < 0; }).forEach(function (row) { links.sheet.getRange(row.number, 1, 1, 2).setValues([['', '']]); SpreadsheetApp.flush(); });
   after.nicheIds.forEach(function (id) {
     var current = catalogLinks_(ss);
@@ -540,7 +555,7 @@ function activateDevelopmentStorefront(){
   provisionDevelopmentCatalog();
   return withLock_(function(){
     var ss=storage_(c,false).spreadsheet;assertSchema_(ss);authControlStore_(c);catalogJournal_(c);recoverSales_(ss);
-    scriptProperties_().setProperties({CATALOG_ENABLED:'true',CHECKOUT_ENABLED:'true'});
+    setFeatureFlags_({CATALOG_ENABLED:'true',CHECKOUT_ENABLED:'true'});
     return {environment:'dev',catalog:true,checkout:true};
   });
 }
@@ -548,7 +563,7 @@ function activateDevelopmentStorefront(){
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=127d721152590b2bd0b331a64439955cf6e7bb9d54057c19b666e5df0c5c0c58
+// BEGIN Code.gs sha256=1392e5789ee833042afb595948638462190bda5ca8c0219742e985128487f260
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -786,18 +801,21 @@ function readMessage_(envelope, c) {
   return request;
 }
 function registerNonce_(request, spreadsheet) {
-  var sheet = spreadsheet.getSheetByName('_Requisicoes'), now = Date.now();
-  var rows = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+  var sheet = spreadsheet.getSheetByName('_Requisicoes'), lastRow = sheet.getLastRow(), now = Date.now();
+  var rows = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 4).getValues();
   var live = rows.filter(function (r) { return Date.parse(r[2]) > now; });
   var hash = digest_(request.nonce);
   if (live.some(function (r) { return r[0] === hash; })) failure_('REPLAY');
   if (live.length >= 5000) failure_('SERVICE_CAPACITY');
+  var entry = [hash, new Date(now).toISOString(), new Date(now + 300000).toISOString(), request.requestId];
   if (rows.length !== live.length) {
-    sheet.getRange(2, 1, rows.length, 4).clearContent();
-    if (live.length) sheet.getRange(2, 1, live.length, 4).setValues(live);
+    // Expired entries are compacted with the new nonce in one final body write.
+    if (rows.length) sheet.getRange(2, 1, rows.length, 4).clearContent();
+    sheet.getRange(2, 1, live.length + 1, 4).setValues(live.concat([entry]));
+  } else {
+    // Preserve the cheap append path when no compaction is necessary.
+    sheet.getRange(lastRow + 1, 1, 1, 4).setValues([entry]);
   }
-  // getLastRow reflects cleared rows. No raw session token or PIN is stored.
-  sheet.appendRow([hash, new Date(now).toISOString(), new Date(now + 300000).toISOString(), request.requestId]);
   SpreadsheetApp.flush();
 }
 // Closed diagnostics only: never log exception messages, payloads or identities.
@@ -838,49 +856,42 @@ function processRequest_(request, c) {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
     if (typeof request.action === 'string' && (request.action.indexOf('staff.') === 0 || request.action.indexOf('identity.staffAccess.') === 0)) {
-      var staffProps = scriptProperties_();
-      if (c.environment !== 'dev' || !staffEnabled_() || ['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(key){return staffProps.getProperty(key)!=='true';})) failure_('STAFF_UNAVAILABLE');
+      if (c.environment !== 'dev' || !staffEnabled_() || ['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(key){return scriptFlag_(key)!=='true';})) failure_('STAFF_UNAVAILABLE');
       return request.action.indexOf('staff.') === 0 ? staffOperation_(request,c) : staffAccessOperation_(request,c);
     }
     if (typeof request.action === 'string' && request.action.indexOf('customers.') === 0) {
-      var customerProps=scriptProperties_();
-      if(c.environment!=='dev'||['CUSTOMERS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return customerProps.getProperty(key)!=='true';})) failure_('CUSTOMERS_UNAVAILABLE');
+      if(c.environment!=='dev'||['CUSTOMERS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return scriptFlag_(key)!=='true';})) failure_('CUSTOMERS_UNAVAILABLE');
       return customerOperation_(request,c);
     }
-    if(typeof request.action==='string'&&request.action.indexOf('insights.')===0){if(c.environment!=='dev'||['CUSTOMER_INSIGHTS_ENABLED','CUSTOMERS_ENABLED','REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return customerInsightsOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('reports.')===0){if(c.environment!=='dev'||['REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return reportsOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('audit.')===0){if(c.environment!=='dev'||['AUDIT_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('AUDIT_UNAVAILABLE');return auditOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('schedules.')===0){if(c.environment!=='dev'||['SCHEDULES_ENABLED','CATALOG_ENABLED','NOTIFICATIONS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('SCHEDULE_UNAVAILABLE');return schedulesOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('niches.')===0){if(c.environment!=='dev'||['NICHES_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('NICHES_UNAVAILABLE');return nichesOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('insights.')===0){if(c.environment!=='dev'||['CUSTOMER_INSIGHTS_ENABLED','CUSTOMERS_ENABLED','REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return customerInsightsOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('reports.')===0){if(c.environment!=='dev'||['REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return reportsOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('audit.')===0){if(c.environment!=='dev'||['AUDIT_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('AUDIT_UNAVAILABLE');return auditOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('schedules.')===0){if(c.environment!=='dev'||['SCHEDULES_ENABLED','CATALOG_ENABLED','NOTIFICATIONS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('SCHEDULE_UNAVAILABLE');return schedulesOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('niches.')===0){if(c.environment!=='dev'||['NICHES_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('NICHES_UNAVAILABLE');return nichesOperation_(request,c);}
     if(typeof request.action==='string'&&request.action.indexOf('profile.')===0){
-      if(c.environment!=='dev'||scriptProperties_().getProperty('PROFILE_ENABLED')!=='true'||scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED')!=='true')failure_('PROFILE_UNAVAILABLE');
+      if(c.environment!=='dev'||scriptFlag_('PROFILE_ENABLED')!=='true'||scriptFlag_('IDENTITY_SESSIONS_ENABLED')!=='true')failure_('PROFILE_UNAVAILABLE');
       return profileOperation_(request,c);
     }
     if(typeof request.action==='string'&&request.action.indexOf('operations.')===0){
-      var operationProps=scriptProperties_();
-      if(c.environment!=='dev'||['OPERATIONS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return operationProps.getProperty(key)!=='true';}))failure_('OPERATIONS_UNAVAILABLE');
+      if(c.environment!=='dev'||['OPERATIONS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return scriptFlag_(key)!=='true';}))failure_('OPERATIONS_UNAVAILABLE');
       return operationsOperation_(request,c);
     }
     if (['sales.checkout','sales.receipt'].includes(request.action)) {
-      var checkoutProps = scriptProperties_();
-      if (c.environment !== 'dev' || ['CHECKOUT_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return checkoutProps.getProperty(key) !== 'true'; })) failure_('CHECKOUT_UNAVAILABLE');
+      if (c.environment !== 'dev' || ['CHECKOUT_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return scriptFlag_(key) !== 'true'; })) failure_('CHECKOUT_UNAVAILABLE');
       return checkoutOperation_(request, c);
     }
     if (typeof request.action === 'string' && request.action.indexOf('notifications.') === 0) {
-      var notificationProps = scriptProperties_();
-      if (c.environment !== 'dev' || ['NOTIFICATIONS_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return notificationProps.getProperty(key) !== 'true'; })) failure_('NOTIFICATIONS_UNAVAILABLE');
+      if (c.environment !== 'dev' || ['NOTIFICATIONS_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return scriptFlag_(key) !== 'true'; })) failure_('NOTIFICATIONS_UNAVAILABLE');
       return notificationOperation_(request, c);
     }
     if (['catalog.bootstrap','catalog.list', 'catalog.get', 'catalog.niches', 'catalog.save', 'catalog.cover', 'catalog.receive', 'catalog.remove'].includes(request.action)) {
-      var catalogProps = scriptProperties_();
-      if (c.environment !== 'dev' || catalogProps.getProperty('CATALOG_ENABLED') !== 'true' || catalogProps.getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('CATALOG_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('CATALOG_ENABLED') !== 'true' || scriptFlag_('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('CATALOG_UNAVAILABLE');
       return catalogOperation_(request, c);
     }
-    if(typeof request.action==='string'&&request.action.indexOf('keys.')===0){if(c.environment!=='dev'||['KEY_MANAGEMENT_ENABLED','IDENTITY_PASSKEYS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('KEY_MANAGEMENT_UNAVAILABLE');return keyManagementOperation_(request,c);}
-    if(request.action==='identity.security.record'){if(c.environment!=='dev'||['IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');return securityRecord_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('keys.')===0){if(c.environment!=='dev'||['KEY_MANAGEMENT_ENABLED','IDENTITY_PASSKEYS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('KEY_MANAGEMENT_UNAVAILABLE');return keyManagementOperation_(request,c);}
+    if(request.action==='identity.security.record'){if(c.environment!=='dev'||['IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');return securityRecord_(request,c);}
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
-      var props = scriptProperties_();
-      if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return scriptFlag_(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
       if (request.action === 'identity.access.loginLookup') return accessLoginLookup_(request,c);
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
@@ -893,20 +904,20 @@ function processRequest_(request, c) {
       return ownerAccessOperation_(request, c);
     }
     if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
-      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return passkeyOperation_(request, c);
     }
     if (['identity.guard.attempt', 'identity.challenge.create', 'identity.challenge.consume'].includes(request.action)) {
-      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return authControlOperation_(request, c);
     }
     if (['identity.session.read', 'identity.session.revoke', 'identity.session.revokeOthers'].includes(request.action)) {
-      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return identitySessionOperation_(request, c);
     }
     var actor = request.actor;
     if (request.action !== 'system.schema') failure_('FORBIDDEN');
-    if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+    if (c.environment !== 'dev' || scriptFlag_('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
     if (!actor || !/^[a-f0-9]{64}$/.test(actor.sessionTokenHash || '')) failure_('UNAUTHENTICATED');
     // Re-resolve INSIDE this operation's lock. A prior Node lookup cannot
     // authorize metadata after a concurrent logout, disable or epoch change.
@@ -962,20 +973,21 @@ function doGet() { return jsonOutput_({ error: { code: 'METHOD_NOT_ALLOWED' } })
 ;
 // END Code.gs
 
-// BEGIN ConfigurationAudit.gs sha256=b34510c27faa0565625dfbf30f4f3d1e8bac98c4d4aa6689f78556b1c07a00a3
+// BEGIN ConfigurationAudit.gs sha256=afd95a7302c006d3fa605bddc6702d443c9ac5e399d4eed744e99cef6b3309e9
 /* Owner-editor only. Fixed names/statuses; never property values, hashes or IDs.
  * This function only reads Script Properties; it never provisions or enables. */
 function inspectDevelopmentConfiguration(){
-  var p=scriptProperties_().getProperties();
+  var p=scriptProperties_().getProperties(),flagsSnapshot=scriptFlagSnapshot_();
   if(p.APP_ENV!=='dev'||!p.OWNER_EMAIL||Session.getEffectiveUser().getEmail().toLowerCase()!==p.OWNER_EMAIL.toLowerCase())failure_('FORBIDDEN');
   var uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,resource=/^[A-Za-z0-9_-]{20,160}$/,hash=/^[a-f0-9]{64}$/i;
   var fields=[['INSTALLATION_ID',uuid],['SIGNING_SECRET',hash],['SPREADSHEET_ID',resource],['DRIVE_ROOT_ID',resource],['BACKUPS_FOLDER_ID',resource],['IDENTITY_CONTROL_SPREADSHEET_ID',resource],['IDENTITY_OWNER_USER_ID',uuid],['IDENTITY_OWNER_EMAIL_BINDING',hash]];
   var checks=fields.map(function(f){return {name:f[0],status:!p[f[0]]?'MISSING':f[1].test(p[f[0]])?'FORMAT_OK':'INVALID_FORMAT'};});
   var names=['ADMIN_PIN_LOGIN','IDENTITY_SESSIONS','IDENTITY_GUARDS','IDENTITY_PASSKEYS','IDENTITY_ACCESS','CATALOG','COVER_PHOTOS','CHECKOUT','NOTIFICATIONS','STAFF','CUSTOMERS','OPERATIONS','PROFILE','RECOVERY','EMAIL_CHANGE','NICHES','SCHEDULES','AUDIT','REPORTS','CUSTOMER_INSIGHTS','KEY_MANAGEMENT','EMERGENCY_RECOVERY'];
-  var flags=names.map(function(name){var key=name+'_ENABLED';return {google:key,netlify:'WORKSPACE_'+key,status:key==='ADMIN_PIN_LOGIN_ENABLED'?(devPinLoginEnabled_()?(p[key]==='true'?'ENABLED':'ENABLED_BY_DEV_POLICY'):'DISABLED'):p[key]==='true'?'ENABLED':p[key]==='false'?'DISABLED':p[key]===undefined||p[key]===''?'NOT_SET':'INVALID_BOOLEAN'};});
+  var flagValue=function(key){return flagsSnapshot[key];};
+  var flags=names.map(function(name){var key=name+'_ENABLED',value=flagValue(key);return {google:key,netlify:'WORKSPACE_'+key,status:key==='ADMIN_PIN_LOGIN_ENABLED'?(p.APP_ENV==='dev'?(value==='true'?'ENABLED':'ENABLED_BY_DEV_POLICY'):'DISABLED'):value==='true'?'ENABLED':value==='false'?'DISABLED':value===null?'NOT_SET':'INVALID_BOOLEAN'};});
   var dependencies={IDENTITY_ACCESS:['IDENTITY_SESSIONS','IDENTITY_GUARDS','IDENTITY_PASSKEYS'],CATALOG:['IDENTITY_SESSIONS'],COVER_PHOTOS:['CATALOG','IDENTITY_SESSIONS'],CHECKOUT:['CATALOG','IDENTITY_SESSIONS'],NOTIFICATIONS:['CATALOG','IDENTITY_SESSIONS'],OPERATIONS:['CATALOG','IDENTITY_SESSIONS'],NICHES:['CATALOG','IDENTITY_SESSIONS'],SCHEDULES:['CATALOG','NOTIFICATIONS','IDENTITY_SESSIONS'],REPORTS:['CATALOG','IDENTITY_SESSIONS'],AUDIT:['CATALOG','IDENTITY_SESSIONS'],CUSTOMER_INSIGHTS:['CUSTOMERS','REPORTS','CATALOG','IDENTITY_SESSIONS'],KEY_MANAGEMENT:['IDENTITY_PASSKEYS','IDENTITY_SESSIONS'],STAFF:['IDENTITY_SESSIONS','IDENTITY_ACCESS','IDENTITY_GUARDS','IDENTITY_PASSKEYS'],CUSTOMERS:['IDENTITY_SESSIONS'],PROFILE:['IDENTITY_SESSIONS'],EMAIL_CHANGE:['PROFILE','IDENTITY_SESSIONS'],RECOVERY:['IDENTITY_ACCESS','IDENTITY_PASSKEYS','IDENTITY_SESSIONS'],EMERGENCY_RECOVERY:['RECOVERY','IDENTITY_PASSKEYS','IDENTITY_SESSIONS']};
-  var missingDependencies=[];Object.keys(dependencies).forEach(function(module){if(p[module+'_ENABLED']!=='true')return;dependencies[module].forEach(function(dep){if(p[dep+'_ENABLED']!=='true')missingDependencies.push({module:module+'_ENABLED',requires:dep+'_ENABLED'});});});
-  [['CATALOG','CATALOG_JOURNAL_ID'],['COVER_PHOTOS','COVERS_FOLDER_ID'],['PROFILE','PROFILES_FOLDER_ID']].forEach(function(pair){if(p[pair[0]+'_ENABLED']==='true')checks.push({name:pair[1],status:!p[pair[1]]?'MISSING':resource.test(p[pair[1]])?'FORMAT_OK':'INVALID_FORMAT'});});
+  var missingDependencies=[];Object.keys(dependencies).forEach(function(module){if(flagValue(module+'_ENABLED')!=='true')return;dependencies[module].forEach(function(dep){if(flagValue(dep+'_ENABLED')!=='true')missingDependencies.push({module:module+'_ENABLED',requires:dep+'_ENABLED'});});});
+  [['CATALOG','CATALOG_JOURNAL_ID'],['COVER_PHOTOS','COVERS_FOLDER_ID'],['PROFILE','PROFILES_FOLDER_ID']].forEach(function(pair){if(flagValue(pair[0]+'_ENABLED')==='true')checks.push({name:pair[1],status:!p[pair[1]]?'MISSING':resource.test(p[pair[1]])?'FORMAT_OK':'INVALID_FORMAT'});});
   var result={environment:'dev',readOnly:true,scope:'SCRIPT_PROPERTIES_FORMAT_AND_FLAGS_ONLY',checks:checks,flags:flags,missingDependencies:missingDependencies,maintenance:p.MAINTENANCE_MODE==='true'?'ACTIVE':'INACTIVE',netlifyInspected:false,resourceAccessChecked:false};
   console.info(JSON.stringify(result));return result;
 }
@@ -985,7 +997,7 @@ function inspectDevelopmentConfiguration(){
 function activateDevelopmentWorkspace(){
   var c=baseSettings_();requireOwnerDev_(c);
   var props=scriptProperties_();
-  if(['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(k){return props.getProperty(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');
+  if(['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');
   provisionDevelopmentCatalog();provisionDevelopmentProfile();
   return withLock_(function(){
     var ss=storage_(c,false).spreadsheet;assertSchema_(ss);authControlStore_(c);catalogJournal_(c);
@@ -993,7 +1005,7 @@ function activateDevelopmentWorkspace(){
     if(!id){var folder=resourceFolder_(c.driveRootId).createFolder('Capas privadas');folder.setDescription(marker_(c,'covers'));id=folder.getId();props.setProperty('COVERS_FOLDER_ID',id);}
     assertMarker_(resourceFolder_(id),c,'covers');
     var names=['CATALOG','CHECKOUT','COVER_PHOTOS','NOTIFICATIONS','STAFF','CUSTOMERS','OPERATIONS','PROFILE','RECOVERY','EMAIL_CHANGE','NICHES','SCHEDULES','AUDIT','REPORTS','CUSTOMER_INSIGHTS','KEY_MANAGEMENT'],flags={};
-    names.forEach(function(name){flags[name+'_ENABLED']='true';});props.setProperties(flags);
+    names.forEach(function(name){flags[name+'_ENABLED']='true';});setFeatureFlags_(flags);
     var result={environment:'dev',businessModulesReady:true,enabled:names.map(function(name){return name+'_ENABLED';}),netlifyStillRequiresMatchingFlags:true};console.info(JSON.stringify(result));return result;
   });
 }
@@ -1001,10 +1013,10 @@ function activateDevelopmentWorkspace(){
 ;
 // END ConfigurationAudit.gs
 
-// BEGIN CoverPhotos.gs sha256=08ad6db44570cb221547a63fc3559631ca5634d7ed3212023122940a23c9fe86
+// BEGIN CoverPhotos.gs sha256=f278ab7d69fa0c3c77e7bf0c304e07317323733288136ff46e109e3ca79829a8
 /* Private Drive covers. Called only under the catalog's signed/session lock.
  * Browsers never choose Drive IDs or get public sharing URLs. */
-function coverPhotosEnabled_() { if (scriptProperties_().getProperty('COVER_PHOTOS_ENABLED') !== 'true') failure_('COVER_PHOTOS_UNAVAILABLE'); }
+function coverPhotosEnabled_() { if (scriptFlag_('COVER_PHOTOS_ENABLED') !== 'true') failure_('COVER_PHOTOS_UNAVAILABLE'); }
 function coverFolder_(c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
   storage_(c,false);
@@ -1217,10 +1229,10 @@ function emailChangeOperation_(request,c,principal){
 ;
 // END EmailChange.gs
 
-// BEGIN EmergencyRecovery.gs sha256=027725aaa0b1f9bcf334d91c89e8d2763c329e2efcefe495d594f775eb036792
+// BEGIN EmergencyRecovery.gs sha256=5acfde246741b4ab9f42d5ce3c0bf19cc88f91645fa068790c693819671a3e07
 /* Offline recovery codes + verified email + replacement WebAuthn enrollment.
  * Codes themselves never reach Google; only scoped hashes are stored here. */
-function emergencyEnabled_(){return scriptProperties_().getProperty('EMERGENCY_RECOVERY_ENABLED')==='true';}
+function emergencyEnabled_(){return scriptFlag_('EMERGENCY_RECOVERY_ENABLED')==='true';}
 function emergencyFail_(){failure_('EMERGENCY_RECOVERY_UNAVAILABLE');}
 function emergencySave_(c,key,value,domain){var v=JSON.parse(JSON.stringify(value));delete v.hash;value.hash=hmac_(JSON.stringify(v),c.secret,domain);var raw=JSON.stringify(value),props=scriptProperties_(),all=props.getProperties(),bytes=function(s){return Utilities.newBlob(s).getBytes().length;},total=bytes(key)+bytes(raw);Object.keys(all).forEach(function(k){if(k!==key)total+=bytes(k)+bytes(all[k]);});if(bytes(raw)>8000||total>400000)emergencyFail_();props.setProperty(key,raw);}
 function emergencyRead_(c,key,domain){var raw=scriptProperties_().getProperty(key);if(!raw)return null;var v;try{v=JSON.parse(raw);}catch(_){emergencyFail_();}if(!v||typeof v!=='object')emergencyFail_();var copy=JSON.parse(JSON.stringify(v));delete copy.hash;if(v.environment!==c.environment||v.installationId!==c.installationId||!constantEqual_(v.hash,hmac_(JSON.stringify(copy),c.secret,domain)))emergencyFail_();return v;}
@@ -1256,7 +1268,7 @@ function emergencyRecoveryCommit_(ss,c,current,p,now,background){recoverEmergenc
 ;
 // END EmergencyRecovery.gs
 
-// BEGIN Maintenance.gs sha256=23306f6755a03f993de16e44e530d8b2d928a11c3899a2078844e912464d6524
+// BEGIN Maintenance.gs sha256=bd5be337366174c7916639cca83d3803afe27f8052aadf075086edb3ba3b5ce1
 /* Privileged DEV maintenance. No function in this file is routed by doPost.
  * Recovery uses an isolated resource map under ScriptLock; active bindings stay intact. */
 var MAINTENANCE_CONTEXT_ = null;
@@ -1264,6 +1276,42 @@ function scriptProperties_() {
   return MAINTENANCE_CONTEXT_
     ? MAINTENANCE_CONTEXT_.properties
     : PropertiesService.getScriptProperties();
+}
+
+// Feature flags are read several times per RPC (dispatcher gate, nested
+// helpers). Memoize them for the lifetime of the current locked request only
+// -- RPC_STORAGE_SCOPE_ is rebuilt from scratch at the top of every
+// processRequest_ call, so this NEVER outlives one request and can never
+// mask a Script Properties edit (console or script) from the next request.
+// Deliberately NOT backed by CacheService: these flags gate security-relevant
+// modules (sessions, guards, passkeys), and an owner disabling a module must
+// take effect on the very next request, not after a cache TTL.
+var SCRIPT_FLAG_KEYS_ = [
+  'ADMIN_PIN_LOGIN_ENABLED', 'IDENTITY_SESSIONS_ENABLED', 'IDENTITY_GUARDS_ENABLED',
+  'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_ACCESS_ENABLED', 'CATALOG_ENABLED',
+  'COVER_PHOTOS_ENABLED', 'CHECKOUT_ENABLED', 'NOTIFICATIONS_ENABLED',
+  'STAFF_ENABLED', 'CUSTOMERS_ENABLED', 'OPERATIONS_ENABLED', 'PROFILE_ENABLED',
+  'RECOVERY_ENABLED', 'EMAIL_CHANGE_ENABLED', 'NICHES_ENABLED', 'SCHEDULES_ENABLED',
+  'AUDIT_ENABLED', 'REPORTS_ENABLED', 'CUSTOMER_INSIGHTS_ENABLED',
+  'KEY_MANAGEMENT_ENABLED', 'EMERGENCY_RECOVERY_ENABLED'
+];
+function scriptFlagSnapshot_() {
+  if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.flags) return RPC_STORAGE_SCOPE_.flags;
+  var properties = scriptProperties_().getProperties(), flags = {};
+  SCRIPT_FLAG_KEYS_.forEach(function (key) { flags[key] = properties[key] === undefined ? null : properties[key]; });
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.flags = flags;
+  return flags;
+}
+function scriptFlag_(key) { return scriptFlagSnapshot_()[key]; }
+function invalidateScriptFlagCache_() {
+  if (RPC_STORAGE_SCOPE_) RPC_STORAGE_SCOPE_.flags = null;
+}
+// Flag writes still go through here so a later read within the SAME locked
+// request (e.g. activateDevelopmentWorkspace reading its own just-set flags)
+// never sees the pre-write snapshot it memoized moments earlier.
+function setFeatureFlags_(values) {
+  scriptProperties_().setProperties(values);
+  invalidateScriptFlagCache_();
 }
 function maintenanceId_(id) {
   return (MAINTENANCE_CONTEXT_ && MAINTENANCE_CONTEXT_.aliases[id]) || id;
@@ -2539,9 +2587,9 @@ function nichesOperation_(request,c){
 ;
 // END Niches.gs
 
-// BEGIN Notifications.gs sha256=4fdefee10ef8623e708be2bbe6c678efdcc01fb275f2b245b2ef1d1769c66be3
+// BEGIN Notifications.gs sha256=06fc8e6b25c417652da9d249eb3032b018e2691a4e1101ef70dbbb5b2c2aa3ac
 /* DEV stock alerts and replenishment reports. Caller holds ScriptLock. */
-function notificationEnabled_() { return scriptProperties_().getProperty('NOTIFICATIONS_ENABLED') === 'true'; }
+function notificationEnabled_() { return scriptFlag_('NOTIFICATIONS_ENABLED') === 'true'; }
 function notificationTime_(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
 function notificationId_(product) {
   var c = baseSettings_(), hash = digest_(JSON.stringify(['stock-alert.v1', c.installationId, product.ID_Produto, product.Versao_Registro]));
@@ -2568,6 +2616,9 @@ function notificationReads_(ss) {
     if (!saleUuid_(row.ID_Notificacao) || !saleUuid_(row.ID_Usuario) || keys.has(key) || !notificationTime_(row.Lida_Em) || row.Confirmada_Em !== '') failure_('NOTIFICATIONS_UNAVAILABLE'); keys.add(key);
   }); return table;
 }
+// Each notification row is written and flushed on its own: recovery tests
+// depend on a crash between any two alert writes still leaving every prior
+// one durably visible, so these are never batched into one setValues call.
 function notificationWrite_(table, row) {
   var values = table.columns.map(function (key) { return row[key]; });
   if (row.number) table.sheet.getRange(row.number, 1, 1, values.length).setValues([values]);
@@ -2767,7 +2818,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=2a215cb21e7b0e7e76ad700dd5b3ef3d9a6ee738e779e8a522908a7f598c1189
+// BEGIN OwnerAccess.gs sha256=6a7ccf4163adfcb42cc472eb27fa90dfb101e597b5b396514891ec7c2f122bef
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -2778,6 +2829,12 @@ function accessEmail_(value) {
   return value.toLowerCase();
 }
 function accessSaveMain_(table, row) {
+  // Backend-enforced append-only: a table marked append_only in LIVRARIA_SCHEMA
+  // (Logs_Auditoria today) can never be overwritten through this writer, even
+  // by a future bug that accidentally reuses an existing row's .number. This
+  // turns the schema's append_only flag from a call-site convention into a
+  // guarantee every caller gets automatically.
+  if (table.appendOnly && row.number !== undefined) failure_('AUDIT_IMMUTABLE');
   invalidateRpcRows_(table.sheet);
   if (!row.number && table.rows.length >= 5000) failure_('IDENTITY_UNAVAILABLE');
   var values = table.columns.map(function (key) { return row[key] === undefined ? '' : row[key]; });
@@ -3432,7 +3489,7 @@ function passkeyOperation_(request, c) {
 ;
 // END PasskeyStore.gs
 
-// BEGIN Profile.gs sha256=45f700331dc698278d0fbecf65dd87975e0d9cd1a304614a8a3539f1e17f37cc
+// BEGIN Profile.gs sha256=e27a2339519139c18304ca2c3566e3ca7eaac3b5f64b41772d8e161346c262fb
 /* Self-service profile. Owner CPF can be bound once after strong authentication.
  * Dispatcher owns ScriptLock; recovery of committed changes ignores UI flags. */
 function profileFail_(code){failure_(code||'INVALID_PROFILE');}
@@ -3500,17 +3557,17 @@ function provisionDevelopmentProfile() {
   var c=baseSettings_();requireOwnerDev_(c);
   return withLock_(function(){var store=storage_(c,false);assertSchema_(store.spreadsheet);var props=scriptProperties_(),id=props.getProperty('PROFILES_FOLDER_ID');
     if(!id){var folder=resourceFolder_(c.driveRootId).createFolder('Perfis privados');folder.setDescription(marker_(c,'profiles'));id=folder.getId();props.setProperty('PROFILES_FOLDER_ID',id);}
-    assertMarker_(resourceFolder_(id),c,'profiles');props.setProperty('PROFILE_ENABLED','true');return {environment:'dev',profileReady:true};
+    assertMarker_(resourceFolder_(id),c,'profiles');setFeatureFlags_({PROFILE_ENABLED:'true'});return {environment:'dev',profileReady:true};
   });
 }
 
 ;
 // END Profile.gs
 
-// BEGIN Recovery.gs sha256=624dcac2b5e8f09dae44341aeda60f6589f1e2aff12691c9ce913531d200551b
+// BEGIN Recovery.gs sha256=dd9fce0bc075002662b9ad8eb6c25e0cfb27bb065f261ee705085d20a8e498ec
 /* PIN recovery: email possession AND an existing WebAuthn credential.
  * Durable COMMITTING intent precedes epoch/PIN/key/session projections. */
-function recoveryEnabled_(){return scriptProperties_().getProperty('RECOVERY_ENABLED')==='true';}
+function recoveryEnabled_(){return scriptFlag_('RECOVERY_ENABLED')==='true';}
 function recoverySubject_(c,row){
  var subject;
  if(row.Subject_ID===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID'))subject=accessOwner_(c);
@@ -3566,7 +3623,7 @@ function recoverRecoveryIntents_(c){
 ;
 // END Recovery.gs
 
-// BEGIN Reports.gs sha256=faa04fa184f757e566334b98a30eec03cf4f07711a977412567fb1bbcbdf22f7
+// BEGIN Reports.gs sha256=505456f3fca9704165a538227303f2d4bbc36570d896ef3da1d4f2b87f28052d
 /* Commercial sources and export authorization. All calls run under ScriptLock.
  * Customer PII stays sealed until the trusted Node report controller. */
 function reportFail_(code){failure_(code||'INVALID_REPORT');}
@@ -3594,6 +3651,10 @@ function reportBuildSource_(ss,c,f){
   identityRows_(ss,'Movimentacoes_Estoque').rows.forEach(function(r){if(r.Data_Hora<f.from||r.Data_Hora>f.to||f.employeeId&&r.ID_Usuario!==f.employeeId||f.movementType&&r.Tipo!==f.movementType||!reportProductMatch_(productMap.get(r.ID_Produto),f))return;productIds.add(r.ID_Produto);peopleIds.add(r.ID_Usuario);movements.push({id:r.ID_Movimentacao,at:r.Data_Hora,operatorId:r.ID_Usuario,productId:r.ID_Produto,type:r.Tipo,quantity:r.Quantidade,before:r.Saldo_Anterior,after:r.Saldo_Posterior,saleId:r.ID_Venda});});
  }
  var products=allProducts.filter(function(p){return productIds.has(p.id);}),nicheIds=new Set();products.forEach(function(p){p.nicheIds.forEach(function(id){nicheIds.add(id);});});var data={products:products,sales:sales,movements:movements,people:auditPeople_(ss,peopleIds),customers:customerTable.rows.filter(function(r){return customerIds.has(r.ID_Cliente);}).map(function(r){return {id:r.ID_Cliente,contact:r.Nome};}),niches:catalogNiches_(ss).rows.filter(function(n){return nicheIds.has(n.ID_Nicho);}).map(function(n){return {id:n.ID_Nicho,name:n.Nome};}),legacyExcluded:legacy};
+ // Row-count ceiling independent of the byte-size one below: a report made of
+ // many small rows could otherwise stay under the byte cap while still being
+ // an unbounded bulk export of commercial/customer data.
+ if(products.length+sales.length+movements.length>5000)reportFail_('REPORT_CAPACITY');
  data.snapshot=hmac_(JSON.stringify([c.environment,c.installationId,f,data]),c.secret,'reports.source');data.generatedAt=new Date().toISOString();if(Utilities.base64Encode(Utilities.newBlob(JSON.stringify(data)).getBytes()).length>3500000)reportFail_('REPORT_CAPACITY');return data;
 }
 function reportsOperation_(request,c){
@@ -3607,7 +3668,7 @@ function reportsOperation_(request,c){
 ;
 // END Reports.gs
 
-// BEGIN Sales.gs sha256=d73611fdc340cd6b7f8cc3e39846d1993c5724391e745b62da5aeaa7008e4b0a
+// BEGIN Sales.gs sha256=70a3761b87bfcecc89acdb1a7b23a0e251c685dda8b0c0c7efe333435c5116c2
 /* Recoverable sale projections, including gated anonymous DEV checkout.
  * Caller MUST hold the installation ScriptLock for the entire read/write cycle.
  * The journal remains append-only; deterministic keys and product versions allow
@@ -3681,7 +3742,7 @@ function checkoutOperation_(request, c) {
     ensureSaleRow_(audit, ['ID_Log'], log, true); failure_(code);
   }
   if(command.customerId!==null){
-    if(scriptProperties_().getProperty('CUSTOMERS_ENABLED')!=='true')rejectBusiness('CUSTOMER_UNAVAILABLE');
+    if(scriptFlag_('CUSTOMERS_ENABLED')!=='true')rejectBusiness('CUSTOMER_UNAVAILABLE');
     recoverCustomers_(ss);if(!customerRows_(ss).rows.some(function(r){return r.ID_Cliente===command.customerId;}))rejectBusiness('CUSTOMER_UNAVAILABLE');
   }
   var products = catalogProducts_(ss), total = 0;
@@ -4478,7 +4539,7 @@ function securityRecord_(request,c){
 ;
 // END SecurityAudit.gs
 
-// BEGIN SessionStore.gs sha256=5b75f07f51e6ed5fb142474086f0f0b3e53fce885455e988fca10eb7cdf7ff8d
+// BEGIN SessionStore.gs sha256=c4a15394b7a8afe6a169ac855297b52681e5ea4ed8bf4894f757d09ed381cfa2
 /* Persistent session reader/revoker. Internal functions only.
  * processRequest_ MUST hold ScriptLock and validate the signed envelope before
  * invoking identitySessionOperation_. No user/session creation or PIN storage.
@@ -4488,14 +4549,17 @@ function identityUuid_(value) {
 }
 // DEV policy explicitly authorized by the project owner: PIN is an alternate
 // sign-in method. Other environments retain the strong administrator policy.
-function devPinLoginEnabled_(){var p=scriptProperties_().getProperties();return p.APP_ENV==='dev'&&(p.ADMIN_PIN_LOGIN_ENABLED===undefined||p.ADMIN_PIN_LOGIN_ENABLED==='true');}
+function devPinLoginEnabled_(){return scriptProperties_().getProperty('APP_ENV')==='dev'&&(scriptFlag_('ADMIN_PIN_LOGIN_ENABLED')===null||scriptFlag_('ADMIN_PIN_LOGIN_ENABLED')==='true');}
 function businessAssurance_(principal){return ['mfa','passkey'].includes(principal.assurance)||principal.assurance==='pin'&&devPinLoginEnabled_();}
 function identityRows_(spreadsheet, name) {
   var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
   if (!sheet || !definition || !same_(rowValues_(sheet, lastRow), definition.columns) || lastRow > 5001) failure_('IDENTITY_UNAVAILABLE');
   var values = rpcRows_(sheet, lastRow, definition.columns.length);
-  return { sheet: sheet, columns: definition.columns, rows: values.map(function (values, index) {
+  // Carries the schema's append_only marker onto the table object so every
+  // writer (accessSaveMain_) can enforce it, instead of relying on each of the
+  // ~20 call sites never happening to pass a row.number by convention alone.
+  return { sheet: sheet, columns: definition.columns, appendOnly: definition.append_only === true, rows: values.map(function (values, index) {
     var row = { number: index + 2 };
     definition.columns.forEach(function (column, columnIndex) { row[column] = values[columnIndex]; });
     return row;
@@ -4571,10 +4635,10 @@ function identitySessionOperation_(request, c) {
 ;
 // END SessionStore.gs
 
-// BEGIN Staff.gs sha256=314f909d35d2b73e41aaf2ec2825b50906e727f160525781d62705ce2ff71a6b
+// BEGIN Staff.gs sha256=e9bf67b09b641cf848eaa135444b28918c40c4d2917d393924ec633a76de4075
 /* DEV staff management. Dispatcher owns ScriptLock. Contact data is AEAD-sealed
  * in Node; no plaintext personal fields, PINs or bearer tokens in this journal. */
-function staffEnabled_() { return scriptProperties_().getProperty('STAFF_ENABLED') === 'true'; }
+function staffEnabled_() { return scriptFlag_('STAFF_ENABLED') === 'true'; }
 function staffFail_(code) { failure_(code || 'INVALID_STAFF'); }
 function staffSealed_(value) { return typeof value === 'string' && value.length <= 16000 && /^pd1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$/.test(value); }
 function staffConfig_(ss, key) {
@@ -4630,8 +4694,12 @@ function staffProject_(ss,v) {
   staffPut_(ss,'identity.version.'+v.id,v.epoch,v.at,v.actor);
   if(!same_(values,v.after)){var row={number:found.length?found[0].number:undefined};columns.forEach(function(k,i){row[k]=v.after[i];});accessSaveMain_(users,row);}
   staffPut_(ss,'staff.revision.'+v.id,v.revision,v.at,v.actor);
+  // Record the PRIOR role/status too: without it, a promotion to ADMIN or a
+  // deactivation cannot be distinguished from a no-op resave in the audit trail.
   var audit=identityRows_(ss,'Logs_Auditoria'),logged=audit.rows.filter(function(r){return r.ID_Log===v.commandId;}),log={ID_Log:v.commandId,Data_Hora:v.at,ID_Usuario:v.actor,Perfil:v.role,
-    Acao:v.before===null?'STAFF_CREATE':'STAFF_UPDATE',Entidade:'Usuarios',ID_Entidade:v.id,Antes:JSON.stringify({revision:v.revision-1}),Depois:JSON.stringify({revision:v.revision,role:v.after[columns.indexOf('Perfil')],status:v.after[columns.indexOf('Status')],reenrollmentRequired:v.reenrollmentRequired,reasonRecorded:true}),Resultado:'SUCESSO',ID_Requisicao:v.commandId};
+    Acao:v.before===null?'STAFF_CREATE':'STAFF_UPDATE',Entidade:'Usuarios',ID_Entidade:v.id,
+    Antes:JSON.stringify({revision:v.revision-1,role:v.before?v.before[columns.indexOf('Perfil')]:null,status:v.before?v.before[columns.indexOf('Status')]:null}),
+    Depois:JSON.stringify({revision:v.revision,role:v.after[columns.indexOf('Perfil')],status:v.after[columns.indexOf('Status')],reenrollmentRequired:v.reenrollmentRequired,reasonRecorded:true}),Resultado:'SUCESSO',ID_Requisicao:v.commandId};
   if(logged.length>1||logged.length&&!audit.columns.every(function(k){return logged[0][k]===log[k];}))staffFail_('STAFF_UNAVAILABLE');
   if(!logged.length)accessSaveMain_(audit,log);
   v.state='COMPLETE';staffPut_(ss,'staff.command.'+v.commandId,JSON.stringify(v),v.at,v.actor);

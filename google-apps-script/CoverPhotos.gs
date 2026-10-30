@@ -1,6 +1,6 @@
 /* Private Drive covers. Called only under the catalog's signed/session lock.
  * Browsers never choose Drive IDs or get public sharing URLs. */
-function coverPhotosEnabled_() { if (scriptProperties_().getProperty('COVER_PHOTOS_ENABLED') !== 'true') failure_('COVER_PHOTOS_UNAVAILABLE'); }
+function coverPhotosEnabled_() { if (scriptFlag_('COVER_PHOTOS_ENABLED') !== 'true') failure_('COVER_PHOTOS_UNAVAILABLE'); }
 function coverFolder_(c) {
   if (c.environment !== 'dev') failure_('FORBIDDEN');
   storage_(c,false);

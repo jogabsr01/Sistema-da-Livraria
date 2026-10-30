@@ -71,7 +71,7 @@ function checkoutOperation_(request, c) {
     ensureSaleRow_(audit, ['ID_Log'], log, true); failure_(code);
   }
   if(command.customerId!==null){
-    if(scriptProperties_().getProperty('CUSTOMERS_ENABLED')!=='true')rejectBusiness('CUSTOMER_UNAVAILABLE');
+    if(scriptFlag_('CUSTOMERS_ENABLED')!=='true')rejectBusiness('CUSTOMER_UNAVAILABLE');
     recoverCustomers_(ss);if(!customerRows_(ss).rows.some(function(r){return r.ID_Cliente===command.customerId;}))rejectBusiness('CUSTOMER_UNAVAILABLE');
   }
   var products = catalogProducts_(ss), total = 0;

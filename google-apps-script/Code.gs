@@ -235,18 +235,21 @@ function readMessage_(envelope, c) {
   return request;
 }
 function registerNonce_(request, spreadsheet) {
-  var sheet = spreadsheet.getSheetByName('_Requisicoes'), now = Date.now();
-  var rows = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+  var sheet = spreadsheet.getSheetByName('_Requisicoes'), lastRow = sheet.getLastRow(), now = Date.now();
+  var rows = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 4).getValues();
   var live = rows.filter(function (r) { return Date.parse(r[2]) > now; });
   var hash = digest_(request.nonce);
   if (live.some(function (r) { return r[0] === hash; })) failure_('REPLAY');
   if (live.length >= 5000) failure_('SERVICE_CAPACITY');
+  var entry = [hash, new Date(now).toISOString(), new Date(now + 300000).toISOString(), request.requestId];
   if (rows.length !== live.length) {
-    sheet.getRange(2, 1, rows.length, 4).clearContent();
-    if (live.length) sheet.getRange(2, 1, live.length, 4).setValues(live);
+    // Expired entries are compacted with the new nonce in one final body write.
+    if (rows.length) sheet.getRange(2, 1, rows.length, 4).clearContent();
+    sheet.getRange(2, 1, live.length + 1, 4).setValues(live.concat([entry]));
+  } else {
+    // Preserve the cheap append path when no compaction is necessary.
+    sheet.getRange(lastRow + 1, 1, 1, 4).setValues([entry]);
   }
-  // getLastRow reflects cleared rows. No raw session token or PIN is stored.
-  sheet.appendRow([hash, new Date(now).toISOString(), new Date(now + 300000).toISOString(), request.requestId]);
   SpreadsheetApp.flush();
 }
 // Closed diagnostics only: never log exception messages, payloads or identities.
@@ -287,49 +290,42 @@ function processRequest_(request, c) {
       return { ready: true, environment: 'dev', schemaVersion: LIVRARIA_SCHEMA.version };
     }
     if (typeof request.action === 'string' && (request.action.indexOf('staff.') === 0 || request.action.indexOf('identity.staffAccess.') === 0)) {
-      var staffProps = scriptProperties_();
-      if (c.environment !== 'dev' || !staffEnabled_() || ['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(key){return staffProps.getProperty(key)!=='true';})) failure_('STAFF_UNAVAILABLE');
+      if (c.environment !== 'dev' || !staffEnabled_() || ['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(key){return scriptFlag_(key)!=='true';})) failure_('STAFF_UNAVAILABLE');
       return request.action.indexOf('staff.') === 0 ? staffOperation_(request,c) : staffAccessOperation_(request,c);
     }
     if (typeof request.action === 'string' && request.action.indexOf('customers.') === 0) {
-      var customerProps=scriptProperties_();
-      if(c.environment!=='dev'||['CUSTOMERS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return customerProps.getProperty(key)!=='true';})) failure_('CUSTOMERS_UNAVAILABLE');
+      if(c.environment!=='dev'||['CUSTOMERS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return scriptFlag_(key)!=='true';})) failure_('CUSTOMERS_UNAVAILABLE');
       return customerOperation_(request,c);
     }
-    if(typeof request.action==='string'&&request.action.indexOf('insights.')===0){if(c.environment!=='dev'||['CUSTOMER_INSIGHTS_ENABLED','CUSTOMERS_ENABLED','REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return customerInsightsOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('reports.')===0){if(c.environment!=='dev'||['REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return reportsOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('audit.')===0){if(c.environment!=='dev'||['AUDIT_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('AUDIT_UNAVAILABLE');return auditOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('schedules.')===0){if(c.environment!=='dev'||['SCHEDULES_ENABLED','CATALOG_ENABLED','NOTIFICATIONS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('SCHEDULE_UNAVAILABLE');return schedulesOperation_(request,c);}
-    if(typeof request.action==='string'&&request.action.indexOf('niches.')===0){if(c.environment!=='dev'||['NICHES_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('NICHES_UNAVAILABLE');return nichesOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('insights.')===0){if(c.environment!=='dev'||['CUSTOMER_INSIGHTS_ENABLED','CUSTOMERS_ENABLED','REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return customerInsightsOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('reports.')===0){if(c.environment!=='dev'||['REPORTS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('REPORT_UNAVAILABLE');return reportsOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('audit.')===0){if(c.environment!=='dev'||['AUDIT_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('AUDIT_UNAVAILABLE');return auditOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('schedules.')===0){if(c.environment!=='dev'||['SCHEDULES_ENABLED','CATALOG_ENABLED','NOTIFICATIONS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('SCHEDULE_UNAVAILABLE');return schedulesOperation_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('niches.')===0){if(c.environment!=='dev'||['NICHES_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('NICHES_UNAVAILABLE');return nichesOperation_(request,c);}
     if(typeof request.action==='string'&&request.action.indexOf('profile.')===0){
-      if(c.environment!=='dev'||scriptProperties_().getProperty('PROFILE_ENABLED')!=='true'||scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED')!=='true')failure_('PROFILE_UNAVAILABLE');
+      if(c.environment!=='dev'||scriptFlag_('PROFILE_ENABLED')!=='true'||scriptFlag_('IDENTITY_SESSIONS_ENABLED')!=='true')failure_('PROFILE_UNAVAILABLE');
       return profileOperation_(request,c);
     }
     if(typeof request.action==='string'&&request.action.indexOf('operations.')===0){
-      var operationProps=scriptProperties_();
-      if(c.environment!=='dev'||['OPERATIONS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return operationProps.getProperty(key)!=='true';}))failure_('OPERATIONS_UNAVAILABLE');
+      if(c.environment!=='dev'||['OPERATIONS_ENABLED','CATALOG_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(key){return scriptFlag_(key)!=='true';}))failure_('OPERATIONS_UNAVAILABLE');
       return operationsOperation_(request,c);
     }
     if (['sales.checkout','sales.receipt'].includes(request.action)) {
-      var checkoutProps = scriptProperties_();
-      if (c.environment !== 'dev' || ['CHECKOUT_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return checkoutProps.getProperty(key) !== 'true'; })) failure_('CHECKOUT_UNAVAILABLE');
+      if (c.environment !== 'dev' || ['CHECKOUT_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return scriptFlag_(key) !== 'true'; })) failure_('CHECKOUT_UNAVAILABLE');
       return checkoutOperation_(request, c);
     }
     if (typeof request.action === 'string' && request.action.indexOf('notifications.') === 0) {
-      var notificationProps = scriptProperties_();
-      if (c.environment !== 'dev' || ['NOTIFICATIONS_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return notificationProps.getProperty(key) !== 'true'; })) failure_('NOTIFICATIONS_UNAVAILABLE');
+      if (c.environment !== 'dev' || ['NOTIFICATIONS_ENABLED', 'CATALOG_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return scriptFlag_(key) !== 'true'; })) failure_('NOTIFICATIONS_UNAVAILABLE');
       return notificationOperation_(request, c);
     }
     if (['catalog.bootstrap','catalog.list', 'catalog.get', 'catalog.niches', 'catalog.save', 'catalog.cover', 'catalog.receive', 'catalog.remove'].includes(request.action)) {
-      var catalogProps = scriptProperties_();
-      if (c.environment !== 'dev' || catalogProps.getProperty('CATALOG_ENABLED') !== 'true' || catalogProps.getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('CATALOG_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('CATALOG_ENABLED') !== 'true' || scriptFlag_('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('CATALOG_UNAVAILABLE');
       return catalogOperation_(request, c);
     }
-    if(typeof request.action==='string'&&request.action.indexOf('keys.')===0){if(c.environment!=='dev'||['KEY_MANAGEMENT_ENABLED','IDENTITY_PASSKEYS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('KEY_MANAGEMENT_UNAVAILABLE');return keyManagementOperation_(request,c);}
-    if(request.action==='identity.security.record'){if(c.environment!=='dev'||['IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptProperties_().getProperty(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');return securityRecord_(request,c);}
+    if(typeof request.action==='string'&&request.action.indexOf('keys.')===0){if(c.environment!=='dev'||['KEY_MANAGEMENT_ENABLED','IDENTITY_PASSKEYS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('KEY_MANAGEMENT_UNAVAILABLE');return keyManagementOperation_(request,c);}
+    if(request.action==='identity.security.record'){if(c.environment!=='dev'||['IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_SESSIONS_ENABLED'].some(function(k){return scriptFlag_(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');return securityRecord_(request,c);}
     if (typeof request.action === 'string' && request.action.indexOf('identity.access.') === 0) {
-      var props = scriptProperties_();
-      if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return props.getProperty(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || ['IDENTITY_ACCESS_ENABLED', 'IDENTITY_GUARDS_ENABLED', 'IDENTITY_PASSKEYS_ENABLED', 'IDENTITY_SESSIONS_ENABLED'].some(function (key) { return scriptFlag_(key) !== 'true'; })) failure_('IDENTITY_UNAVAILABLE');
       if (request.action === 'identity.access.loginLookup') return accessLoginLookup_(request,c);
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
@@ -342,20 +338,20 @@ function processRequest_(request, c) {
       return ownerAccessOperation_(request, c);
     }
     if (['identity.passkey.list', 'identity.passkey.begin', 'identity.passkey.take', 'identity.passkey.register', 'identity.passkey.counter'].includes(request.action)) {
-      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('IDENTITY_PASSKEYS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return passkeyOperation_(request, c);
     }
     if (['identity.guard.attempt', 'identity.challenge.create', 'identity.challenge.consume'].includes(request.action)) {
-      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('IDENTITY_GUARDS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return authControlOperation_(request, c);
     }
     if (['identity.session.read', 'identity.session.revoke', 'identity.session.revokeOthers'].includes(request.action)) {
-      if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+      if (c.environment !== 'dev' || scriptFlag_('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
       return identitySessionOperation_(request, c);
     }
     var actor = request.actor;
     if (request.action !== 'system.schema') failure_('FORBIDDEN');
-    if (c.environment !== 'dev' || scriptProperties_().getProperty('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
+    if (c.environment !== 'dev' || scriptFlag_('IDENTITY_SESSIONS_ENABLED') !== 'true') failure_('IDENTITY_UNAVAILABLE');
     if (!actor || !/^[a-f0-9]{64}$/.test(actor.sessionTokenHash || '')) failure_('UNAUTHENTICATED');
     // Re-resolve INSIDE this operation's lock. A prior Node lookup cannot
     // authorize metadata after a concurrent logout, disable or epoch change.

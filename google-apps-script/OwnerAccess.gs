@@ -8,6 +8,12 @@ function accessEmail_(value) {
   return value.toLowerCase();
 }
 function accessSaveMain_(table, row) {
+  // Backend-enforced append-only: a table marked append_only in LIVRARIA_SCHEMA
+  // (Logs_Auditoria today) can never be overwritten through this writer, even
+  // by a future bug that accidentally reuses an existing row's .number. This
+  // turns the schema's append_only flag from a call-site convention into a
+  // guarantee every caller gets automatically.
+  if (table.appendOnly && row.number !== undefined) failure_('AUDIT_IMMUTABLE');
   invalidateRpcRows_(table.sheet);
   if (!row.number && table.rows.length >= 5000) failure_('IDENTITY_UNAVAILABLE');
   var values = table.columns.map(function (key) { return row[key] === undefined ? '' : row[key]; });

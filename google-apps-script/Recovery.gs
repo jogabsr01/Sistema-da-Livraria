@@ -1,6 +1,6 @@
 /* PIN recovery: email possession AND an existing WebAuthn credential.
  * Durable COMMITTING intent precedes epoch/PIN/key/session projections. */
-function recoveryEnabled_(){return scriptProperties_().getProperty('RECOVERY_ENABLED')==='true';}
+function recoveryEnabled_(){return scriptFlag_('RECOVERY_ENABLED')==='true';}
 function recoverySubject_(c,row){
  var subject;
  if(row.Subject_ID===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID'))subject=accessOwner_(c);

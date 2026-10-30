@@ -102,6 +102,11 @@ function provisionDevelopmentAuthControls() {
 function authControlExact_(payload, keys) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !same_(Object.keys(payload).sort(), keys.slice().sort())) failure_('CHALLENGE_REJECTED');
 }
+// Each row is written and flushed on its own. The project's recovery tests
+// depend on every one of these rows being durably visible one at a time, so
+// a crash between two related writes (e.g. a rate-limit counter and its
+// sibling policy row) always leaves a consistently resumable partial state.
+// Do NOT batch these into a single setValues call across unrelated rows.
 function authControlSave_(table, row) {
   invalidateRpcRows_(table.sheet);
   var values = table.columns.map(function (key) { return row[key]; });

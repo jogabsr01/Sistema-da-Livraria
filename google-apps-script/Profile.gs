@@ -65,6 +65,6 @@ function provisionDevelopmentProfile() {
   var c=baseSettings_();requireOwnerDev_(c);
   return withLock_(function(){var store=storage_(c,false);assertSchema_(store.spreadsheet);var props=scriptProperties_(),id=props.getProperty('PROFILES_FOLDER_ID');
     if(!id){var folder=resourceFolder_(c.driveRootId).createFolder('Perfis privados');folder.setDescription(marker_(c,'profiles'));id=folder.getId();props.setProperty('PROFILES_FOLDER_ID',id);}
-    assertMarker_(resourceFolder_(id),c,'profiles');props.setProperty('PROFILE_ENABLED','true');return {environment:'dev',profileReady:true};
+    assertMarker_(resourceFolder_(id),c,'profiles');setFeatureFlags_({PROFILE_ENABLED:'true'});return {environment:'dev',profileReady:true};
   });
 }

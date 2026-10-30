@@ -1,5 +1,5 @@
 /* DEV stock alerts and replenishment reports. Caller holds ScriptLock. */
-function notificationEnabled_() { return scriptProperties_().getProperty('NOTIFICATIONS_ENABLED') === 'true'; }
+function notificationEnabled_() { return scriptFlag_('NOTIFICATIONS_ENABLED') === 'true'; }
 function notificationTime_(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
 function notificationId_(product) {
   var c = baseSettings_(), hash = digest_(JSON.stringify(['stock-alert.v1', c.installationId, product.ID_Produto, product.Versao_Registro]));
@@ -26,6 +26,9 @@ function notificationReads_(ss) {
     if (!saleUuid_(row.ID_Notificacao) || !saleUuid_(row.ID_Usuario) || keys.has(key) || !notificationTime_(row.Lida_Em) || row.Confirmada_Em !== '') failure_('NOTIFICATIONS_UNAVAILABLE'); keys.add(key);
   }); return table;
 }
+// Each notification row is written and flushed on its own: recovery tests
+// depend on a crash between any two alert writes still leaving every prior
+// one durably visible, so these are never batched into one setValues call.
 function notificationWrite_(table, row) {
   var values = table.columns.map(function (key) { return row[key]; });
   if (row.number) table.sheet.getRange(row.number, 1, 1, values.length).setValues([values]);

@@ -1,6 +1,6 @@
 /* Offline recovery codes + verified email + replacement WebAuthn enrollment.
  * Codes themselves never reach Google; only scoped hashes are stored here. */
-function emergencyEnabled_(){return scriptProperties_().getProperty('EMERGENCY_RECOVERY_ENABLED')==='true';}
+function emergencyEnabled_(){return scriptFlag_('EMERGENCY_RECOVERY_ENABLED')==='true';}
 function emergencyFail_(){failure_('EMERGENCY_RECOVERY_UNAVAILABLE');}
 function emergencySave_(c,key,value,domain){var v=JSON.parse(JSON.stringify(value));delete v.hash;value.hash=hmac_(JSON.stringify(v),c.secret,domain);var raw=JSON.stringify(value),props=scriptProperties_(),all=props.getProperties(),bytes=function(s){return Utilities.newBlob(s).getBytes().length;},total=bytes(key)+bytes(raw);Object.keys(all).forEach(function(k){if(k!==key)total+=bytes(k)+bytes(all[k]);});if(bytes(raw)>8000||total>400000)emergencyFail_();props.setProperty(key,raw);}
 function emergencyRead_(c,key,domain){var raw=scriptProperties_().getProperty(key);if(!raw)return null;var v;try{v=JSON.parse(raw);}catch(_){emergencyFail_();}if(!v||typeof v!=='object')emergencyFail_();var copy=JSON.parse(JSON.stringify(v));delete copy.hash;if(v.environment!==c.environment||v.installationId!==c.installationId||!constantEqual_(v.hash,hmac_(JSON.stringify(copy),c.secret,domain)))emergencyFail_();return v;}
