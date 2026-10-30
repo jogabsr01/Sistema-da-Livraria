@@ -14,3 +14,21 @@ function inspectDevelopmentConfiguration(){
   var result={environment:'dev',readOnly:true,scope:'SCRIPT_PROPERTIES_FORMAT_AND_FLAGS_ONLY',checks:checks,flags:flags,missingDependencies:missingDependencies,maintenance:p.MAINTENANCE_MODE==='true'?'ACTIVE':'INACTIVE',netlifyInspected:false,resourceAccessChecked:false};
   console.info(JSON.stringify(result));return result;
 }
+
+// Owner editor only; never dispatched by the HTTP API. Activates the complete
+// implemented DEV business workspace without resetting users, keys or sessions.
+function activateDevelopmentWorkspace(){
+  var c=baseSettings_();requireOwnerDev_(c);
+  var props=scriptProperties_();
+  if(['IDENTITY_SESSIONS_ENABLED','IDENTITY_ACCESS_ENABLED','IDENTITY_GUARDS_ENABLED','IDENTITY_PASSKEYS_ENABLED'].some(function(k){return props.getProperty(k)!=='true';}))failure_('IDENTITY_UNAVAILABLE');
+  provisionDevelopmentCatalog();provisionDevelopmentProfile();
+  return withLock_(function(){
+    var ss=storage_(c,false).spreadsheet;assertSchema_(ss);authControlStore_(c);catalogJournal_(c);
+    var id=props.getProperty('COVERS_FOLDER_ID');
+    if(!id){var folder=resourceFolder_(c.driveRootId).createFolder('Capas privadas');folder.setDescription(marker_(c,'covers'));id=folder.getId();props.setProperty('COVERS_FOLDER_ID',id);}
+    assertMarker_(resourceFolder_(id),c,'covers');
+    var names=['CATALOG','CHECKOUT','COVER_PHOTOS','NOTIFICATIONS','STAFF','CUSTOMERS','OPERATIONS','PROFILE','RECOVERY','EMAIL_CHANGE','NICHES','SCHEDULES','AUDIT','REPORTS','CUSTOMER_INSIGHTS','KEY_MANAGEMENT'],flags={};
+    names.forEach(function(name){flags[name+'_ENABLED']='true';});props.setProperties(flags);
+    var result={environment:'dev',businessModulesReady:true,enabled:names.map(function(name){return name+'_ENABLED';}),netlifyStillRequiresMatchingFlags:true};console.info(JSON.stringify(result));return result;
+  });
+}

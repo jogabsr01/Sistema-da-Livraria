@@ -34,7 +34,7 @@
   const current=await fetchData('/api/v1/session');
   if(userId&&userId!==current.user.id){invalidate();throw {status:401};}
   if(!['ADMIN','SUPER_ADMIN'].includes(current.user.role)){invalidate();throw {status:403};}
-  userId=current.user.id;csrf=current.csrfToken;access=true;
+  userId=current.user.id;csrf=current.csrfToken;access=true;document.body.dataset.sessionRole=current.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
  }
  async function request(op,body){return fetchData('/api/v1/audit/'+op,body,!!body);}
  function dirty(){try{return !filters||JSON.stringify(readFilters())!==JSON.stringify(filters);}catch{return true;}}

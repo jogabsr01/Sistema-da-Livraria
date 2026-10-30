@@ -13,7 +13,7 @@ class Context:
         super().setUp();self.deny=False;self.other=False;self.fail_path=None;self.hold_path=None;self.held=None
     def relay(self,route):
         req=route.request;path=urlsplit(req.url).path;headers={k:v for k,v in req.all_headers().items() if k not in ['host','content-length']}
-        if path=='/api/v1/session' and (self.deny or self.other):
+        if path in ['/api/v1/session','/api/v1/profile/bootstrap'] and (self.deny or self.other):
             if self.deny:route.fulfill(status=401,content_type='application/json',body=json.dumps({'error':{'code':'UNAUTHENTICATED'}}));return
             out=self.local(path,headers=headers);body=json.loads(out['body']);body['data']['user']['id']='00000000-0000-4000-8000-000000000001';route.fulfill(status=out['status'],headers=out['headers'],body=json.dumps(body));return
         if path==self.fail_path:route.abort();return
@@ -49,7 +49,7 @@ class ProfileReconnect(Context,profile.Profile):
         self.uncertain();self.other=True;self.network(False);self.network(True);expect(self.page.locator('#profile')).to_be_hidden();self.page.locator('#profile-resume').click()
         expect(self.page.locator('#profile-resume')).to_be_enabled();self.assertEqual(len(self.commands),1);self.other=False;self.page.locator('#profile-check').click();self.ready();self.page.locator('#profile-resume').click();expect(self.page.locator('#profile-pending')).to_be_hidden()
     def test_reconnection_profile_known_save_read_failure_not_unknown(self):
-        self.profile();self.page.locator('#phone').fill('11988887777');self.fail_path='/api/v1/profile/get';self.page.locator('#save').click()
+        self.profile();self.page.locator('#phone').fill('11988887777');self.fail_path='/api/v1/profile/bootstrap';self.page.locator('#save').click()
         expect(self.page.locator('#status')).to_contain_text('Alterações salvas. Não foi possível atualizar');expect(self.page.locator('#profile-pending')).to_be_hidden()
         self.fail_path=None;self.page.locator('#profile-check').click();self.ready();self.assertEqual(len(self.commands),1);expect(self.page.locator('#phone')).to_have_value('11988887777')
     def test_reconnection_profile_revision_requires_explicit_discard(self):

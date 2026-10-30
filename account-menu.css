@@ -1,1 +1,15 @@
 .account-menu{position:relative;margin-left:auto;display:inline-block;align-self:center}.account-menu summary{list-style:none;cursor:pointer;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#e7eee3;color:#205b43;overflow:hidden;font-size:14px;font-weight:700}.account-menu summary::-webkit-details-marker{display:none}.account-menu summary:focus-visible{outline:3px solid #c79b48;outline-offset:3px}.account-menu summary img{width:42px;height:42px;object-fit:cover}.account-options{position:absolute;right:0;top:48px;min-width:190px;background:#fff;z-index:30;padding:10px;border:1px solid #d5e1d9;border-radius:10px;box-shadow:0 10px 30px #16392b20}.account-options a,.account-options button{display:block;width:100%;text-align:left;color:#205b43;padding:11px 12px;font:inherit;font-size:13px;background:#fff;border:0;border-radius:6px;text-decoration:none;cursor:pointer}.account-options a:hover,.account-options button:hover{background:#edf2e9}@media print{.account-menu{display:none!important}}
+/* The same compact navigation in every authenticated module. */
+.module-menu>summary{border:0;background:transparent;border-radius:12px;padding:10px 12px;white-space:nowrap;font-weight:650}
+.module-menu .account-options{min-width:240px}
+.module-menu>summary::after{content:'⌄';margin-left:8px}
+header nav[data-grouped]{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.account-options a[hidden]{display:none!important}
+@media(max-width:600px){header nav[data-grouped]{gap:3px}.module-menu>summary{padding:8px}.module-menu .account-options{min-width:220px;max-width:calc(100vw - 32px)}}
+.module-menu{position:relative;display:inline-block;align-self:center}
+.module-menu>summary{list-style:none;cursor:pointer;color:#205b43;font:inherit;font-weight:650}
+.module-menu>summary::-webkit-details-marker{display:none}
+.module-menu>summary:focus-visible{outline:3px solid #c79b48;outline-offset:3px}
+@media print{.module-menu{display:none!important}}
+@media(max-width:600px){.module-menu .account-options{position:fixed;left:16px;right:16px;top:var(--module-menu-top,100px);width:auto;max-width:none;max-height:calc(100dvh - var(--module-menu-top,100px) - 16px);overflow-y:auto}}
+@media(max-width:600px){.account-menu .account-options{position:fixed;left:16px;right:16px;top:var(--module-menu-top,100px);width:auto;min-width:0;max-height:calc(100dvh - var(--module-menu-top,100px) - 16px);overflow-y:auto}}
