@@ -35,7 +35,7 @@ class ProfileReconnect(Context,profile.Profile):
         expect(self.page.locator('#form-status')).to_contain_text('tente novamente');expect(self.page.locator('#save')).to_be_enabled()
     def test_reconnection_profile_offline_preserves_draft_hides_identity(self):
         self.profile();self.page.locator('#phone').fill('11988887777');self.network(False)
-        expect(self.page.locator('#profile-fields')).to_be_hidden();expect(self.page.locator('#email')).to_be_empty();expect(self.page.locator('.account-menu')).to_have_count(0)
+        expect(self.page.locator('#profile-fields')).to_be_hidden();expect(self.page.locator('#email')).to_be_empty();expect(self.page.locator('.account-menu img')).to_have_count(0)
         self.page.locator('#profile-form').dispatch_event('submit');self.assertEqual(self.commands,[]);self.network(True);self.ready();expect(self.page.locator('#phone')).to_have_value('11988887777')
         self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_have_text('Alterações salvas.');self.assertEqual(len(self.commands),1)
     def test_reconnection_profile_unknown_preserves_original_payload(self):

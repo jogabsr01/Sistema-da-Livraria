@@ -155,3 +155,11 @@ test('malformed signed alert/report data and oversized responses cannot be shown
   const client = createWorkspaceClient(s.settings.config, { fetchImpl: async () => new Response('x'.repeat(4000001)) });
   await assert.rejects(client.notifications('report', s.admin.actor, payload), { code: 'UPSTREAM_UNTRUSTED' });
 });
+
+test('notification bootstrap authorizes and returns list, summary and CSRF in one signed RPC',async()=>{
+ const s=await setup(),calls=[],post=s.gas.post;s.gas.post=e=>{calls.push(JSON.parse(Buffer.from(e.message,'base64')).action);return post(e);};
+ const r=await s.handler(new Request(CATALOG_ORIGIN+'/api/v1/notifications/bootstrap?offset=0&history=false',{headers:{cookie:s.admin.cookie}}));assert.equal(r.status,200);const{data}=await r.json();assert.deepEqual(calls,['notifications.bootstrap']);assert.equal(data.items.length,1);assert.equal(data.summary.unread,1);assert.equal(data.user.role,'ADMIN');assert.match(data.csrfToken,/^[A-Za-z0-9_-]{43}$/);assert.equal(data.principal,undefined);assert.ok(!JSON.stringify(data).includes(s.admin.tokenHash));
+ const table=s.main.getSheetByName('Sessoes'),row=table.rows.find(r=>r[0]===s.admin.sessionId);if(row)row[table.rows[0].indexOf('Revogado_Em')]=new Date().toISOString();
+ const missing=await s.handler(new Request(CATALOG_ORIGIN+'/api/v1/notifications/bootstrap'));assert.equal(missing.status,401);
+ const spoof=await s.handler(new Request(CATALOG_ORIGIN+'/api/v1/notifications/bootstrap?role=SUPER_ADMIN',{headers:{cookie:s.admin.cookie}}));assert.equal(spoof.status,400);
+});

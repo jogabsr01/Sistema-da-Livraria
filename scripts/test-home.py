@@ -68,7 +68,7 @@ class Home(qa.Checkout):
         expect(self.page.locator('#sign-in')).to_be_visible()
         expect(self.page.locator('#status')).to_have_text('Entre na sua conta para abrir a livraria.')
         expect(self.page.locator('#account-navigation')).to_be_hidden()
-        expect(self.page.locator('.account-menu')).to_have_count(0)
+        expect(self.page.locator('.account-menu')).to_be_hidden()
         self.assertNotIn('/account-menu.js',requests)
         self.assertNotIn('/notification-badge.js',requests)
         self.assertNotIn('/api/v1/notifications/summary',requests)

@@ -548,7 +548,7 @@ function activateDevelopmentStorefront(){
 ;
 // END Catalog.gs
 
-// BEGIN Code.gs sha256=9875c4b4b862b7afbe739c5b30fee0c589c2d7a8c199970271b5c11bc40b046c
+// BEGIN Code.gs sha256=127d721152590b2bd0b331a64439955cf6e7bb9d54057c19b666e5df0c5c0c58
 /* Signed DEV identity, catalog and independently gated anonymous checkout. */
 function failure_(code) { throw new Error(code); }
 function hex_(bytes) { return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join(''); }
@@ -822,7 +822,7 @@ function processRequest_(request, c) {
   return withLock_(function () {
     var acquired=Date.now(),bound=acquired,validated=acquired,phase='BINDING',fault=null;
     var previousScope = RPC_STORAGE_SCOPE_;
-    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), lastRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, identityRows: /^identity\.(access\.|passkey\.|guard\.)/.test(request.action) ? new WeakMap() : null, batchReads:0 };
+    RPC_STORAGE_SCOPE_ = { main: {}, controls: {}, sheets: new WeakMap(), headers: new WeakMap(), lastRows: (/^identity\.(access\.|passkey\.|guard\.)/.test(request.action)||['identity.session.read','profile.bootstrap','staff.bootstrap'].includes(request.action)) ? new WeakMap() : null, identityRows: (/^identity\.(access\.|passkey\.|guard\.)/.test(request.action)||['identity.session.read','profile.bootstrap','staff.bootstrap'].includes(request.action)) ? new WeakMap() : null, batchReads:0 };
     try {
     if(scriptProperties_().getProperty('MAINTENANCE_MODE')==='true')failure_('MAINTENANCE_ACTIVE');
     var ss;
@@ -919,7 +919,7 @@ function processRequest_(request, c) {
       throw error;
     } finally {
       // Fixed numeric fields only: no payloads, identifiers, PINs or email codes.
-      var tags={'identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.pinLogin':'PIN_LOGIN','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.biometricOptions':'OPTIONS','identity.access.options':'OPTIONS','identity.access.devicePrepare':'DEVICE_PREPARE','identity.access.saveProof':'PROOF_SAVE','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
+      var tags={'identity.session.read':'SESSION_READ','profile.bootstrap':'PROFILE_BOOTSTRAP','catalog.bootstrap':'CATALOG_BOOTSTRAP','staff.bootstrap':'STAFF_BOOTSTRAP','notifications.bootstrap':'NOTIFICATIONS_BOOTSTRAP','identity.access.loginLookup':'LOGIN_LOOKUP','identity.access.login':'LOGIN_FLOW','identity.access.pinLogin':'PIN_LOGIN','identity.access.startGuarded':'START','identity.access.start':'START','identity.access.read':'STATE','identity.access.emailGuarded':'EMAIL','identity.access.pinReadGuarded':'PIN_READ','identity.access.pin':'PIN_SAVE','identity.access.biometricOptions':'OPTIONS','identity.access.options':'OPTIONS','identity.access.devicePrepare':'DEVICE_PREPARE','identity.access.saveProof':'PROOF_SAVE','identity.access.prepareCompletion':'COMPLETE_PREPARE','identity.access.commit':'COMMIT','identity.passkey.take':'PASSKEY_TAKE','identity.passkey.register':'PASSKEY_REGISTER','identity.passkey.counter':'PASSKEY_COUNTER','identity.guard.attempt':'GUARD'};
       var operation=typeof request.action==='string'&&Object.prototype.hasOwnProperty.call(tags,request.action)?tags[request.action]:'OTHER';
       try { console.info(JSON.stringify(Object.assign({metric:'rpc.duration',operation:operation,phase:phase,outcome:fault?'ERROR':'OK',schemaBatchReads:RPC_STORAGE_SCOPE_.batchReads||0,lockMs:acquired-started,bindingsMs:bound-acquired,schemaMs:Math.max(0,validated-bound),workMs:Date.now()-validated,totalMs:Date.now()-started},fault||{}))); }
       catch (_) {} finally { RPC_STORAGE_SCOPE_ = previousScope; }
@@ -2539,7 +2539,7 @@ function nichesOperation_(request,c){
 ;
 // END Niches.gs
 
-// BEGIN Notifications.gs sha256=91556028a1e2d71306c92093a20f0690f2e491e565de1233134be7cd5590e5cb
+// BEGIN Notifications.gs sha256=4fdefee10ef8623e708be2bbe6c678efdcc01fb275f2b245b2ef1d1769c66be3
 /* DEV stock alerts and replenishment reports. Caller holds ScriptLock. */
 function notificationEnabled_() { return scriptProperties_().getProperty('NOTIFICATIONS_ENABLED') === 'true'; }
 function notificationTime_(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
@@ -2698,13 +2698,15 @@ function notificationOperation_(request, c) {
     authControlExact_(p, []); var active = table.rows.filter(pending);
     return { total: active.length, unread: active.filter(function (row) { return !reads.rows.some(function (r) { return r.ID_Notificacao === row.ID_Notificacao && r.ID_Usuario === principal.id; }); }).length };
   }
-  if (operation !== 'list') failure_('FORBIDDEN'); authControlExact_(p, ['offset', 'history']);
+  if (!['list','bootstrap'].includes(operation)) failure_('FORBIDDEN'); authControlExact_(p, ['offset', 'history']);
   if (!Number.isSafeInteger(p.offset) || p.offset < 0 || p.offset > 5000 || typeof p.history !== 'boolean') failure_('INVALID_NOTIFICATION');
   var products = catalogProducts_(ss).rows, filtered = table.rows.filter(function (row) { return p.history || pending(row); });
   filtered.sort(function (a, b) { return Number(a.Status === 'RESOLVIDA') - Number(b.Status === 'RESOLVIDA') || Number(b.Prioridade === 'ALTA') - Number(a.Prioridade === 'ALTA') || a.Criado_Em.localeCompare(b.Criado_Em) || a.ID_Notificacao.localeCompare(b.ID_Notificacao); });
   var page = filtered.slice(p.offset, p.offset + 25);
-  return { items: page.map(function (row) { if(row.Entidade_Referencia==='Configuracoes')return {id:row.ID_Notificacao,referenceId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row)};if(row.Entidade_Referencia==='Escalas'){var b=bindings.get(row.ID_Notificacao);return {recipientId:b.userId,id:row.ID_Notificacao,scheduleId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row),date:b.date,start:b.start,end:b.end};}return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], isRead(row)); }),
+  var result={ items: page.map(function (row) { if(row.Entidade_Referencia==='Configuracoes')return {id:row.ID_Notificacao,referenceId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row)};if(row.Entidade_Referencia==='Escalas'){var b=bindings.get(row.ID_Notificacao);return {recipientId:b.userId,id:row.ID_Notificacao,scheduleId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row),date:b.date,start:b.start,end:b.end};}return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], isRead(row)); }),
     total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
+  if(operation==='bootstrap'){var active=table.rows.filter(pending);result.summary={total:active.length,unread:active.filter(function(row){return !isRead(row);}).length};result.principal=principal;}
+  return result;
 }
 
 ;

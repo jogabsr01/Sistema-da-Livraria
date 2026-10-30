@@ -156,11 +156,13 @@ function notificationOperation_(request, c) {
     authControlExact_(p, []); var active = table.rows.filter(pending);
     return { total: active.length, unread: active.filter(function (row) { return !reads.rows.some(function (r) { return r.ID_Notificacao === row.ID_Notificacao && r.ID_Usuario === principal.id; }); }).length };
   }
-  if (operation !== 'list') failure_('FORBIDDEN'); authControlExact_(p, ['offset', 'history']);
+  if (!['list','bootstrap'].includes(operation)) failure_('FORBIDDEN'); authControlExact_(p, ['offset', 'history']);
   if (!Number.isSafeInteger(p.offset) || p.offset < 0 || p.offset > 5000 || typeof p.history !== 'boolean') failure_('INVALID_NOTIFICATION');
   var products = catalogProducts_(ss).rows, filtered = table.rows.filter(function (row) { return p.history || pending(row); });
   filtered.sort(function (a, b) { return Number(a.Status === 'RESOLVIDA') - Number(b.Status === 'RESOLVIDA') || Number(b.Prioridade === 'ALTA') - Number(a.Prioridade === 'ALTA') || a.Criado_Em.localeCompare(b.Criado_Em) || a.ID_Notificacao.localeCompare(b.ID_Notificacao); });
   var page = filtered.slice(p.offset, p.offset + 25);
-  return { items: page.map(function (row) { if(row.Entidade_Referencia==='Configuracoes')return {id:row.ID_Notificacao,referenceId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row)};if(row.Entidade_Referencia==='Escalas'){var b=bindings.get(row.ID_Notificacao);return {recipientId:b.userId,id:row.ID_Notificacao,scheduleId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row),date:b.date,start:b.start,end:b.end};}return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], isRead(row)); }),
+  var result={ items: page.map(function (row) { if(row.Entidade_Referencia==='Configuracoes')return {id:row.ID_Notificacao,referenceId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row)};if(row.Entidade_Referencia==='Escalas'){var b=bindings.get(row.ID_Notificacao);return {recipientId:b.userId,id:row.ID_Notificacao,scheduleId:row.ID_Referencia,type:row.Tipo,priority:row.Prioridade,title:row.Titulo,message:row.Mensagem,state:row.Status,createdAt:row.Criado_Em,resolvedAt:null,read:isRead(row),date:b.date,start:b.start,end:b.end};}return notificationDto_(row, products.filter(function (product) { return product.ID_Produto === row.ID_Referencia; })[0], isRead(row)); }),
     total: filtered.length, nextOffset: p.offset + page.length < filtered.length ? p.offset + page.length : null };
+  if(operation==='bootstrap'){var active=table.rows.filter(pending);result.summary={total:active.length,unread:active.filter(function(row){return !isRead(row);}).length};result.principal=principal;}
+  return result;
 }
