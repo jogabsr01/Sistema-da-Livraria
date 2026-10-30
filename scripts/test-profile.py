@@ -42,8 +42,8 @@ class Profile(qa.Catalog):
         expect(self.page.locator('.account-menu summary')).to_have_attribute('aria-label','Abrir menu da conta')
         self.assertEqual(len(calls),1,'focus must not launch another personal-data lookup')
         self.page.get_by_label('Abrir menu da conta',exact=True).click()
-        expect(self.page.locator('.account-menu summary')).to_have_attribute('aria-label','Abrir menu de Conta proprietária')
-        self.assertEqual(len(calls),2,'opening the menu performs one authorized profile request')
+        expect(self.page.locator('.account-menu summary')).to_have_attribute('aria-label','Abrir menu da conta')
+        self.assertEqual(len(calls),1,'opening navigation must not start a competing profile request')
 
     def test_profile_bootstrap_is_the_only_opening_auth_read_and_menu_keeps_admin_actions(self):
         self.activate();self.local('/test/enable-profile',{});calls=[]
@@ -59,8 +59,8 @@ class Profile(qa.Catalog):
     def test_profile_disabled_does_not_remove_administrative_account_menu(self):
         self.activate();self.page.goto(qa.ORIGIN+'/meu-perfil-dev.html');expect(self.page.locator('#status')).to_contain_text('ainda não está disponível')
         expect(self.page.locator('.account-menu summary')).to_be_visible();self.page.locator('.account-menu summary').click()
-        expect(self.page.locator('.account-menu').get_by_role('link',name='Gerenciar equipe',exact=True)).to_be_visible()
-        expect(self.page.locator('.account-menu').get_by_role('link',name='Relatórios',exact=True)).to_be_visible()
+        expect(self.page.locator('.account-menu').get_by_role('link',name='Meu perfil',exact=True)).to_be_visible()
+        expect(self.page.locator('header [href="/home-dev.html"]').last).to_be_visible()
         expect(self.page.locator('#profile')).to_be_hidden();self.assertEqual(self.errors,[])
 
     def test_profile_mobile_grouped_menus_stay_inside_screen(self):

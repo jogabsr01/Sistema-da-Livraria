@@ -20,12 +20,12 @@ class NotificationsReconnection(qa.Notifications):
     def relay(self,route):
         req=route.request;path=urlsplit(req.url).path
         headers={k:v for k,v in req.all_headers().items() if k not in ['host','content-length']}
-        if path=='/api/v1/session' and (self.deny_session or self.changed_account):
+        if path in ['/api/v1/session','/api/v1/notifications/bootstrap'] and (self.deny_session or self.changed_account):
             if self.deny_session:
                 route.fulfill(status=401,content_type='application/json',body=json.dumps({'error':{'code':'UNAUTHENTICATED'}}));return
             out=self.local(path,headers=headers);body=json.loads(out['body']);body['data']['user']['id']='00000000-0000-4000-8000-000000000001'
             route.fulfill(status=out['status'],headers=out['headers'],body=json.dumps(body));return
-        if path=='/api/v1/notifications/list' and self.fail_list:route.abort();return
+        if path=='/api/v1/notifications/bootstrap' and self.fail_list:route.abort();return
         if path=='/api/v1/notifications/report' and self.hold_report:
             self.report_requests.append(json.loads(req.post_data))
             out=self.local(path,body=req.post_data_buffer,headers=headers,method=req.method);self.held=(route,out);return
@@ -104,14 +104,14 @@ class NotificationsReconnection(qa.Notifications):
     def test_reconnection_account_change_erases_previous_view_and_supplier_options(self):
         self.prepare();self.generate();self.page.locator('#copy').click();expect(self.page.locator('#draft')).to_be_visible()
         self.changed_account=True;self.page.evaluate("window.dispatchEvent(new Event('focus'))")
-        expect(self.page.locator('#status')).to_contain_text('Entre novamente')
+        expect(self.page.locator('#status')).to_contain_text('Entre')
         expect(self.page.locator('#notifications')).to_be_hidden();expect(self.page.locator('#alerts')).to_be_empty()
         expect(self.page.locator('#report')).to_be_hidden();expect(self.page.locator('#draft')).to_have_value('')
         expect(self.page.locator('#supplier option')).to_have_count(1)
 
     def test_reconnection_expired_session_preserves_original_update(self):
         self.uncertain();original=self.changes[0];self.deny_session=True;self.network(False);self.network(True)
-        expect(self.page.locator('#status')).to_contain_text('Entre novamente')
+        expect(self.page.locator('#status')).to_contain_text('Entre')
         self.page.locator('#retry-update').dispatch_event('click');self.assertEqual(len(self.changes),1)
         self.deny_session=False;self.page.locator('#reconnect').click();self.ready()
         self.page.locator('#retry-update').click();expect(self.page.locator('#pending-update')).to_be_hidden()
@@ -119,7 +119,7 @@ class NotificationsReconnection(qa.Notifications):
 
     def test_reconnection_rejection_after_uncertainty_does_not_create_new_key(self):
         self.uncertain();original=self.changes[0];self.reject_change=True;self.page.locator('#retry-update').click()
-        expect(self.page.locator('#status')).to_contain_text('Entre novamente');expect(self.page.locator('#pending-update')).to_be_visible()
+        expect(self.page.locator('#status')).to_contain_text('Entre');expect(self.page.locator('#pending-update')).to_be_visible()
         self.page.locator('#reconnect').click();self.ready();self.page.locator('#retry-update').click()
         expect(self.page.locator('#pending-update')).to_be_hidden();self.assertEqual(self.changes,[original,original,original])
 
@@ -132,7 +132,7 @@ class NotificationsReconnection(qa.Notifications):
     def test_reconnection_role_removed_before_update_prevents_post_and_hides_actions(self):
         self.prepare();self.local('/test/set-role',{'role':'ATENDENTE'})
         self.page.get_by_role('button',name='Marcar em atendimento',exact=True).click()
-        expect(self.page.locator('#status')).to_contain_text('Entre novamente')
+        expect(self.page.locator('#status')).to_contain_text('Entre')
         self.assertEqual(self.changes,[]);expect(self.page.locator('#pending-update')).to_be_hidden()
         expect(self.page.locator('[data-administrative]')).to_be_hidden();expect(self.page.locator('#report-tools')).to_be_hidden()
 

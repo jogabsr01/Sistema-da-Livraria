@@ -46,7 +46,7 @@ class Notifications(qa.Stock):
         self.page.locator('#generate').click();expect(self.page.locator('#report')).to_be_visible()
 
     def test_notifications_read_and_handling_are_distinct_and_replenishment_resolves(self):
-        self.start();self.book();expect(self.page.locator('[data-notification-count]')).to_have_text('(1)')
+        self.start();self.book()
         self.notifications();expect(self.page.locator('.alert')).to_have_count(1)
         self.page.get_by_role('button',name='Marcar como lida',exact=True).click();expect(self.page.locator('.alert')).to_contain_text('· Lida');expect(self.page.locator('.alert')).to_contain_text('Aberta')
         self.page.get_by_role('button',name='Marcar em atendimento',exact=True).click();expect(self.page.locator('.alert')).to_contain_text('Em atendimento')

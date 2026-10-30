@@ -2,6 +2,7 @@ import { mkdir, copyFile, rm, lstat, readFile, writeFile } from 'node:fs/promise
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
+import {renderAppHeader} from './app-header.mjs';
 
 export async function build(root = fileURLToPath(new URL('../', import.meta.url))) {
   const destination = resolve(root, 'dist');
@@ -57,7 +58,8 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
       if (!sharedInfo.isFile() || sharedInfo.isSymbolicLink()) throw new Error('Invalid public message asset');
       const shared = await readFile(sharedPath,'utf8');
       await writeFile(resolve(destination,file),shared + '\n' + await readFile(input,'utf8'));
-    } else await copyFile(input, resolve(destination, file));
+    } else if(file.endsWith('-dev.html'))await writeFile(resolve(destination,file),renderAppHeader(await readFile(input,'utf8'),file));
+    else await copyFile(input, resolve(destination, file));
   }
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) await build();

@@ -9,11 +9,11 @@ import { validateNotificationResponse } from './notification-model.mjs';
 export const WORKSPACE_RPC_TIMEOUT_MS = 20_000;
 export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = WORKSPACE_RPC_TIMEOUT_MS, deadlineAt = Infinity, now = () => performance.now() } = {}) {
   let calls=0, durationMs=0;
-  async function invoke(action, actor, payload = {}) {
+  async function invoke(action, actor, payload = {}, localDeadline = Infinity) {
     const request = requestMessage(config, actor);
     request.action = action;
     request.payload = payload;
-    const remaining = Number.isFinite(deadlineAt) ? Math.floor(deadlineAt - now()) : Infinity;
+    const remaining = Number.isFinite(Math.min(deadlineAt,localDeadline)) ? Math.floor(Math.min(deadlineAt,localDeadline) - now()) : Infinity;
     if (remaining <= 0) throw new ApiError(502, 'UPSTREAM_TIMEOUT');
     const signal = AbortSignal.timeout(Math.min(timeoutMs, remaining));
     const started=now();calls++;
@@ -65,6 +65,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       if(action.startsWith('profile.'))return data; // Self-service DTO/bytes validated before response.
       if (action.startsWith('customers.') || action.startsWith('staff.') || action.startsWith('identity.staffAccess.')) return data; // Validated by staff/access service before disclosure.
       if(action.startsWith('operations.'))return validateOperationData(action.slice('operations.'.length),data,payload);
+      if(action==='notifications.bootstrap')return {...validateNotificationResponse('list',data,payload,request.requestId),summary:validateNotificationResponse('summary',data.summary,{},request.requestId),principal:validateSessionPrincipal(data.principal,Date.now(),config.adminPinLogin===true)};
       if (action.startsWith('notifications.')) return validateNotificationResponse(action.slice('notifications.'.length), data, payload, request.requestId);
       if (['sales.checkout','sales.receipt'].includes(action)) {
         const invalid = () => { throw new ApiError(502, 'UPSTREAM_UNTRUSTED'); };
@@ -251,21 +252,31 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
       throw new ApiError(502, signal.aborted ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE');
     } finally { durationMs+=Math.max(0,now()-started); }
   }
+  async function readBootstrap(action,actor,payload={}){
+    const until=now()+23000;
+    try{return await invoke(action,actor,payload,until);}
+    catch(error){
+      // Only a signed BUSY response before lock/nonce/dispatch is retried. No
+      // transport errors, rejected sessions, guesses or writes are replayed.
+      if(!(error instanceof ApiError)||error.code!=='WORKSPACE_BUSY'||now()+1000>=until)throw error;
+      await new Promise(resolve=>setTimeout(resolve,200));return invoke(action,actor,payload,until);
+    }
+  }
   return { keys:(op,actor,payload)=>{if(!['list','state','start','authorize','register','cancel','codes'].includes(op))throw new ApiError(400,'INVALID_KEY_MANAGEMENT');return invoke('keys.'+op,actor,payload);},insights:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('insights.'+op,actor,payload);},reports:(op,actor,payload)=>{if(!['source','record'].includes(op))throw new ApiError(400,'INVALID_REPORT');return invoke('reports.'+op,actor,payload);},audit:(op,actor,payload)=>{if(!['list','export'].includes(op))throw new ApiError(400,'INVALID_AUDIT');return invoke('audit.'+op,actor,payload);},schedules:(op,actor,payload)=>{if(!['list','get','people','save','cancel'].includes(op))throw new ApiError(400,'INVALID_SCHEDULE');return invoke('schedules.'+op,actor,payload);},niches:(op,actor,payload)=>{if(!['list','save','image'].includes(op))throw new ApiError(400,'INVALID_NICHE');return invoke('niches.'+op,actor,payload);},schema: actor => invoke('system.schema', actor), ping: () => invoke('system.ping', null),
-    profile:(operation,actor,payload)=>{if(!['bootstrap','get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return invoke('profile.'+operation,actor,payload);},
+    profile:(operation,actor,payload)=>{if(!['bootstrap','get','save','photo','emailState','emailStart','emailConfirm','emailCancel'].includes(operation))throw new ApiError(400,'INVALID_PROFILE');return operation==='bootstrap'?readBootstrap('profile.bootstrap',actor,payload):invoke('profile.'+operation,actor,payload);},
     operations:(operation,actor,payload)=>{if(!['list','get','adjust','reverse'].includes(operation))throw new ApiError(400,'INVALID_OPERATION');return invoke('operations.'+operation,actor,payload);},
     customers:(operation,actor,payload)=>{if(!['find','get','save'].includes(operation))throw new ApiError(400,'INVALID_CUSTOMER');return invoke('customers.'+operation,actor,payload);},
-    staff:(operation,actor,payload)=> { if(!['bootstrap','list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return invoke('staff.'+operation,actor,payload); },
+    staff:(operation,actor,payload)=> { if(!['bootstrap','list','get','save'].includes(operation))throw new ApiError(400,'INVALID_STAFF'); return operation==='bootstrap'?readBootstrap('staff.bootstrap',actor,payload):invoke('staff.'+operation,actor,payload); },
     staffAccess:(operation,payload)=> { if(!['lookup','start','recover'].includes(operation))throw new ApiError(400,'INVALID_AUTH_REQUEST');return invoke('identity.staffAccess.'+operation,null,payload); },
     notifications: (operation, actor, payload) => {
-      if (!['summary','list','read','state','report'].includes(operation)) throw new ApiError(400,'INVALID_NOTIFICATION');
-      return invoke('notifications.' + operation, actor, payload);
+      if (!['bootstrap','summary','list','read','state','report'].includes(operation)) throw new ApiError(400,'INVALID_NOTIFICATION');
+      return operation==='bootstrap'?readBootstrap('notifications.bootstrap',actor,payload):invoke('notifications.' + operation, actor, payload);
     },
     checkoutReceipt:(actor,payload)=>invoke('sales.receipt',actor,payload),
     checkout: (actor, payload) => invoke('sales.checkout', actor, payload),
     catalog: (operation, actor, payload) => {
       if (!['bootstrap','list', 'get', 'niches', 'save', 'cover', 'receive', 'remove'].includes(operation)) throw new ApiError(400, 'INVALID_PRODUCT');
-      return invoke('catalog.' + operation, actor, payload);
+      return operation==='bootstrap'?readBootstrap('catalog.bootstrap',actor,payload):invoke('catalog.' + operation, actor, payload);
     },
     access: (operation, payload) => {
       if (!['pinLogin','saveProof','rescue','rescueBegin','rescueKey','start','recover', 'lookup', 'ownerLookup', 'login', 'read', 'email', 'pin', 'bind', 'commit'].includes(operation)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
@@ -289,7 +300,7 @@ export function createWorkspaceClient(config, { fetchImpl = fetch, timeoutMs = W
     reserveAuthAttempt: payload => invoke('identity.guard.attempt', null, payload),
     createAuthChallenge: payload => invoke('identity.challenge.create', null, payload),
     consumeAuthChallenge: payload => invoke('identity.challenge.consume', null, payload),
-    readSession: tokenHash => invoke('identity.session.read', null, { tokenHash }),
+    readSession: tokenHash => readBootstrap('identity.session.read', null, { tokenHash }),
     revokeSession: tokenHash => invoke('identity.session.revoke', null, { tokenHash }),
     revokeOtherSessions: tokenHash => invoke('identity.session.revokeOthers', null, { tokenHash }),
   };

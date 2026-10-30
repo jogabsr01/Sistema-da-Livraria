@@ -62,8 +62,10 @@
     if (loading||busy) { refreshAgain = true; return; } loading = true;ready=false;clearTimeout(expiryTimer);clearReport();controls();
     const ticket=version,filter=JSON.stringify([offset,$('history').checked]);
     try {
-      await session();
-      const [data, summary] = await Promise.all([api('list',null,'?'+new URLSearchParams({offset:String(offset),history:String($('history').checked)})), api('summary')]);
+      const data=await api('bootstrap',null,'?'+new URLSearchParams({offset:String(offset),history:String($('history').checked)})),summary=data.summary;
+      if(userId&&userId!==data.user.id){revokeView();invalidate();throw Object.assign(Error('SESSION_CHANGED'),{status:401});}
+      userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);access=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
+
       if(ticket!==version||filter!==JSON.stringify([offset,$('history').checked])||!online()||document.hidden)return;
       $('unread').textContent = '(' + summary.unread + ' não lida(s))'; $('alerts').replaceChildren(); nextOffset = data.nextOffset;
       if (!data.items.length) { const p = document.createElement('p'); p.textContent = 'Nenhum alerta neste filtro.'; $('alerts').append(p); }
