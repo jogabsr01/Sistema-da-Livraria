@@ -25,9 +25,14 @@ function customerProject_(ss,v){
 }
 function recoverCustomers_(ss){var pending=customerCommands_(ss).filter(function(v){return v.state==='PENDING';});if(pending.length>1)customerFail_('CUSTOMERS_UNAVAILABLE');pending.forEach(function(v){customerProject_(ss,v);});}
 function customerOperation_(request,c){
- var ss=storage_(c,false).spreadsheet;recoverCustomers_(ss);
+ // Auth resolves first: recovery below only touches Clientes/Produtos/Vendas,
+ // never the identity tables identitySession_ reads, so an unauthenticated
+ // call now fails before paying for any of it.
+ var ss=storage_(c,false).spreadsheet;
+ if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;
+ recoverCustomers_(ss);
  if(ss.getSheetByName('_Eventos_Dominio').getLastRow()>1){if(scriptProperties_().getProperty('CATALOG_JOURNAL_ID'))recoverCatalog_(c);recoverSales_(ss);}
- if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,p=request.payload,users=customerRows_(ss);
+ var p=request.payload,users=customerRows_(ss);
  if(!['ATENDENTE','ADMIN','SUPER_ADMIN'].includes(principal.role))failure_('FORBIDDEN');
  if(request.action==='customers.find'||request.action==='customers.get'){
   if(request.action==='customers.find'){authControlExact_(p,['cpfIndex']);if(!accessHash_(p.cpfIndex))customerFail_();}else{authControlExact_(p,['id']);if(!identityUuid_(p.id))customerFail_();}

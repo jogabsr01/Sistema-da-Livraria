@@ -31,6 +31,7 @@ function securityBlock_(privateStore,plans,c,now,retry){
  securityBegin_(c,{kind:'LIMIT',log:log,plans:plans.map(function(p){return {key:p.row.Key,before:p.before,after:table.columns.map(function(k){return p.row[k];})};})});
 }
 function securityRevoke_(request,c){
+ return withIdentityRowCache_(function(){
  recoverSecurityIntent_(c);securitySettle_(c);var ss=storage_(c,false).spreadsheet,table=identityRows_(ss,'Sessoes'),matches=table.rows.filter(function(r){return r.Token_Hash===request.payload.tokenHash;}),self=request.action==='identity.session.revoke';
  if(matches.length!==1)failure_('UNAUTHENTICATED');var session=matches[0],id=self?securityId_(c,'LOGOUT',session.ID_Sessao):null;
  if(self&&session.Revogado_Em!==''){
@@ -39,6 +40,7 @@ function securityRevoke_(request,c){
  var now=Date.now(),resolved=identitySession_(ss,request.payload.tokenHash,now),at=new Date(now).toISOString();while(table.rows.some(function(r){return r.Revogado_Em===at;}))at=new Date(Date.parse(at)+1).toISOString();
  var p={kind:self?'SELF':'OTHERS',actor:resolved.principal.id,sessionId:resolved.principal.sessionId,cutoff:now,at:at};var targets=securitySessionTargets_(table,p);if(!targets.length)return {revoked:true};p.count=targets.length;p.idsHash=digest_(JSON.stringify(targets.map(function(r){return r.ID_Sessao;}).sort()));if(!self)id=securityId_(c,'REVOKE_OTHERS',[p.sessionId,p.idsHash]);
  var log=securityLog_(id,at,p.actor,resolved.principal.role,self?'IDENTITY_LOGOUT':'IDENTITY_SESSIONS_REVOKED',{revokedSessions:p.count});securityBegin_(c,{kind:'SESSIONS',plan:p,log:log});return {revoked:true};
+ });
 }
 function securityRecord_(request,c){
  recoverSecurityIntent_(c);securitySettle_(c);var p=request.payload;authControlExact_(p,['commandId','phase','code']);if(!identityUuid_(p.commandId)||!['START','RECOVER','LOGIN','EMAIL','PIN','OPTIONS','COMPLETE'].includes(p.phase)||!['CREDENTIALS_REJECTED','EMAIL_PROOF_REJECTED','PASSKEY_REJECTED','FLOW_REJECTED'].includes(p.code))failure_('SECURITY_AUDIT_UNAVAILABLE');var ss=storage_(c,false).spreadsheet,prior=identityRows_(ss,'Logs_Auditoria').rows.filter(function(r){return r.ID_Log===p.commandId;});if(prior.length){var expected=securityLog_(p.commandId,prior[0].Data_Hora,'SYSTEM_AUTH','SYSTEM','IDENTITY_ACCESS_DENIED',{phase:p.phase,code:p.code});securityAppend_(ss,expected);return {recorded:true};}

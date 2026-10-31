@@ -37,7 +37,10 @@ function profileProject_(ss,v){
 }
 function recoverProfiles_(c){var ss=storage_(c,false).spreadsheet,pending=profileCommands_(ss).filter(function(v){return v.state==='PENDING';});if(pending.length>1)profileFail_('PROFILE_UNAVAILABLE');pending.forEach(function(v){profileProject_(ss,v);});}
 function profileOperation_(request,c){
- recoverStaff_(c);recoverProfiles_(c);if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var ss=storage_(c,false).spreadsheet,principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,found=profileUser_(ss,principal.id),user=found.row,owner=user.ID_Usuario===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID'),p=request.payload;
+ // identitySession_ below already recovers staff/profile projections (and
+ // seven other domains) before resolving the session, so repeating those two
+ // calls here would only re-do the same work a second time.
+ if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var ss=storage_(c,false).spreadsheet,principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,found=profileUser_(ss,principal.id),user=found.row,owner=user.ID_Usuario===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID'),p=request.payload;
  if(request.action.indexOf('profile.email')===0)return emailChangeOperation_(request,c,principal);
  if(request.action==='profile.get'||request.action==='profile.bootstrap'){
   authControlExact_(p,[]);var extra=owner?staffConfig_(ss,'profile.owner.'+user.ID_Usuario).row:null;

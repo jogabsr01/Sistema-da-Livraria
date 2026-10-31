@@ -30,6 +30,7 @@ function identityTime_(value) {
   return milliseconds;
 }
 function identitySession_(spreadsheet, tokenHash, now) {
+  return withIdentityRowCache_(function () {
   recoverEmergencyRecovery_(baseSettings_());recoverKeyManagement_(baseSettings_());recoverSecurityIntent_(baseSettings_());recoverStaff_(baseSettings_());recoverProfiles_(baseSettings_());recoverRecoveryIntents_(baseSettings_());recoverEmailChanges_(baseSettings_());recoverNiches_(baseSettings_());recoverSchedules_(baseSettings_());
   var sessions = identityRows_(spreadsheet, 'Sessoes'), ids = new Set(), hashes = new Set();
   sessions.rows.forEach(function (row) {
@@ -68,6 +69,7 @@ function identitySession_(spreadsheet, tokenHash, now) {
     assurance: session.Nivel_Autenticacao, authenticatedAt: created, expiresAt: expires,
     authorizationVersion: versions[0].Valor
   } };
+  });
 }
 function identitySessionOperation_(request, c) {
   if (!c || c.environment !== 'dev') failure_('FORBIDDEN');

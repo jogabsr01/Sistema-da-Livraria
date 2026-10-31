@@ -56,6 +56,18 @@ function invalidateRpcRows_(sheet) {
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.identityRows) RPC_STORAGE_SCOPE_.identityRows.delete(sheet);
   if (RPC_STORAGE_SCOPE_ && RPC_STORAGE_SCOPE_.lastRows) RPC_STORAGE_SCOPE_.lastRows.delete(sheet);
 }
+// A couple of operations run several small cross-domain recovery sweeps
+// back-to-back and then validate a session, regardless of which outer action
+// is being served. Scope a short-lived read cache around just that call tree
+// so the same sheet is not re-fetched by each sweep. No-op when the request
+// already carries row caching (identity/passkey/guard actions and the three
+// bootstrap actions keep their existing, request-wide scope unchanged).
+function withIdentityRowCache_(fn) {
+  var scope = RPC_STORAGE_SCOPE_;
+  if (!scope || scope.identityRows) return fn();
+  scope.identityRows = new WeakMap(); scope.lastRows = new WeakMap();
+  try { return fn(); } finally { scope.identityRows = null; scope.lastRows = null; }
+}
 function rpcSheet_(spreadsheet, name) {
   if (!RPC_STORAGE_SCOPE_) return spreadsheet.getSheetByName(name);
   var sheets = RPC_STORAGE_SCOPE_.sheets.get(spreadsheet);
