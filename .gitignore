@@ -10,3 +10,8 @@ livraria-oauth.json
 client_secret*.json
 *.local.json
 __pycache__/
+
+# Local Python virtual environment for the Playwright QA suite (scripts/test-*.py)
+.venv/
+# Local QA run artifacts (screenshots, logs) from scripts/test-*.py
+/work/

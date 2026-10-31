@@ -37,7 +37,7 @@ class Reports(qa.Operations):
     def test_reports_lost_export_ack_reuses_same_command_without_duplicate_audit(self):
         self.checkout();self.add();self.confirm();self.reports();self.query();self.lose_report_export=True;self.page.locator('#export-report').click();expect(self.page.locator('#retry-export')).to_be_enabled();expect(self.page.locator('#pending-export')).to_be_visible();self.assertEqual(self.local('/test/report-state')['exports'],1)
         with self.page.expect_download():self.page.locator('#retry-export').click()
-        expect(self.page.locator('#pending-export')).to_be_hidden();self.assertEqual(self.report_exports[0],self.report_exports[1]);self.assertEqual(self.local('/test/report-state')['exports'],1);self.assertEqual(self.page.evaluate('Object.keys(localStorage)'),[]);self.assertEqual(self.errors,[])
+        expect(self.page.locator('#pending-export')).to_be_hidden();self.assertEqual(self.report_exports[0],self.report_exports[1]);self.assertEqual(self.local('/test/report-state')['exports'],1);self.assert_no_secrets_in_browser_storage();self.assertEqual(self.errors,[])
     def test_reports_changed_stock_refuses_export_until_new_preview(self):
         self.checkout();self.add();self.confirm();self.reports();self.query();self.local('/test/checkout-price',{});self.page.locator('#export-report').click();expect(self.page.locator('#status')).to_contain_text('dados mudaram');expect(self.page.locator('#export-report')).to_be_hidden();self.query();expect(self.page.locator('#export-report')).to_be_visible();self.assertEqual(self.local('/test/report-state')['exports'],0);self.assertEqual(self.errors,[])
     def test_reports_identified_customer_cpf_city_and_payment_intersect_without_exporting_contacts(self):

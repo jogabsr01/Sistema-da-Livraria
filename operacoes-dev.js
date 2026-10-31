@@ -10,13 +10,14 @@
   const online = () => navigator.onLine !== false;
   const recent = at => performance.now() - at < 90000;
   const fresh = () => ready && online() && accessValid && recent(checkedAt);
-  function describe(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
+  function describe(error) {
     if(error.code==='OFFLINE')return 'Sem conexão. Mantenha esta aba aberta e confira novamente ao reconectar.';
     if(error.status===401)return 'Confirme novamente seu acesso com PIN e confirmação pelo aparelho para continuar.';
     if(error.status===403)return 'Seu perfil não permite esta operação.';
     if(error.code?.includes('CONFLICT')||error.code?.includes('NO_CHANGE'))return 'O registro mudou ou a operação já foi realizada. Atualize a consulta e confira o resultado.';
     if(error.code?.includes('NOT_ACTIVATED')||error.code?.includes('UNAVAILABLE'))return 'Este módulo ainda não está disponível nesta instalação.';
     if(error.code?.includes('INVALID_OPERATION'))return 'Confira o período, o saldo e o motivo informado.';
+    const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     return 'Não foi possível confirmar o resultado. Mantenha esta tela aberta e tente novamente com o mesmo comando.';
   }
   function lock() {

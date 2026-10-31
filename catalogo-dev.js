@@ -52,16 +52,16 @@
     csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); $('niche-admin-link').hidden = !canDelete;
   }
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
-  function explain(error) { if(error.code==='CATALOG_NOT_ACTIVATED')return 'O cadastro de produtos ainda não foi ativado. Peça à administração para liberar o catálogo.'; const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
+  function explain(error) { if(error.code==='CATALOG_NOT_ACTIVATED')return 'O cadastro de produtos ainda não foi ativado. Peça à administração para liberar o catálogo.';
     if (error.code === 'OFFLINE') return 'Sem conexão. Mantenha a aba aberta e confira a conexão antes de tentar novamente.';
     if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
-    if (error.code === 'UNAUTHENTICATED') return 'Entre na conta verificada para usar o catálogo.';
     if (error.code?.includes('CONFLICT')) return 'Outro acesso alterou este livro. Carregue a versão mais recente antes de salvar de novo.';
     if (error.code?.includes('DUPLICATE')) return 'Já existe um livro ativo com esse ISBN ou código interno.';
     if (error.code === 'FORBIDDEN' || error.code === 'WORKSPACE_FORBIDDEN') return 'Somente administradores podem excluir ou alterar a ativação de livros.';
     if (error.code?.includes('STOCK_LIMIT')) return 'Esta entrada excede o limite de um milhão de unidades. Confira a quantidade.';
     if (error.code === 'INVALID_PRODUCT' || error.code?.includes('CATALOG_INVALID')) return 'Confira ISBN, preço, nichos e link HTTPS da capa. Use valores válidos e ao menos um nicho.';
     if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_CATALOG_UNAVAILABLE' || error.code?.includes('CONFIGURATION')) return 'O catálogo compartilhado ainda não está disponível nesta instalação DEV.';
+    const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     return 'Não foi possível confirmar o resultado. Confira a conexão e tente novamente; o mesmo pedido não será duplicado.';
   }
   async function api(operation, body, query = '') {
