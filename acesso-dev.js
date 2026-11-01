@@ -75,6 +75,7 @@
       if (error.transport?.operation === 'recover') return 'Não foi possível iniciar a recuperação. Atualize a página e tente novamente.';
       if (!$('email-form').hidden) return 'Não foi possível validar o código. Confira se copiou o código completo do e-mail mais recente. Ele vale por 10 minutos. Se venceu, volte ao início para solicitar outro.';
       if (!$('initial').hidden) return 'Não foi possível entrar com os dados informados. Confira o CPF ou e-mail e o PIN. Se ainda não cadastrou seu acesso, escolha “É meu primeiro acesso”.';
+      if (code === 'PASSKEY_REJECTED') return 'Não foi possível entrar com os dados informados. A confirmação pelo aparelho não foi aceita. Tente novamente ou volte ao início para entrar de outra forma.';
       return 'Não foi possível confirmar sua identidade nesta tentativa. Volte ao início para entrar novamente. Se o problema continuar, peça ajuda à administração.';
     }
     if (code === 'FORBIDDEN') return 'Não foi possível validar esta tentativa de acesso. Atualize a página e tente novamente no endereço da livraria. Se continuar, peça ajuda à administração.';

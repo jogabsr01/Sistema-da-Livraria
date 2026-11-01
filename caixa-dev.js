@@ -203,9 +203,13 @@
   $('next').addEventListener('click', () => { if (!refreshing && nextOffset !== null) { offset = nextOffset; refresh(); } });
   window.addEventListener('focus', refresh);
   window.addEventListener('offline', invalidateStock);
-  window.addEventListener('online', () => {
+  window.addEventListener('online', async () => {
     invalidateStock();
     if (!started) { start(); return; }
+    if (customerPending && !customerBusy) {
+      try { await customerSession(); }
+      catch (e) { if (e.status === 401 || e.status === 403) return; }
+    }
     if (refreshing) refreshAgain = true; else refresh();
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) invalidateStock(); else refresh(); });

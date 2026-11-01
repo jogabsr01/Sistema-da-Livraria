@@ -18,11 +18,14 @@
  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearPersonal();closeMenus();}});
  document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenus();});
  document.addEventListener('click',event=>{if(!header.contains(event.target))closeMenus();});
- header.querySelector('[data-account-logout]').addEventListener('click',async event=>{
-  if(loggingOut)return;loggingOut=true;event.target.disabled=true;status.hidden=true;
+ const logoutButton=header.querySelector('[data-account-logout]'),retryLogoutButton=header.querySelector('[data-account-logout-retry]');
+ async function attemptLogout(){
+  if(loggingOut)return;loggingOut=true;logoutButton.disabled=true;retryLogoutButton.disabled=true;status.hidden=true;
   try{const session=await fetch('/api/v1/session',{credentials:'same-origin',cache:'no-store'});if(session.status===401){location.assign('/acesso-dev.html');return;}if(!session.ok)throw Error('SESSION_UNAVAILABLE');const{data}=await session.json();if(identity&&data?.user?.id!==identity)throw Error('ACCOUNT_CHANGED');const out=await fetch('/api/v1/session/logout',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-csrf-token':data.csrfToken},body:'{}'});if(!out.ok)throw Error('LOGOUT_UNCONFIRMED');location.assign('/acesso-dev.html');}
-  catch{status.textContent='Não foi possível confirmar a saída. Tente novamente.';status.hidden=false;}
-  finally{loggingOut=false;event.target.disabled=false;}
- });
+  catch{logoutButton.hidden=true;retryLogoutButton.hidden=false;retryLogoutButton.disabled=false;status.textContent='Não foi possível confirmar a saída. Tente novamente.';status.hidden=false;}
+  finally{loggingOut=false;logoutButton.disabled=false;}
+ }
+ logoutButton.addEventListener('click',attemptLogout);
+ retryLogoutButton.addEventListener('click',attemptLogout);
  synchronize();
 })();
