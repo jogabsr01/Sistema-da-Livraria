@@ -57,12 +57,11 @@ test('GAS session lookup refuses raw tokens, caller identity/role fields and unk
   assert.throws(() => s.call('identity.session.issue'), /FORBIDDEN/);
 });
 
-test('GAS session timestamps enforce absolute expiration, idle timeout and valid canonical chronology', () => {
+test('GAS session timestamps enforce absolute expiration and valid canonical chronology, but never idle timeout', () => {
   const variants = [
     { Expira_Em: new Date(Date.now() - 1).toISOString() },
     { Criado_Em: new Date(Date.now() + 120_000).toISOString() },
-    { Expira_Em: new Date(Date.now() + 9 * 3600_000).toISOString() },
-    { Criado_Em: new Date(Date.now() - 3_600_000).toISOString(), Ultima_Atividade: new Date(Date.now() - 1_800_001).toISOString() },
+    { Expira_Em: new Date(Date.now() + 25 * 3600_000).toISOString() },
     { Ultima_Atividade: new Date(Date.now() + 120_000).toISOString() },
     { Ultima_Atividade: new Date(Date.now() - 180_000).toISOString() },
     { Criado_Em: 'not-a-date' }, { Expira_Em: '2026-10-23' }, { Ultima_Atividade: 0 },
@@ -72,6 +71,11 @@ test('GAS session timestamps enforce absolute expiration, idle timeout and valid
     const s = setup(); s.change('Sessoes', s.session, fields); const before = s.gas.writes;
     assert.throws(() => s.call(), /UNAUTHENTICATED/); assert.equal(s.gas.writes, before);
   }
+  // 24h lifetime is explicit-logout-only: no amount of idle time inside that
+  // window invalidates the session on its own.
+  const idle = setup();
+  idle.change('Sessoes', idle.session, { Criado_Em: new Date(Date.now() - 23 * 3600_000).toISOString(), Expira_Em: new Date(Date.now() + 3600_000).toISOString(), Ultima_Atividade: new Date(Date.now() - 20 * 3600_000).toISOString() });
+  assert.equal(idle.call().id, idle.id);
 });
 
 test('GAS reads authoritative user status, activation and authorization version on every call', () => {

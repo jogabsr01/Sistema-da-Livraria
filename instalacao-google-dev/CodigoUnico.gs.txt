@@ -1246,7 +1246,7 @@ function emailChangeOperation_(request,c,principal){
 ;
 // END EmailChange.gs
 
-// BEGIN EmergencyRecovery.gs sha256=5acfde246741b4ab9f42d5ce3c0bf19cc88f91645fa068790c693819671a3e07
+// BEGIN EmergencyRecovery.gs sha256=b09cb8c8a37fb1829437768b8a1432dbf15f4aeccd9161c8bd53af4f256870aa
 /* Offline recovery codes + verified email + replacement WebAuthn enrollment.
  * Codes themselves never reach Google; only scoped hashes are stored here. */
 function emergencyEnabled_(){return scriptFlag_('EMERGENCY_RECOVERY_ENABLED')==='true';}
@@ -1276,7 +1276,7 @@ function emergencyProject_(c,v){
  var keys=passkeyCredentials_(priv),existing=keys.rows.filter(function(k){return k.Credential_ID===v.key.id||k.Registration_Ceremony_ID===v.ceremonyId;});if(existing.length>1)emergencyFail_();keys.rows.filter(function(k){return k.Subject_ID===v.userId&&k.Credential_ID!==v.key.id&&k.Revoked_At==='';}).forEach(function(k){k.Revoked_At=v.at;authControlSave_(keys,k);});var newKey={Credential_ID:v.key.id,Subject_ID:v.userId,Public_Key:v.key.publicKey,Counter:v.key.counter,Transports_JSON:JSON.stringify(v.key.transports),Created_At:v.at,Updated_At:v.at,Authorization_Version:target,Revoked_At:'',Registration_Ceremony_ID:v.ceremonyId};if(existing.length){if(!keys.columns.every(function(k){return existing[0][k]===newKey[k];}))emergencyFail_();}else authControlSave_(passkeyCredentials_(priv),newKey);
  var ceremonies=passkeyCeremonies_(priv),ceremony=ceremonies.rows.filter(function(r){return r.ID===v.ceremonyId;});if(ceremony.length!==1||ceremony[0].Purpose!=='REGISTER'||ceremony[0].Subject_ID!==v.userId||ceremony[0].Authorization_Version!==v.epoch||!ceremony[0].Consumed_At||ceremony[0].Credential_ID!==''&&ceremony[0].Credential_ID!==v.key.id||ceremony[0].Completed_At!==''&&ceremony[0].Completed_At!==v.at)emergencyFail_();ceremony[0].Credential_ID=v.key.id;ceremony[0].Completed_At=v.at;authControlSave_(ceremonies,ceremony[0]);
  accessFlows_(priv).rows.filter(function(r){return r.Subject_ID===v.userId&&r.ID!==v.flowId&&!['COMPLETE','REVOKED'].includes(r.State);}).forEach(function(r){r.State='REVOKED';authControlSave_(flows,r);});var sessions=identityRows_(main,'Sessoes');sessions.rows.filter(function(r){return r.ID_Usuario===v.userId&&r.ID_Sessao!==v.flowId&&r.Revogado_Em==='';}).forEach(function(r){r.Revogado_Em=v.at;accessSaveMain_(sessions,r);});user[0].Ultimo_Acesso=v.at;accessSaveMain_(users,user[0]);
- var value={ID_Sessao:v.flowId,ID_Usuario:v.userId,Criado_Em:v.at,Expira_Em:new Date(Date.parse(v.at)+28800000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+v.flowId,Ultima_Atividade:v.at,Token_Hash:v.sessionHash,Nivel_Autenticacao:'passkey',Versao_Autorizacao:target},stored=sessions.rows.filter(function(r){return r.ID_Sessao===v.flowId||r.Token_Hash===v.sessionHash;});if(stored.length>1||stored.length&&!sessions.columns.every(function(k){return stored[0][k]===value[k];}))emergencyFail_();if(!stored.length)accessSaveMain_(sessions,value);
+ var value={ID_Sessao:v.flowId,ID_Usuario:v.userId,Criado_Em:v.at,Expira_Em:new Date(Date.parse(v.at)+86400000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+v.flowId,Ultima_Atividade:v.at,Token_Hash:v.sessionHash,Nivel_Autenticacao:'passkey',Versao_Autorizacao:target},stored=sessions.rows.filter(function(r){return r.ID_Sessao===v.flowId||r.Token_Hash===v.sessionHash;});if(stored.length>1||stored.length&&!sessions.columns.every(function(k){return stored[0][k]===value[k];}))emergencyFail_();if(!stored.length)accessSaveMain_(sessions,value);
  var audit=identityRows_(main,'Logs_Auditoria'),prior=audit.rows.filter(function(r){return r.ID_Log===v.flowId;}),log={ID_Log:v.flowId,Data_Hora:v.at,ID_Usuario:v.userId,Perfil:v.role,Acao:'IDENTITY_PASSKEY_RECOVERED',Entidade:'Usuarios',ID_Entidade:v.userId,Antes:JSON.stringify({authorizationVersion:v.epoch}),Depois:JSON.stringify({authorizationVersion:target,otherSessionsRevoked:true}),Resultado:'SUCESSO',ID_Requisicao:v.flowId};if(prior.length>1||prior.length&&!audit.columns.every(function(k){return prior[0][k]===log[k];}))emergencyFail_();if(!prior.length)accessSaveMain_(audit,log);row.State='COMPLETE';row.Completed_At=v.at;row.Pin_JSON='';authControlSave_(flows,row);scriptProperties_().setProperty('IDENTITY_RESCUE_PENDING','');
 }
 function recoverEmergencyRecovery_(c){var v=emergencyRead_(c,'IDENTITY_RESCUE_PENDING','emergency.commit');if(v)emergencyProject_(c,v);}
@@ -2835,7 +2835,7 @@ function operationsOperation_(request,c){
 ;
 // END Operations.gs
 
-// BEGIN OwnerAccess.gs sha256=6a7ccf4163adfcb42cc472eb27fa90dfb101e597b5b396514891ec7c2f122bef
+// BEGIN OwnerAccess.gs sha256=ab714586934fa359617815ef81de477dfc9247e67fd48f49c9d7aa1f57f9c704
 function accessDeliveryCode_(value) { return typeof value === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/.test(value) || /^[A-Za-z0-9_-]{43}$/.test(value)); }
 /* DEV owner bootstrap + recoverable first access. Every RPC is signed, gated
  * and executed under the installation lock. No public role/bootstrap claims. */
@@ -3013,7 +3013,7 @@ function accessCommit_(ss, c, current, p, now) {
     owner.row.Ultimo_Acesso = row.Commit_Started_At; accessSaveMain_(owner.users, owner.row);
     var matches = sessions.rows.filter(function (item) { return item.ID_Sessao === row.ID || item.Token_Hash === p.sessionTokenHash; });
     var value = { ID_Sessao: row.ID, ID_Usuario: row.Subject_ID, Criado_Em: row.Commit_Started_At,
-      Expira_Em: new Date(authControlTime_(row.Commit_Started_At) + 28800000).toISOString(), Revogado_Em: '', Dispositivo: 'identity-flow:' + row.ID,
+      Expira_Em: new Date(authControlTime_(row.Commit_Started_At) + 86400000).toISOString(), Revogado_Em: '', Dispositivo: 'identity-flow:' + row.ID,
       Ultima_Atividade: row.Commit_Started_At, Token_Hash: p.sessionTokenHash, Nivel_Autenticacao: 'passkey', Versao_Autorizacao: row.Authorization_Version };
     if (matches.length > 1 || matches.length && !sessions.columns.every(function (column) { return matches[0][column] === value[column]; })) accessReject_();
     if (!matches.length) accessSaveMain_(sessions, value);
@@ -3307,7 +3307,7 @@ function accessPinCommit_(ss,c,current,p,now){
   if(row.Purpose!=='PIN_LOGIN'||!['COMMITTING','COMPLETE'].includes(row.State)||row.Ceremony_ID!==''||row.Session_Token_Hash!==p.sessionTokenHash||authControlTime_(row.Expires_At)<=now)accessReject_();
   var main=storage_(c,false).spreadsheet,sessions=identityRows_(main,'Sessoes'),audit=identityRows_(main,'Logs_Auditoria');
   if(row.State!=='COMPLETE'){
-    var at=row.Commit_Started_At,value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:at,Expira_Em:new Date(Date.parse(at)+28800000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:at,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'pin',Versao_Autorizacao:row.Authorization_Version};
+    var at=row.Commit_Started_At,value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:at,Expira_Em:new Date(Date.parse(at)+86400000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:at,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'pin',Versao_Autorizacao:row.Authorization_Version};
     var found=sessions.rows.filter(function(r){return r.ID_Sessao===row.ID||r.Token_Hash===p.sessionTokenHash;});
     if(found.length>1||found.length&&!sessions.columns.every(function(k){return found[0][k]===value[k];}))accessReject_();
     if(!found.length){if(sessions.rows.length>=5000)accessReject_();accessSaveMain_(sessions,value);}
@@ -3584,7 +3584,7 @@ function provisionDevelopmentProfile() {
 ;
 // END Profile.gs
 
-// BEGIN Recovery.gs sha256=dd9fce0bc075002662b9ad8eb6c25e0cfb27bb065f261ee705085d20a8e498ec
+// BEGIN Recovery.gs sha256=18dccbd62dc952ea95542967ae9cfb9999afd2bce169ade39e8bac1e57535bd7
 /* PIN recovery: email possession AND an existing WebAuthn credential.
  * Durable COMMITTING intent precedes epoch/PIN/key/session projections. */
 function recoveryEnabled_(){return scriptFlag_('RECOVERY_ENABLED')==='true';}
@@ -3626,7 +3626,7 @@ function recoveryCommit_(ss,c,current,p,now,background){
   accessFlows_(ss).rows.filter(function(r){return r.Subject_ID===row.Subject_ID&&r.ID!==row.ID&&!['COMPLETE','REVOKED'].includes(r.State);}).forEach(function(r){r.State='REVOKED';authControlSave_(current.table,r);});
   sessions.rows.filter(function(r){return r.ID_Usuario===row.Subject_ID&&r.ID_Sessao!==row.ID&&r.Revogado_Em==='';}).forEach(function(r){r.Revogado_Em=row.Commit_Started_At;accessSaveMain_(sessions,r);});
   subject.row.Ultimo_Acesso=row.Commit_Started_At;accessSaveMain_(subject.users,subject.row);
-  var value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:row.Commit_Started_At,Expira_Em:new Date(authControlTime_(row.Commit_Started_At)+28800000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:row.Commit_Started_At,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'passkey',Versao_Autorizacao:target};
+  var value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:row.Commit_Started_At,Expira_Em:new Date(authControlTime_(row.Commit_Started_At)+86400000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:row.Commit_Started_At,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'passkey',Versao_Autorizacao:target};
   var stored=sessions.rows.filter(function(r){return r.ID_Sessao===row.ID||r.Token_Hash===p.sessionTokenHash;});if(stored.length>1||stored.length&&!sessions.columns.every(function(k){return stored[0][k]===value[k];}))accessReject_();if(!stored.length)accessSaveMain_(sessions,value);
   var log={ID_Log:row.ID,Data_Hora:row.Commit_Started_At,ID_Usuario:row.Subject_ID,Perfil:subject.row.Perfil,Acao:'IDENTITY_PIN_RECOVER',Entidade:'Usuarios',ID_Entidade:row.Subject_ID,Antes:JSON.stringify({authorizationVersion:row.Authorization_Version}),Depois:JSON.stringify({authorizationVersion:target,otherSessionsRevoked:true}),Resultado:'SUCESSO',ID_Requisicao:row.ID};
   var logged=audit.rows.filter(function(r){return r.ID_Log===row.ID;});if(logged.length>1||logged.length&&!audit.columns.every(function(k){return logged[0][k]===log[k];}))accessReject_();if(!logged.length)accessSaveMain_(audit,log);
@@ -4561,7 +4561,7 @@ function securityRecord_(request,c){
 ;
 // END SecurityAudit.gs
 
-// BEGIN SessionStore.gs sha256=3a999a9f0913097abb3c35d361395c877fd7eea6348b8551c9a8125389f3341f
+// BEGIN SessionStore.gs sha256=f3936320212031c1b2c03051ceedbaaf87130404beca2d71bbed9030c1e04a93
 /* Persistent session reader/revoker. Internal functions only.
  * processRequest_ MUST hold ScriptLock and validate the signed envelope before
  * invoking identitySessionOperation_. No user/session creation or PIN storage.
@@ -4614,9 +4614,13 @@ function identitySession_(spreadsheet, tokenHash, now) {
   }
   if (session.Revogado_Em !== '' || !['pin', 'mfa', 'passkey'].includes(session.Nivel_Autenticacao) ||
       !Number.isSafeInteger(session.Versao_Autorizacao) || session.Versao_Autorizacao < 1) failure_('UNAUTHENTICATED');
+  // 24h absolute lifetime, explicit-logout-only: the session stays valid for
+  // its full span regardless of idle time; only revocation (logout, role or
+  // status change, epoch bump) ends it early. Ultima_Atividade is still kept
+  // fresh below for admin visibility ("last seen"), it just no longer gates.
   var created = identityTime_(session.Criado_Em), expires = identityTime_(session.Expira_Em), activity = identityTime_(session.Ultima_Atividade);
-  if (created > now || expires <= now || expires <= created || expires - created > 8 * 60 * 60 * 1000 ||
-      activity < created || activity > now || now - activity > 30 * 60 * 1000) failure_('UNAUTHENTICATED');
+  if (created > now || expires <= now || expires <= created || expires - created > 24 * 60 * 60 * 1000 ||
+      activity < created || activity > now) failure_('UNAUTHENTICATED');
   var users = identityRows_(spreadsheet, 'Usuarios');
   var userMatches = users.rows.filter(function (row) { return row.ID_Usuario === session.ID_Usuario; });
   if (userMatches.length > 1) failure_('IDENTITY_UNAVAILABLE');

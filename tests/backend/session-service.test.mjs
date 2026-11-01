@@ -77,7 +77,7 @@ test('csrf is session-bound and cross-origin/form requests do not revoke a valid
 
 test('cookie format is host-only, secure, HttpOnly and rejects duplicates or PIN bearer fallback', async () => {
   const s = setup(), cookie = sessionCookie(s.first.rawToken);
-  for (const flag of ['Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax', 'Max-Age=28800']) assert.ok(cookie.includes(flag));
+  for (const flag of ['Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax', 'Max-Age=86400']) assert.ok(cookie.includes(flag));
   assert.ok(!cookie.includes('Domain='));
   assert.throws(() => sessionCookie('1357'));
   for (const header of ['', `${SESSION_COOKIE}=1357`, `${SESSION_COOKIE}=${s.first.rawToken}; ${SESSION_COOKIE}=${s.second.rawToken}`, `${SESSION_COOKIE}=${'x'.repeat(5000)}`]) {

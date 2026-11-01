@@ -48,14 +48,16 @@ test('DEV policy defaults follow owner consent and explicit false restores stron
  const env=environment();delete env.WORKSPACE_ADMIN_PIN_LOGIN_ENABLED;assert.equal(loadConfig(env).adminPinLogin,true);assert.equal(loadConfig({...env,WORKSPACE_ADMIN_PIN_LOGIN_ENABLED:'false'}).adminPinLogin,false);assert.throws(()=>loadConfig({...env,WORKSPACE_ADMIN_PIN_LOGIN_ENABLED:'yes'}),{code:'CONFIGURATION_UNAVAILABLE'});
  const prod={...env,APP_ENV:'prod',CONTEXT:'production',BRANCH:'main',DEPLOY_PRIME_URL:'https://merry-chimera-49a1f3.netlify.app/'};assert.equal(loadConfig({...prod,WORKSPACE_ADMIN_PIN_LOGIN_ENABLED:'true'}).adminPinLogin,false);
 });
-test('PIN sessions still reject revocation, disabled user, changed epoch, idle and absolute expiry',async()=>{
- for(const mode of ['revoked','disabled','epoch','idle','absolute']){
+test('PIN sessions still reject revocation, disabled user, changed epoch and absolute expiry, but never idle time alone',async()=>{
+ for(const mode of ['revoked','disabled','epoch','absolute']){
   const s=await ready(),first=await begin(s),done=await s.svc.execute('continue-login',{receipt:first.loginReceipt},s.token,s.ip),table=s.main.getSheetByName('Sessoes'),row=table.rows.at(-1),set=(key,value)=>row[table.rows[0].indexOf(key)]=value;
   if(mode==='revoked')set('Revogado_Em',new Date().toISOString());
   if(mode==='disabled'){const t=s.main.getSheetByName('Usuarios');t.rows[1][t.rows[0].indexOf('Status')]='INATIVO';}
   if(mode==='epoch')s.main.getSheetByName('Configuracoes').rows.find(r=>r[0]==='identity.version.'+s.gas.props.IDENTITY_OWNER_USER_ID)[1]=2;
-  if(mode==='idle'){set('Criado_Em',new Date(Date.now()-1900000).toISOString());set('Ultima_Atividade',new Date(Date.now()-1800001).toISOString());set('Expira_Em',new Date(Date.now()+1000000).toISOString());}
   if(mode==='absolute')set('Expira_Em',new Date(Date.now()-1).toISOString());
   await assert.rejects(createSessionService(s.settings,{client:s.client}).current(request(done)));
  }
+ const s=await ready(),first=await begin(s),done=await s.svc.execute('continue-login',{receipt:first.loginReceipt},s.token,s.ip),table=s.main.getSheetByName('Sessoes'),row=table.rows.at(-1),set=(key,value)=>row[table.rows[0].indexOf(key)]=value;
+ set('Criado_Em',new Date(Date.now()-23*3600_000).toISOString());set('Expira_Em',new Date(Date.now()+3600_000).toISOString());set('Ultima_Atividade',new Date(Date.now()-20*3600_000).toISOString());
+ await assert.doesNotReject(createSessionService(s.settings,{client:s.client}).current(request(done)));
 });

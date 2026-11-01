@@ -112,7 +112,7 @@ test('five wrong email codes revoke the proof and a PIN cannot be set before ema
 test('PIN is salted scrypt in the private store; only verified passkey commits activation and issues a secure cookie', async () => {
   const s = ownerFixture(), { token, service, ip } = await pending(s);
   const result = await service.execute('complete', { response: null }, token, ip);
-  assert.match(result.cookie, /^__Host-livraria_session=[A-Za-z0-9_-]{43}; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=28800$/);
+  assert.match(result.cookie, /^__Host-livraria_session=[A-Za-z0-9_-]{43}; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=86400$/);
   assert.deepEqual(result.user, { role: 'SUPER_ADMIN', assurance: 'passkey' });
   const table = s.priv.getSheetByName('_Pin_Verifiers'), record = JSON.parse(table.rows[1][1]);
   assert.equal(record.algorithm, 'scrypt-N32768-r8-p1'); assert.notEqual(record.salt, record.hash);

@@ -50,9 +50,13 @@ function identitySession_(spreadsheet, tokenHash, now) {
   }
   if (session.Revogado_Em !== '' || !['pin', 'mfa', 'passkey'].includes(session.Nivel_Autenticacao) ||
       !Number.isSafeInteger(session.Versao_Autorizacao) || session.Versao_Autorizacao < 1) failure_('UNAUTHENTICATED');
+  // 24h absolute lifetime, explicit-logout-only: the session stays valid for
+  // its full span regardless of idle time; only revocation (logout, role or
+  // status change, epoch bump) ends it early. Ultima_Atividade is still kept
+  // fresh below for admin visibility ("last seen"), it just no longer gates.
   var created = identityTime_(session.Criado_Em), expires = identityTime_(session.Expira_Em), activity = identityTime_(session.Ultima_Atividade);
-  if (created > now || expires <= now || expires <= created || expires - created > 8 * 60 * 60 * 1000 ||
-      activity < created || activity > now || now - activity > 30 * 60 * 1000) failure_('UNAUTHENTICATED');
+  if (created > now || expires <= now || expires <= created || expires - created > 24 * 60 * 60 * 1000 ||
+      activity < created || activity > now) failure_('UNAUTHENTICATED');
   var users = identityRows_(spreadsheet, 'Usuarios');
   var userMatches = users.rows.filter(function (row) { return row.ID_Usuario === session.ID_Usuario; });
   if (userMatches.length > 1) failure_('IDENTITY_UNAVAILABLE');

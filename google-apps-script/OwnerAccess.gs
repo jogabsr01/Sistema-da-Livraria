@@ -175,7 +175,7 @@ function accessCommit_(ss, c, current, p, now) {
     owner.row.Ultimo_Acesso = row.Commit_Started_At; accessSaveMain_(owner.users, owner.row);
     var matches = sessions.rows.filter(function (item) { return item.ID_Sessao === row.ID || item.Token_Hash === p.sessionTokenHash; });
     var value = { ID_Sessao: row.ID, ID_Usuario: row.Subject_ID, Criado_Em: row.Commit_Started_At,
-      Expira_Em: new Date(authControlTime_(row.Commit_Started_At) + 28800000).toISOString(), Revogado_Em: '', Dispositivo: 'identity-flow:' + row.ID,
+      Expira_Em: new Date(authControlTime_(row.Commit_Started_At) + 86400000).toISOString(), Revogado_Em: '', Dispositivo: 'identity-flow:' + row.ID,
       Ultima_Atividade: row.Commit_Started_At, Token_Hash: p.sessionTokenHash, Nivel_Autenticacao: 'passkey', Versao_Autorizacao: row.Authorization_Version };
     if (matches.length > 1 || matches.length && !sessions.columns.every(function (column) { return matches[0][column] === value[column]; })) accessReject_();
     if (!matches.length) accessSaveMain_(sessions, value);
@@ -469,7 +469,7 @@ function accessPinCommit_(ss,c,current,p,now){
   if(row.Purpose!=='PIN_LOGIN'||!['COMMITTING','COMPLETE'].includes(row.State)||row.Ceremony_ID!==''||row.Session_Token_Hash!==p.sessionTokenHash||authControlTime_(row.Expires_At)<=now)accessReject_();
   var main=storage_(c,false).spreadsheet,sessions=identityRows_(main,'Sessoes'),audit=identityRows_(main,'Logs_Auditoria');
   if(row.State!=='COMPLETE'){
-    var at=row.Commit_Started_At,value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:at,Expira_Em:new Date(Date.parse(at)+28800000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:at,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'pin',Versao_Autorizacao:row.Authorization_Version};
+    var at=row.Commit_Started_At,value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:at,Expira_Em:new Date(Date.parse(at)+86400000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:at,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'pin',Versao_Autorizacao:row.Authorization_Version};
     var found=sessions.rows.filter(function(r){return r.ID_Sessao===row.ID||r.Token_Hash===p.sessionTokenHash;});
     if(found.length>1||found.length&&!sessions.columns.every(function(k){return found[0][k]===value[k];}))accessReject_();
     if(!found.length){if(sessions.rows.length>=5000)accessReject_();accessSaveMain_(sessions,value);}
