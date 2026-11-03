@@ -1,6 +1,6 @@
 # Homologação Google DEV — roteiro e evidências
 
-Estado inicial: **pendente de execução real**. Código integrado, testes locais ou geração do kit não aprovam este roteiro. Executar somente na instalação DEV identificada pelo proprietário, usando dados de teste sem informações pessoais reais desnecessárias. Não registrar chaves, PINs, códigos de e-mail/resgate, cookies ou tokens nas evidências.
+Estado do aceite integrado: **pendente**. Há evidência parcial de inspeção, atualização da implantação e handshake real; a autenticação e os módulos ainda exigem homologação. Ver [cenários detalhados e ocorrências](CENARIOS_TESTE_GOOGLE_DEV.md). Código integrado, testes locais ou geração do kit não aprovam este roteiro. Executar somente na instalação DEV identificada pelo proprietário, usando dados de teste sem informações pessoais reais desnecessárias. Não registrar chaves, PINs, códigos de e-mail/resgate, cookies ou tokens nas evidências.
 
 Para cada linha, registrar: responsável, data/hora em America/Sao_Paulo, versão Apps Script, commit DEV, resultado esperado/observado e referência privada da evidência. Usar `pendente`, `aprovado` ou `reprovado`; não preencher como aprovado sem execução.
 

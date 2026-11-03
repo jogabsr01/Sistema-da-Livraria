@@ -73,3 +73,7 @@ Validação do kit: 362 testes completos de backend em Node 22 e 24, seis testes
 ## Instalação com uma colagem — 27/10/2026
 
 Alternativa [arquivo único](../../instalacao-google-dev/LEIA-ME.md), gerada dos mesmos 26 módulos, reduz a cópia manual para um script. Não misturar com módulos separados no editor; preservar manifesto, propriedades, IDs e URL. Gerador com verificação de atualização na suíte, sem acesso Google ou configuração automática de chaves. 364 testes completos em Node 22 (emulador usando fonte única) e 24 (modo modular), seis testes Python do kit e build aprovados. [QA](QA_INSTALACAO_UNICA_GOOGLE_DEV.md). A inspeção manual enviada pelo proprietário confirmou DEV/schema 1/17 tabelas; isso não comprova o lote completo, IAM ou canal Netlify→Google.
+
+## Cenários operacionais de homologação — 27/10/2026
+
+[20 cenários de instalação/publicação/primeiro acesso](CENARIOS_TESTE_GOOGLE_DEV.md) registram as ocorrências relatadas pelo proprietário e a cobertura automática existente: instalação única, escopos/segredos/contextos, gates do diagnóstico, timeout, metadados das Functions, demonstração antiga e aceite integrado. Handshake real já evidenciado; validação do runtime após PR #49 e autenticação real permanecem pendentes. Contagem de cenários operacionais é distinta da contagem de testes de código.
