@@ -18,6 +18,7 @@ import { createFirestoreAccessService } from './firestore-access.mjs';
 import { createFirestoreCredentialStore } from './firestore-credential-store.mjs';
 import { createFirestoreNicheService } from './firestore-niches.mjs';
 import { createFirestoreKeyManagementService } from './firestore-key-management.mjs';
+import { createFirestoreRateLimitService } from './firestore-rate-limits.mjs';
 
 export { FIRESTORE_COLLECTIONS, FIRESTORE_SCHEMA_VERSION } from './firestore-schema.mjs';
 
@@ -198,6 +199,12 @@ export function createFirestoreWorkspaceClient(config, {
     return niches;
   }
 
+  let rateLimits;
+  function getRateLimits() {
+    if (!rateLimits) rateLimits = createFirestoreRateLimitService({ db: getDb(), now: () => Date.now() });
+    return rateLimits;
+  }
+
   const notReady = () => operationNotReady();
   return {
     keys: (operation, actor, payload) => getKeyManagement().execute(operation, actor, payload),
@@ -249,7 +256,7 @@ export function createFirestoreWorkspaceClient(config, {
     prepareAccessOptions: payload => getAccess().prepareOptions(payload),
     prepareDeviceAccess: notReady,
     prepareAccessCompletion: payload => getAccess().prepareCompletion(payload),
-    reserveAuthAttempt: notReady,
+    reserveAuthAttempt: payload => getRateLimits().reserve(payload),
     createAuthChallenge: notReady,
     consumeAuthChallenge: notReady,
     readSession: tokenHash => getIdentity().readSession(tokenHash),

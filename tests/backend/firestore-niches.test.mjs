@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createFirestoreNicheService } from '../../backend/firestore-niches.mjs';
 import { createFirestoreIdentityService } from '../../backend/firestore-identity.mjs';
 
@@ -65,6 +65,9 @@ function record(overrides = {}) {
 function command(overrides = {}) {
   return { commandId: randomUUID(), id: randomUUID(), expectedRevision: 0, record: record(), ...overrides };
 }
+function image(bytes = Buffer.from('fake-niche-image')) {
+  return { bytes: bytes.toString('base64'), sha256: createHash('sha256').update(bytes).digest('hex') };
+}
 
 test('creates a niche, counts linked products and is idempotent for the same command', async () => {
   const { db, service } = makeService();
@@ -114,22 +117,48 @@ test('renaming an existing niche moves the uniqueness reservation and keeps hist
   assert.equal(db.values.get(`niches/${first.id}`).createdBy, db.values.get(`niches/${first.id}`).updatedBy);
 });
 
-test('attendants cannot manage niches and a non-null image is explicitly unavailable', async () => {
+test('attendants cannot manage niches, but can still read an existing image', async () => {
   const { service } = makeService();
   await assert.rejects(service.execute('save', { sessionTokenHash: attendantTokenHash }, command()), { status: 403 });
   await assert.rejects(service.execute('list', { sessionTokenHash: attendantTokenHash }, {}), { status: 403 });
-  await assert.rejects(
-    service.execute('save', { sessionTokenHash: tokenHash }, { ...command(), image: { bytes: 'aa==', sha256: 'c'.repeat(64) } }),
-    { code: 'NICHE_IMAGE_UNAVAILABLE', status: 503 },
-  );
-  await assert.rejects(service.execute('image', { sessionTokenHash: tokenHash }, { id: randomUUID() }), { code: 'NICHE_IMAGE_UNAVAILABLE', status: 503 });
+  const payload = { ...command(), image: image() };
+  await service.execute('save', { sessionTokenHash: tokenHash }, payload);
+  assert.deepEqual(await service.execute('image', { sessionTokenHash: attendantTokenHash }, { id: payload.id }), image());
 });
 
-test('removing an image explicitly (null) is a safe no-op', async () => {
-  const { service } = makeService();
-  const payload = command();
+test('removing an image explicitly (null) clears hasImage and deletes the stored bytes', async () => {
+  const { db, service } = makeService();
+  const payload = { ...command(), image: image() };
   await service.execute('save', { sessionTokenHash: tokenHash }, payload);
   const updated = await service.execute('save', { sessionTokenHash: tokenHash },
     { commandId: randomUUID(), id: payload.id, expectedRevision: 1, record: record(), image: null });
   assert.equal(updated.hasImage, false);
+  assert.equal(db.values.has(`niches/${payload.id}/media/image`), false);
+  await assert.rejects(service.execute('image', { sessionTokenHash: tokenHash }, { id: payload.id }), { code: 'NICHE_NOT_FOUND', status: 404 });
+});
+
+test('saving an image stores it in its own document, separate from the niche document', async () => {
+  const { db, service } = makeService();
+  const payload = { ...command(), image: image() };
+  const created = await service.execute('save', { sessionTokenHash: tokenHash }, payload);
+  assert.deepEqual(created, { id: payload.id, ...record(), version: 1, hasImage: true });
+  assert.equal(Object.hasOwn(db.values.get(`niches/${payload.id}`), 'image'), false);
+  assert.deepEqual(db.values.get(`niches/${payload.id}/media/image`), { ...image(), updatedAt: db.values.get(`niches/${payload.id}/media/image`).updatedAt });
+});
+
+test('reading an image returns exactly what was saved, and a niche without one is a 404', async () => {
+  const { service } = makeService();
+  const payload = command();
+  await service.execute('save', { sessionTokenHash: tokenHash }, payload);
+  await assert.rejects(service.execute('image', { sessionTokenHash: tokenHash }, { id: payload.id }), { code: 'NICHE_NOT_FOUND', status: 404 });
+  const withImage = { ...command({ record: record({ name: 'Crescimento cristão' }) }), image: image() };
+  await service.execute('save', { sessionTokenHash: tokenHash }, withImage);
+  assert.deepEqual(await service.execute('image', { sessionTokenHash: tokenHash }, { id: withImage.id }), image());
+});
+
+test('a tampered image is rejected before anything is written', async () => {
+  const { db, service } = makeService();
+  const payload = { ...command(), image: { bytes: image().bytes, sha256: 'a'.repeat(64) } };
+  await assert.rejects(service.execute('save', { sessionTokenHash: tokenHash }, payload), { code: 'INVALID_NICHE_IMAGE', status: 400 });
+  assert.equal(db.values.has(`niches/${payload.id}`), false);
 });

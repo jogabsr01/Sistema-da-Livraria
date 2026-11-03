@@ -175,7 +175,7 @@ gravações ou alteração de produção sem confirmação operacional do respon
   - [x] Implementar fluxo inicial LOGIN/PASSKEY/COMMIT com sessão Firestore e lookup de credencial.
   - [ ] Completar revogação por logout, papel/status, troca de e-mail, recuperação e passkey
         junto com as mutações correspondentes de identidade.
-  - [ ] Preservar limites por conta/origem, bloqueio exponencial e reset das janelas.
+  - [x] Preservar limites por conta/origem, bloqueio exponencial e reset das janelas.
   - [x] Reutilizar `@simplewebauthn/server` com RP ID, origem, `userVerification: required` e
         algoritmo -7 no serviço Node existente.
   - [x] Persistir passkeys, cerimônias, contador anti-replay e limite de cinco chaves no Firestore.
@@ -212,7 +212,7 @@ gravações ou alteração de produção sem confirmação operacional do respon
   - [ ] Implementar `productSearch` com n-gramas limitados e filtro `includes` no serviço.
   - [ ] Preservar limites de 5.000 produtos, 20 nichos por produto, campos e preços em centavos.
   - [ ] Implementar cursores internos com compatibilidade temporária de `offset`/`nextOffset`.
-  - [ ] Adaptar leitura privada de capas/imagens e validar hash/tamanho/MIME.
+  - [x] Adaptar leitura privada de capas/imagens e validar hash/tamanho/MIME.
   - **Requisitos:** 1, 4, 7, 8, 11, 17.
 
 - [ ] **18. Portar movimentos e mutações de estoque**

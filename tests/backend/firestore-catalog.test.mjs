@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash, randomUUID } from 'node:crypto';
 import { createFirestoreCatalogService } from '../../backend/firestore-catalog.mjs';
 import { createFirestoreIdentityService } from '../../backend/firestore-identity.mjs';
 
@@ -22,7 +23,8 @@ function product(id, title, active = true) {
 
 function fakeDb(values) {
   const store = new Map(Object.entries(values));
-  const ref = (collection, id) => ({ path: `${collection}/${id}`, id, collection });
+  const ref = (collection, id) => ({ path: `${collection}/${id}`, id,
+    collection: child => { const path = `${collection}/${id}/${child}`; return { kind: 'collection', collection: path, doc: childId => ref(path, childId) }; } });
   const db = {
     values: store,
     collection(collection) {
@@ -37,7 +39,7 @@ function fakeDb(values) {
         async get(target) {
           if (target.kind === 'collection' || target.kind === 'query') {
             const docs = [...store.entries()]
-              .filter(([path, value]) => path.startsWith(`${target.collection}/`) &&
+              .filter(([path, value]) => path.startsWith(`${target.collection}/`) && path.split('/').length === target.collection.split('/').length + 1 &&
                 (target.kind === 'collection' || value?.[target.field] === target.value))
               .map(([path, value]) => ({ id: path.split('/').at(-1), ref: { path, id: path.split('/').at(-1) }, exists: true, data: () => structuredClone(value) }));
             return { docs };
@@ -113,4 +115,51 @@ test('Firestore catalog refuses malformed stored data and applies atomic save, r
   const removed = await ready.service.execute('remove', { sessionTokenHash: tokenHash }, { commandId: nicheId, id: productA, expectedVersion: 3 });
   assert.deepEqual(removed, { id: productA, version: 4 });
   assert.equal(ready.db.values.get(`products/${productA}`).active, false);
+});
+
+function photo(bytes = Buffer.from('fake-cover-bytes')) {
+  return { bytes: bytes.toString('base64'), sha256: createHash('sha256').update(bytes).digest('hex') };
+}
+
+test('saving a photo stores it in its own document and the product only keeps hasPhoto', async () => {
+  const { service, db } = makeService();
+  const record = product(productA, 'A Bíblia de Estudo');
+  for (const key of ['stock', 'version', 'updatedAt', 'hasPhoto']) delete record[key];
+  const saved = await service.execute('save', { sessionTokenHash: tokenHash }, { commandId: productA, id: productA, expectedVersion: 1, record, photo: photo() });
+  assert.deepEqual(saved, { id: productA, version: 2 });
+  assert.equal(db.values.get(`products/${productA}`).hasPhoto, true);
+  assert.equal(Object.hasOwn(db.values.get(`products/${productA}`), 'photo'), false);
+  assert.deepEqual(db.values.get(`products/${productA}/media/cover`), { ...photo(), updatedAt: db.values.get(`products/${productA}/media/cover`).updatedAt });
+});
+
+test('reading a cover returns exactly what was saved, and a product without one is a 404', async () => {
+  const { service } = makeService();
+  await assert.rejects(service.execute('cover', { sessionTokenHash: tokenHash }, { id: productA }), { code: 'CATALOG_NOT_FOUND', status: 404 });
+  const record = product(productA, 'A Bíblia de Estudo');
+  for (const key of ['stock', 'version', 'updatedAt', 'hasPhoto']) delete record[key];
+  await service.execute('save', { sessionTokenHash: tokenHash }, { commandId: productA, id: productA, expectedVersion: 1, record, photo: photo() });
+  const read = await service.execute('cover', { sessionTokenHash: tokenHash }, { id: productA });
+  assert.deepEqual(read, photo());
+});
+
+test('removing a photo (photo: null) clears hasPhoto and deletes the stored bytes', async () => {
+  const { service, db } = makeService();
+  const record = product(productA, 'A Bíblia de Estudo');
+  for (const key of ['stock', 'version', 'updatedAt', 'hasPhoto']) delete record[key];
+  await service.execute('save', { sessionTokenHash: tokenHash }, { commandId: productA, id: productA, expectedVersion: 1, record, photo: photo() });
+  await service.execute('save', { sessionTokenHash: tokenHash }, { commandId: randomUUID(), id: productA, expectedVersion: 2, record, photo: null });
+  assert.equal(db.values.get(`products/${productA}`).hasPhoto, false);
+  assert.equal(db.values.has(`products/${productA}/media/cover`), false);
+  await assert.rejects(service.execute('cover', { sessionTokenHash: tokenHash }, { id: productA }), { code: 'CATALOG_NOT_FOUND', status: 404 });
+});
+
+test('a tampered or oversized photo is rejected before anything is written', async () => {
+  const { service, db } = makeService();
+  const record = product(productA, 'A Bíblia de Estudo');
+  for (const key of ['stock', 'version', 'updatedAt', 'hasPhoto']) delete record[key];
+  const base = { commandId: productA, id: productA, expectedVersion: 1, record };
+  await assert.rejects(service.execute('save', { sessionTokenHash: tokenHash }, { ...base, photo: { bytes: photo().bytes, sha256: 'a'.repeat(64) } }), { code: 'INVALID_COVER_PHOTO', status: 400 });
+  await assert.rejects(service.execute('save', { sessionTokenHash: tokenHash }, { ...base, photo: { bytes: 'not-base64!!', sha256: 'a'.repeat(64) } }), { code: 'INVALID_COVER_PHOTO', status: 400 });
+  assert.equal(db.values.get(`products/${productA}`).hasPhoto, false);
+  assert.equal(db.values.has(`products/${productA}/media/cover`), false);
 });

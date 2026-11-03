@@ -19,6 +19,7 @@
 // WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON (real project) or
 // FIRESTORE_EMULATOR_HOST (local emulator, for a dry run).
 import { createHmac, randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { createFirestoreDb } from '../backend/firestore-client.mjs';
 import { loadFirestoreSettings } from '../backend/firestore-config.mjs';
 
@@ -105,7 +106,11 @@ async function main() {
     : `Conta já existia e está pronta para ativação: ${result.id}.`);
 }
 
-const isDirectRun = import.meta.url === `file://${process.argv[1]}`;
+// A plain `file://${process.argv[1]}` string breaks for any path containing
+// a space (this project's own root folder has one): import.meta.url
+// percent-encodes it, the template string does not, so main() would
+// silently never run. pathToFileURL() encodes both sides the same way.
+const isDirectRun = import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
   main().catch(error => {
     console.error(`FALHA: ${error.message || error}`);

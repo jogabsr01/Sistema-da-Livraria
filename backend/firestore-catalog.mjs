@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import { ApiError } from './errors.mjs';
 import { requirePermission } from './authorization.mjs';
 import { catalogUuid, normalizeProduct, productFields } from './catalog-model.mjs';
-import { createFirestoreRepositories } from './firestore-repositories.mjs';
+import { assertFirestoreDocumentSize, createFirestoreRepositories } from './firestore-repositories.mjs';
 import { commandDocumentId, commandRetention, commitCommand, createCommandFingerprint, createCommandMetadata, createPendingCommand, inspectCommand } from './firestore-commands.mjs';
 import { enqueueStockAlertProjection } from './firestore-outbox.mjs';
 import { runFirestoreTransaction } from './firestore-transactions.mjs';
@@ -17,6 +18,25 @@ function unavailable() {
 
 function notReady() {
   throw new ApiError(503, 'FIRESTORE_OPERATION_NOT_READY');
+}
+
+// The cover never lives inline in the product document (every list/bootstrap
+// read would then drag ~64KB of base64 per row for every page), nor in
+// Drive (a service account has no Drive storage quota of its own, and
+// Workspace-only workarounds like Shared Drives/domain delegation don't
+// apply to a personal Google account). It lives in its own small Firestore
+// document, fetched only when the `cover` operation is actually requested.
+function photoDescriptor(photo) {
+  if (!photo || typeof photo !== 'object' || typeof photo.bytes !== 'string' || photo.bytes.length > 65536 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(photo.bytes) || typeof photo.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(photo.sha256)) {
+    throw new ApiError(400, 'INVALID_COVER_PHOTO');
+  }
+  const bytes = Buffer.from(photo.bytes, 'base64');
+  if (bytes.length < 4 || bytes.length > 49152 || bytes.toString('base64') !== photo.bytes ||
+      createHash('sha256').update(bytes).digest('hex') !== photo.sha256) {
+    throw new ApiError(400, 'INVALID_COVER_PHOTO');
+  }
+  return { bytes: photo.bytes, sha256: photo.sha256 };
 }
 
 function date(value) {
@@ -148,8 +168,8 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
     const principal = await identityService.readSessionInTransaction(transaction, tokenHash, currentTime);
     requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permissionFor(operation, payload), { now: currentTime });
     if (!payload || !catalogUuid(payload.commandId) || !catalogUuid(payload.id)) throw new ApiError(400, 'INVALID_PRODUCT');
-    if (Object.hasOwn(payload, 'photo') && payload.photo !== null) throw new ApiError(503, 'COVER_PHOTOS_UNAVAILABLE');
-    const commandPayload = { ...payload, ...(Object.hasOwn(payload, 'photo') ? { photo: payload.photo === null ? null : { sha256: payload.photo?.sha256 } } : {}) };
+    const photo = Object.hasOwn(payload, 'photo') && payload.photo !== null ? photoDescriptor(payload.photo) : null;
+    const commandPayload = { ...payload, ...(Object.hasOwn(payload, 'photo') ? { photo: payload.photo === null ? null : { sha256: photo.sha256 } } : {}) };
     const payloadHash = createCommandFingerprint(commandPayload);
     const metadata = createCommandMetadata({ domain: 'catalog', commandId: payload.commandId, operation, actor: principal.id,
       payloadHash, now: new Date(currentTime), retentionMs: commandRetention(90) });
@@ -237,6 +257,11 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
     }
     if (state.status === 'NEW') createPendingCommand(transaction, commandRef, metadata);
     repositories.transaction.set(transaction, 'products', payload.id, nextProduct);
+    if (Object.hasOwn(payload, 'photo')) {
+      const mediaRef = repositories.subref('products', payload.id, 'media', 'cover');
+      if (photo) { assertFirestoreDocumentSize(photo); transaction.set(mediaRef, { bytes: photo.bytes, sha256: photo.sha256, updatedAt: commandCreatedAt }); }
+      else transaction.delete(mediaRef);
+    }
     repositories.transaction.set(transaction, 'productSearch', payload.id, { productId: payload.id, active: record.active,
       nicheIds: record.nicheIds, tokens: searchTokens(record), updatedAt: commandCreatedAt, version: nextVersion });
     enqueueStockAlertProjection(transaction, repositories, { productId: payload.id, version: nextVersion, now: commandCreatedAt });
@@ -282,7 +307,13 @@ export function createFirestoreCatalogService({ db, identityService, config, now
         const snapshot = await repositories.transaction.get(transaction, 'products', payload.id);
         return { product: product(snapshot, true) };
       }
-      if (operation === 'cover') notReady();
+      if (operation === 'cover') {
+        const snapshot = await transaction.get(repositories.subref('products', payload.id, 'media', 'cover'));
+        if (!snapshot.exists) throw new ApiError(404, 'CATALOG_NOT_FOUND');
+        const value = snapshot.data();
+        if (typeof value?.bytes !== 'string' || typeof value?.sha256 !== 'string') unavailable();
+        return { bytes: value.bytes, sha256: value.sha256 };
+      }
       const nicheSnapshot = await transaction.get(db.collection('niches'));
       if (!nicheSnapshot || !Array.isArray(nicheSnapshot.docs) || nicheSnapshot.docs.length > NICHE_LIMIT) unavailable();
       const niches = nicheSnapshot.docs.map(item => niche(item)).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
