@@ -34,7 +34,7 @@ test('options command refuses PIN not set, disabled owner, epoch change, expired
     const s=await setup(mode!=='pin');
     if(mode==='disabled'){const users=s.main.getSheetByName('Usuarios');users.rows[1][users.rows[0].indexOf('Status')]='INATIVO';}
     if(mode==='epoch')s.main.getSheetByName('Configuracoes').rows[1][1]=2;
-    if(mode==='expired'){s.row[s.cols.indexOf('Created_At')]=new Date(Date.now()-700000).toISOString();s.row[s.cols.indexOf('Expires_At')]=new Date(Date.now()-100000).toISOString();}
+    if(mode==='expired'){s.row[s.cols.indexOf('Created_At')]=new Date(Date.now()-1000000).toISOString();s.row[s.cols.indexOf('Expires_At')]=new Date(Date.now()-100000).toISOString();}
     if(mode==='flag')s.gas.props.IDENTITY_PASSKEYS_ENABLED='false';
     await assert.rejects(s.client.prepareAccessOptions(s.payload()));
     assert.equal(s.priv.getSheetByName('_Passkey_Ceremonies').getLastRow(),1);

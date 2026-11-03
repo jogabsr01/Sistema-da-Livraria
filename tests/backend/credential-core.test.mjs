@@ -8,7 +8,8 @@ test('PINs use per-record salts and verify without storing the input', async () 
   const hasher = createPinHasher(config()), id = randomUUID(), pin = '2468';
   const a = await hasher.hash(pin, id), b = await hasher.hash(pin, id);
   assert.notEqual(a.salt, b.salt); assert.notEqual(a.hash, b.hash);
-  assert.deepEqual(Object.keys(a).sort(), ['algorithm', 'hash', 'salt', 'version']);
+  assert.deepEqual(Object.keys(a).sort(), ['algorithm', 'credentialType', 'hash', 'salt', 'version']);
+  assert.equal(a.credentialType, 'PIN_LEGACY');
   assert.equal(await hasher.verify(pin, id, a), true);
   assert.equal(await hasher.verify('8642', id, a), false);
 });

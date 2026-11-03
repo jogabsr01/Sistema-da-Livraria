@@ -33,13 +33,13 @@ test('codes are bound to subject, command and current session, expire, stop afte
  for(let i=0;i<5;i++)assert.equal((await s.emailHttp('confirm',{commandId:p.commandId,code:randomBytes(32).toString('base64url')})).status,400);
  assert.equal(s.emailJournal().state,'REVOKED');assert.equal((await s.emailHttp('confirm',{commandId:p.commandId,code})).status,400);
  const t=emailChangeFixture(),q=t.emailCommand();await t.emailHttp('start',q);await t.emailHttp('cancel',{commandId:q.commandId});assert.equal((await t.emailHttp('confirm',{commandId:q.commandId,code:t.emailCode()})).status,400);
- const x=emailChangeFixture(),r=x.emailCommand();await x.emailHttp('start',r);const flow=x.emailJournal();flow.createdAt=new Date(Date.now()-301000).toISOString();flow.expiresAt=new Date(Date.parse(flow.createdAt)+300000).toISOString();x.gas.call('emailChangeSave_',flow);assert.equal((await x.emailHttp('confirm',{commandId:r.commandId,code:x.emailCode()})).status,400);
+ const x=emailChangeFixture(),r=x.emailCommand();await x.emailHttp('start',r);const flow=x.emailJournal();flow.createdAt=new Date(Date.now()-901000).toISOString();flow.expiresAt=new Date(Date.parse(flow.createdAt)+900000).toISOString();x.gas.call('emailChangeSave_',flow);assert.equal((await x.emailHttp('confirm',{commandId:r.commandId,code:x.emailCode()})).status,400);
 });
 
 test('retries send once, reissue invalidates old proof, delivery/cooldown/hourly quotas and private capacity fail closed',async()=>{
  const s=emailChangeFixture(),p=s.emailCommand();await s.emailHttp('start',p);const first=s.emailCode();await s.emailHttp('start',p);assert.equal(s.gas.outbox.length,1);assert.equal((await s.emailHttp('start',s.emailCommand())).status,429);
- for(let n=1;n<5;n++){const v=s.emailJournal();v.createdAt=new Date(Date.now()-61000).toISOString();v.expiresAt=new Date(Date.parse(v.createdAt)+300000).toISOString();s.gas.call('emailChangeSave_',v);assert.equal((await s.emailHttp('start',s.emailCommand())).status,202);}
- const v=s.emailJournal();v.createdAt=new Date(Date.now()-61000).toISOString();v.expiresAt=new Date(Date.parse(v.createdAt)+300000).toISOString();s.gas.call('emailChangeSave_',v);assert.equal((await s.emailHttp('start',s.emailCommand())).status,429);assert.equal((await s.emailHttp('confirm',{commandId:v.id,code:first})).status,400);
+ for(let n=1;n<5;n++){const v=s.emailJournal();v.createdAt=new Date(Date.now()-61000).toISOString();v.expiresAt=new Date(Date.parse(v.createdAt)+900000).toISOString();s.gas.call('emailChangeSave_',v);assert.equal((await s.emailHttp('start',s.emailCommand())).status,202);}
+ const v=s.emailJournal();v.createdAt=new Date(Date.now()-61000).toISOString();v.expiresAt=new Date(Date.parse(v.createdAt)+900000).toISOString();s.gas.call('emailChangeSave_',v);assert.equal((await s.emailHttp('start',s.emailCommand())).status,429);assert.equal((await s.emailHttp('confirm',{commandId:v.id,code:first})).status,400);
  for(const kind of ['failure','quota','capacity']){const t=emailChangeFixture();if(kind==='failure')t.gas.mailFailure=true;if(kind==='quota')t.gas.mailQuota=0;if(kind==='capacity')t.gas.props.FILLER='x'.repeat(401000);assert.equal((await t.emailHttp('start',t.emailCommand())).status,503);assert.equal(t.gas.outbox.length,0);assert.equal(t.gas.props.IDENTITY_OWNER_LOGIN_EMAIL,undefined);}
 });
 
@@ -57,7 +57,7 @@ test('each interrupted email projection repairs before session acceptance, even 
  for(const stage of ['intent','owner','user','revision','session','flow','audit','marker'])for(const after of [false,true]){
   const s=emailChangeFixture(),other=s.session(),p=s.emailCommand();
   // Unfinished old-address login proof must never outlive the change.
-  const flowId=randomUUID(),privateFlows=s.priv.getSheetByName('_Identity_Flows'),at=Date.now();add(privateFlows,{ID:flowId,Token_Hash:randomBytes(32).toString('hex'),Subject_ID:s.master.id,Purpose:'LOGIN',State:'PASSKEY',Created_At:new Date(at).toISOString(),Expires_At:new Date(at+600000).toISOString(),Attempt_Count:0,Authorization_Version:1});
+  const flowId=randomUUID(),privateFlows=s.priv.getSheetByName('_Identity_Flows'),at=Date.now();add(privateFlows,{ID:flowId,Token_Hash:randomBytes(32).toString('hex'),Subject_ID:s.master.id,Purpose:'LOGIN',State:'PASSKEY',Created_At:new Date(at).toISOString(),Expires_At:new Date(at+900000).toISOString(),Attempt_Count:0,Authorization_Version:1});
   await s.emailHttp('start',p);const code=s.emailCode();let once=true;
   const fault=(target,write)=>{if(!once||target!==stage)return write();once=false;if(after)write();throw Error('INJECTED_EMAIL_CHANGE');};
   for(const name of ['accessSaveMain_','authControlSave_']){const save=s.gas.context[name];s.gas.context[name]=(table,row)=>fault(table.sheet.name==='Usuarios'?'user':table.sheet.name==='Configuracoes'&&row.Chave.startsWith('staff.revision.')?'revision':table.sheet.name==='Sessoes'?'session':table.sheet.name==='_Identity_Flows'?'flow':table.sheet.name==='Logs_Auditoria'?'audit':'',()=>save(table,row));}

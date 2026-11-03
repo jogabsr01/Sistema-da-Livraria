@@ -5,16 +5,16 @@ import { ownerFixture, injectAccessFault } from '../helpers/owner-access-fixture
 import { createGasEmulator } from './gas-emulator.mjs';
 import { properties, environment } from './fixtures.mjs';
 import {ApiError} from '../../backend/errors.mjs';
-import { ACCESS_COOKIE, ACCESS_ORIGIN, accessCookie, createOwnerAccessHandler, loadOwnerAccessSettings } from '../../backend/owner-access.mjs';
+import { ACCESS_COOKIE, ACCESS_ORIGIN, accessCookie, createOwnerAccessHandler, createOwnerAccessService, loadOwnerAccessSettings } from '../../backend/owner-access.mjs';
 
-const fakePin = '8274';
+const fakePassword = 'Senha 8274';
 function code(s) { return s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1]; }
 function flowHash(s) { const sheet = s.priv.getSheetByName('_Identity_Flows'); return sheet.rows.at(-1)[sheet.rows[0].indexOf('Token_Hash')]; }
 async function pending(s) {
   const service = s.service(), token = randomBytes(32).toString('base64url'), ip = '192.0.2.10';
   await service.execute('start', { email: properties.OWNER_EMAIL }, token, ip);
   await service.execute('email', { code: code(s) }, token, ip);
-  await service.execute('pin', { pin: fakePin }, token, ip);
+  await service.execute('password', { newPassword: fakePassword }, token, ip);
   s.storageProof(flowHash(s)); return { token, ip, service };
 }
 async function call(s, operation, { method = 'POST', body = {}, token, csrfToken, headers = {}, ip = '192.0.2.10', origin = ACCESS_ORIGIN } = {}) {
@@ -90,11 +90,11 @@ test('email verification is one-use, cookie-bound, expires in ten minutes and ne
   for (const mode of ['success', 'wrong-cookie', 'expired', 'disabled', 'epoch']) {
     const s = ownerFixture(), token = randomBytes(32).toString('base64url'), service = s.service(), ip = '192.0.2.2';
     await service.execute('start', { email: properties.OWNER_EMAIL }, token, ip); const rawCode = code(s);
-    if (mode === 'expired') { const table = s.priv.getSheetByName('_Identity_Flows'); table.rows[1][5] = new Date(Date.now() - 700000).toISOString(); table.rows[1][6] = new Date(Date.parse(table.rows[1][5]) + 600000).toISOString(); }
+    if (mode === 'expired') { const table = s.priv.getSheetByName('_Identity_Flows'); table.rows[1][5] = new Date(Date.now() - 1000000).toISOString(); table.rows[1][6] = new Date(Date.parse(table.rows[1][5]) + 900000).toISOString(); }
     if (mode === 'disabled') { const users = s.main.getSheetByName('Usuarios'); users.rows[1][users.rows[0].indexOf('Status')] = 'INATIVO'; }
     if (mode === 'epoch') s.main.getSheetByName('Configuracoes').rows[1][1] = 2;
     const action = () => service.execute('email', { code: rawCode }, mode === 'wrong-cookie' ? randomBytes(32).toString('base64url') : token, ip);
-    if (mode === 'success') { assert.equal((await action()).stage, 'PIN'); await assert.rejects(action(), { code: 'WORKSPACE_ACCESS_REJECTED' }); }
+    if (mode === 'success') { assert.equal((await action()).stage, 'PASSWORD'); await assert.rejects(action(), { code: 'WORKSPACE_ACCESS_REJECTED' }); }
     else await assert.rejects(action(), { code: 'WORKSPACE_ACCESS_REJECTED' });
     assert.equal(s.priv.getSheetByName('_Pin_Verifiers').getLastRow(), 1); assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 1);
   }
@@ -103,7 +103,7 @@ test('email verification is one-use, cookie-bound, expires in ten minutes and ne
 test('five wrong email codes revoke the proof and a PIN cannot be set before email confirmation', async () => {
   const s = ownerFixture(), token = randomBytes(32).toString('base64url'), service = s.service(), ip = '192.0.2.2';
   await service.execute('start', { email: properties.OWNER_EMAIL }, token, ip); const rawCode = code(s), hash = flowHash(s);
-  await assert.rejects(service.execute('pin', { pin: fakePin }, token, ip), { code: 'WORKSPACE_ACCESS_REJECTED' });
+  await assert.rejects(service.execute('pin', { password: fakePassword }, token, ip), { code: 'WORKSPACE_ACCESS_REJECTED' });
   // Storage-side five-attempt limit, independent of Node instances/IP limits.
   for (let i = 0; i < 5; i++) assert.equal((await s.client.access('email', { tokenHash: hash, codeHash: 'ff'.repeat(32) })).verified, false);
   await assert.rejects(service.execute('email', { code: rawCode }, token, ip), { code: 'WORKSPACE_ACCESS_REJECTED' });
@@ -140,7 +140,7 @@ test('partial commit before/after each projection never grants a partial session
 });
 
 test('an expired browser cannot collect its old cookie; a durable activation intent recovers before a new PIN/passkey login', async () => {
-  for (const elapsed of [601000, 28800001]) {
+  for (const elapsed of [901000, 28800001]) {
   const s = ownerFixture(), { token, service, ip } = await pending(s); injectAccessFault(s, 'user', true);
   await assert.rejects(service.execute('complete', { response: null }, token, ip));
   // Move both trusted clocks past the flow lifetime without altering its intent.
@@ -149,7 +149,7 @@ test('an expired browser cannot collect its old cookie; a durable activation int
   try {
     Date.now = () => future;
     await assert.rejects(s.service().execute('complete', { response: null }, token, '192.0.2.4'), { code: 'WORKSPACE_ACCESS_REJECTED' });
-    const result = await s.service().execute('login', { email: properties.OWNER_EMAIL, pin: fakePin }, randomBytes(32).toString('base64url'), '192.0.2.4');
+    const result = await s.service().execute('login', { email: properties.OWNER_EMAIL, password: fakePassword }, randomBytes(32).toString('base64url'), '192.0.2.4');
     assert.equal(result.stage, 'PASSKEY'); assert.equal(s.priv.getSheetByName('_Identity_Flows').rows[1][4], 'COMPLETE');
     assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 2);
   } finally { Date.now = original; }
@@ -166,7 +166,7 @@ test('fresh verified email replaces abandoned pending keys without activating or
     await service.execute('start', { email: properties.OWNER_EMAIL }, token, ip);
     await service.execute('email', { code: code(s) }, token, ip);
     const keys = s.priv.getSheetByName('_Passkeys'); assert.notEqual(keys.rows[1][keys.rows[0].indexOf('Revoked_At')], '');
-    assert.equal((await service.state(token)).stage, 'PIN');
+    assert.equal((await service.state(token)).stage, 'PASSWORD');
     await assert.rejects(first.service.execute('complete', { response: null }, first.token, ip), { code: 'WORKSPACE_ACCESS_REJECTED' });
     assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 1);
   } finally { Date.now = original; }
@@ -185,8 +185,8 @@ test('commit refuses a missing proof, wrong epoch, changed role, disabled accoun
 
 test('activated account login requires its PIN, unknown accounts get the same rejection and PIN alone never issues a session', async () => {
   const s = ownerFixture(), prepared = await pending(s); await prepared.service.execute('complete', { response: null }, prepared.token, prepared.ip);
-  for (const input of [{ email: properties.OWNER_EMAIL, pin: '0193' }, { email: 'unknown@example.invalid', pin: fakePin }]) await assert.rejects(s.service().execute('login', input, randomBytes(32).toString('base64url'), '192.0.2.3'), { code: 'ACCESS_REJECTED' });
-  const token = randomBytes(32).toString('base64url'); assert.equal((await s.service().execute('login', { email: properties.OWNER_EMAIL, pin: fakePin }, token, '192.0.2.3')).stage, 'PASSKEY');
+  for (const input of [{ email: properties.OWNER_EMAIL, password: '0193' }, { email: 'unknown@example.invalid', password: fakePassword }]) await assert.rejects(s.service().execute('login', input, randomBytes(32).toString('base64url'), '192.0.2.3'), { code: 'ACCESS_REJECTED' });
+  const token = randomBytes(32).toString('base64url'); assert.equal((await s.service().execute('login', { email: properties.OWNER_EMAIL, password: fakePassword }, token, '192.0.2.3')).stage, 'PASSKEY');
   assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 2); await assert.rejects(s.service().execute('complete', { response: null }, token, '192.0.2.3'), { code: 'WORKSPACE_ACCESS_REJECTED' });
 });
 
@@ -227,16 +227,16 @@ test('failed email codes consume a shared durable budget before verification; ra
 });
 
 
-test('PIN enrollment API rejects adjacent repeats without advancing or granting a session', async () => {
+test('password enrollment API enforces Unicode length without PIN-specific rules', async () => {
   const s = ownerFixture(), service = s.service(), token = randomBytes(32).toString('base64url'), ip = '192.0.2.10';
   await service.execute('start', {email: properties.OWNER_EMAIL}, token, ip);
   await service.execute('email', {code: code(s)}, token, ip);
-  const result = await call(s, 'pin', {token, csrfToken: service.csrf(token), body: {pin:'1123'}});
+  const result = await call(s, 'password', {token, csrfToken: service.csrf(token), body: {newPassword:'1123'}});
   assert.equal(result.response.status, 400);
-  assert.equal(result.data.error.code, 'PIN_ADJACENT_REPETITION');
-  assert.equal((await service.state(token)).stage, 'PIN');
+  assert.equal(result.data.error.code, 'INVALID_PASSWORD');
+  assert.equal((await service.state(token)).stage, 'PASSWORD');
   assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 1);
-  const accepted = await call(s, 'pin', {token, csrfToken: service.csrf(token), body:{pin:fakePin}});
+  const accepted = await call(s, 'password', {token, csrfToken: service.csrf(token), body:{newPassword:'11223344'}});
   assert.equal(accepted.response.status, 200);
   assert.equal(accepted.data.data.stage, 'PASSKEY');
 });
@@ -255,7 +255,7 @@ test('invalid or duplicate access cookies fail before commands while origin and 
  const original=s.gas.post;s.gas.post=(...args)=>{calls++;return original(...args);};
  const t=randomBytes(32).toString('base64url'),csrf=s.service().csrf(t);
  for(const cookie of ['',ACCESS_COOKIE+'=invalid',ACCESS_COOKIE+'='+t+'; '+ACCESS_COOKIE+'='+t]){
-  for(const operation of ['start','login','recover','email','pin','options','complete']){
+  for(const operation of ['start','login','recover','email','password','options','complete']){
    const r=await call(s,operation,{headers:{cookie},csrfToken:csrf});
    assert.equal(r.response.status,401);assert.equal(r.data.error.code,'ACCESS_CONTEXT_EXPIRED');
    assert.equal(r.response.headers.get('set-cookie'),null);
@@ -282,7 +282,7 @@ test('fresh context after a preflight rejection still requires its new CSRF and 
 test('prepared completion rejects embedded origin and foreign user handle before consuming a ceremony',async()=>{
  for(const mode of ['embedded','handle']){
   const s=ownerFixture(),p=await pending(s);await p.service.execute('complete',{response:null},p.token,p.ip);
-  const token=randomBytes(32).toString('base64url'),ip='192.0.2.98',svc=s.service();await svc.execute('login',{email:properties.OWNER_EMAIL,pin:fakePin},token,ip);await svc.execute('options',{},token,ip);
+  const token=randomBytes(32).toString('base64url'),ip='192.0.2.98',svc=s.service();await svc.execute('login',{email:properties.OWNER_EMAIL,password:fakePassword},token,ip);await svc.execute('options',{},token,ip);
   const response={id:randomBytes(32).toString('base64url'),response:{clientDataJSON:Buffer.from(JSON.stringify({type:'webauthn.get',origin:ACCESS_ORIGIN,crossOrigin:mode==='embedded'})).toString('base64url'),...(mode==='handle'?{userHandle:Buffer.from('11111111-1111-4111-8111-111111111111').toString('base64url')}:{})}};
   await assert.rejects(svc.execute('complete',{response},token,ip));
   const c=s.priv.getSheetByName('_Passkey_Ceremonies');assert.equal(c.rows.at(-1)[c.rows[0].indexOf('Consumed_At')],'');assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),2);
@@ -296,7 +296,7 @@ test('START timeout after persistence delivers only the new pre-auth cookie so s
  const failed=await call(s,'start',{token,csrfToken,body:{email:properties.OWNER_EMAIL}});assert.equal(failed.response.status,502);assert.equal(failed.data.error.code,'UPSTREAM_TIMEOUT');
  const renewed=failed.response.headers.get('set-cookie');assert.match(renewed,/^__Host-livraria_access=.*Secure; HttpOnly; SameSite=Strict/);assert.ok(!renewed.includes('__Host-livraria_session'));assert.notEqual(renewed.split(';')[0],cookie);
  const currentToken=renewed.split(';')[0].split('=')[1],state=await call(s,'state',{method:'GET',token:currentToken});assert.equal(state.data.data.stage,'EMAIL');assert.equal(s.gas.outbox.length,1);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
- const proof=await call(s,'email',{token:currentToken,csrfToken:state.data.data.csrfToken,body:{code:code(s)}});assert.equal(proof.data.data.stage,'PIN');assert.equal(s.gas.outbox.length,1);
+ const proof=await call(s,'email',{token:currentToken,csrfToken:state.data.data.csrfToken,body:{code:code(s)}});assert.equal(proof.data.data.stage,'PASSWORD');assert.equal(s.gas.outbox.length,1);
 });
 test('uncertain START before persistence keeps a usable INITIAL context and rejected origin/CSRF cannot rotate cookies',async()=>{
  const s=ownerFixture(),fresh=await call(s,'state',{method:'GET'}),token=fresh.response.headers.get('set-cookie').split(';')[0].split('=')[1],csrfToken=fresh.data.data.csrfToken;
@@ -304,4 +304,28 @@ test('uncertain START before persistence keeps a usable INITIAL context and reje
  for(const headers of [{origin:'https://other.invalid'},{'x-csrf-token':'bad'}]){const r=await call(s,'start',{token,csrfToken,headers,body:{email:properties.OWNER_EMAIL}});assert.equal(r.response.status,403);assert.equal(r.response.headers.get('set-cookie'),null);}
  const failed=await call(s,'start',{token,csrfToken,body:{email:properties.OWNER_EMAIL}}),currentToken=failed.response.headers.get('set-cookie').split(';')[0].split('=')[1];
  assert.equal((await call(s,'state',{method:'GET',token:currentToken})).data.data.stage,'INITIAL');assert.equal(s.gas.outbox.length,0);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
+});
+
+test('PASSWORD_V1 login accepts exact Unicode input, uses password assurance and never accepts a four-digit value', async () => {
+  const s = ownerFixture({adminPinLogin:true}), prepared = await pending(s);
+  await prepared.service.execute('complete', { response: null }, prepared.token, prepared.ip);
+  const token = randomBytes(32).toString('base64url');
+  await assert.rejects(s.service().execute('login', { email: properties.OWNER_EMAIL, password: '8274' }, token, prepared.ip), { code: 'ACCESS_REJECTED' });
+  const passwordService = createOwnerAccessService(s.settings,{client:s.client,passwordLogin:true});
+  const login = await passwordService.execute('login', { email: properties.OWNER_EMAIL, password: fakePassword }, token, prepared.ip);
+  assert.equal(login.stage, 'COMMITTING');
+  const done = await passwordService.execute('continue-login', { receipt: login.loginReceipt }, token, prepared.ip);
+  assert.equal(done.stage, 'COMPLETE');
+  assert.deepEqual(done.user, { role: 'SUPER_ADMIN', assurance: 'password' });
+});
+
+test('PIN_LEGACY accounts are routed to explicit migration instead of being verified as passwords', async () => {
+  const s = ownerFixture(), service = s.service(), token = randomBytes(32).toString('base64url'), ip = '192.0.2.44';
+  await service.execute('start', { email: properties.OWNER_EMAIL }, token, ip);
+  await service.execute('email', { code: code(s) }, token, ip);
+  await service.execute('pin', { pin: '8274' }, token, ip);
+  s.storageProof(flowHash(s));
+  await service.execute('complete', { response: null }, token, ip);
+  const result = await service.execute('login', { email: properties.OWNER_EMAIL, password: 'legacy-password' }, randomBytes(32).toString('base64url'), ip);
+  assert.equal(result.stage, 'MIGRATION_REQUIRED');
 });

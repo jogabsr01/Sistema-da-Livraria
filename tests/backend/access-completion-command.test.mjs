@@ -38,7 +38,7 @@ test('disabled/epoch/expired/missing response, flag changes and spoofed fields c
   const s=await setup(),p={...s.payload};
   if(mode==='disabled'){const u=s.main.getSheetByName('Usuarios');u.rows[1][u.rows[0].indexOf('Status')]='INATIVO';}
   if(mode==='epoch')s.main.getSheetByName('Configuracoes').rows[1][1]=2;
-  if(mode==='expired'){s.row[s.cols.indexOf('Created_At')]=new Date(Date.now()-700000).toISOString();s.row[s.cols.indexOf('Expires_At')]=new Date(Date.now()-100000).toISOString();}
+  if(mode==='expired'){s.row[s.cols.indexOf('Created_At')]=new Date(Date.now()-1000000).toISOString();s.row[s.cols.indexOf('Expires_At')]=new Date(Date.now()-100000).toISOString();}
   if(mode==='response')p.hasResponse=false;
   if(mode==='flags')s.gas.props.IDENTITY_PASSKEYS_ENABLED='false';
   if(mode==='extra')p.role='SUPER_ADMIN';

@@ -12,7 +12,7 @@ test('email proof uses seven cryptographic symbols and normalizes lowercase with
   await service.execute('start',{email:properties.OWNER_EMAIL},token,ip);
   const proof=code(s);
   assert.equal(token.length,43);
-  assert.equal((await service.execute('email',{code:' '+proof.toLowerCase()+' '},token,ip)).stage,'PIN');
+  assert.equal((await service.execute('email',{code:' '+proof.toLowerCase()+' '},token,ip)).stage,'PASSWORD');
   await assert.rejects(service.execute('email',{code:proof},token,ip), {code:'WORKSPACE_ACCESS_REJECTED'});
   assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);
   const rows=s.priv.getSheetByName('_Identity_Flows').rows;
@@ -25,7 +25,7 @@ test('an already delivered legacy email proof remains valid for its existing flo
   const digest=(kind,value)=>createHmac('sha256',s.settings.guardKey).update(JSON.stringify([kind,scope,value])).digest('hex');
   const tokenHash=digest('access.token.v1',token);
   await s.client.access('start',{email:properties.OWNER_EMAIL,flowId:randomUUID(),tokenHash,codeHash:digest('access.email.v1',[tokenHash,proof]),code:proof});
-  assert.equal((await s.service().execute('email',{code:proof},token,'192.0.2.43')).stage,'PIN');
+  assert.equal((await s.service().execute('email',{code:proof},token,'192.0.2.43')).stage,'PASSWORD');
 });
 
 test('bindings are checked once per resource per RPC while each new request revalidates and clears failed scopes', async () => {
@@ -34,7 +34,7 @@ test('bindings are checked once per resource per RPC while each new request reva
   const token=randomBytes(32).toString('base64url'), service=s.service(), ip='192.0.2.44';
   await service.execute('start',{email:properties.OWNER_EMAIL},token,ip);assert.equal(checks,3);
   checks=0;await service.execute('email',{code:code(s)},token,ip);assert.equal(checks,3);
-  checks=0;await service.execute('pin',{pin:'8274'},token,ip);assert.equal(checks,6);
+  checks=0;await service.execute('password',{newPassword:'Senha 8274'},token,ip);assert.equal(checks,6);
   checks=0;assert.equal((await service.state(token)).stage,'PASSKEY');assert.equal(checks,3);
   assert.equal(s.gas.context.RPC_STORAGE_SCOPE_,null);
   const mainFile=s.gas.resources.get(s.settings.config.spreadsheetId);mainFile.sharing='public';

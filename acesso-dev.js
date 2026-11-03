@@ -18,13 +18,13 @@
     if (!node || location.hostname !== DEV) return;
     node.textContent = 'Referência para suporte: ' + accessPhase + ' / ' + (diagnosticCodes.has(error?.code) ? error.code : 'ACCESS_PAGE_UNAVAILABLE');
     const info = error.transport;
-    if (info && ['state','start','recover','login','device-login','cookie','biometric','continue-login','email','pin','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
+    if (info && ['state','start','recover','login','device-login','cookie','biometric','continue-login','email','password','options','complete','rescue','session'].includes(info.operation) && Number.isInteger(info.status) && info.status >= 0 && info.status <= 599 && Number.isFinite(info.elapsedMs) && info.elapsedMs >= 0 && info.elapsedMs <= 3600000) node.textContent += ' / etapa: ' + info.operation.toUpperCase() + ' / HTTP: ' + info.status + ' / espera: ' + (info.elapsedMs / 1000).toFixed(1) + 's';
     node.hidden = false;
     $('support-details').hidden = false;
   }
   function unavailable(code) { const error = new Error('ACCESS_FAILED'); error.code = code; return error; }
   let csrfToken = '', busy = false, pendingResponse = null, pendingReceipt = null, pendingDeviceCommand = null, pendingConfirmation = null, pendingLogin = null,recoveryFlow=false,replacementReady=false,emergencyEnabled=false;
-  const panels = ['initial', 'email-form', 'pin-form', 'passkey', 'retry', 'complete'];
+  const panels = ['initial', 'email-form', 'password-form', 'passkey', 'retry', 'complete'];
   function feedbackIn(id) {
     const target = $(id), feedback = $('access-feedback');
     if (!target || !feedback || target.contains(feedback)) return;
@@ -34,12 +34,12 @@
   function show(stage) {
     preparedDevice = null; preparedAt = 0;
     if(stage==='COMMITTING'){$('retry-button').hidden=false;$('retry-button').textContent='Tentar concluir entrada';$('completion-help').textContent='Estamos finalizando sua entrada. Você não precisa repetir a biometria.';}
-    const panel = { INITIAL: 'initial', EMAIL: 'email-form', PIN: 'pin-form', PASSKEY: 'passkey', COMMITTING: 'retry', COMPLETE: 'complete' }[stage];
+    const panel = { INITIAL: 'initial', EMAIL: 'email-form', PASSWORD: 'password-form', PASSKEY: 'passkey', COMMITTING: 'retry', COMPLETE: 'complete' }[stage];
     panels.forEach(id => { $(id).hidden = id !== panel; });
     if (panel) feedbackIn(panel === 'initial' ? 'login-form' : panel);
     if(stage!=='COMPLETE')$('identity-result').textContent='';
-    $('rescue-choice').hidden=stage!=='PIN'||!recoveryFlow||!emergencyEnabled;
-    if(stage==='PIN'&&replacementReady){$('use-rescue').checked=true;$('rescue-inputs').hidden=false;$('rescue-status').textContent='Código já validado nesta tentativa. Defina seu PIN novo.';}
+    $('rescue-choice').hidden=stage!=='PASSWORD'||!recoveryFlow||!emergencyEnabled;
+    if(stage==='PASSWORD'&&replacementReady){$('use-rescue').checked=true;$('rescue-inputs').hidden=false;$('rescue-status').textContent='Código já validado nesta tentativa. Defina sua senha nova.';}
     $('restart').hidden = !panel || ['initial', 'complete'].includes(panel);
   }
   const busyCodes=new Set(['WORKSPACE_BUSY']);
@@ -59,13 +59,12 @@
       if (field && !$(field).value.includes('@')) return 'Não conseguimos iniciar o acesso com este CPF. Tente usar seu e-mail cadastrado. Se não conseguir, peça ajuda à administração.';
       return 'Não conseguimos iniciar o acesso agora. Tente novamente. Se continuar, peça ajuda à administração.';
     }
-    if (code === 'PIN_ADJACENT_REPETITION') return 'Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.';
-    if (code === 'INVALID_PIN') return 'O PIN precisa ter exatamente quatro números. Confira os campos e tente novamente.';
+    if (code === 'INVALID_PASSWORD') return 'A senha precisa ter de 8 a 40 caracteres Unicode. Preserve os espaços exatamente como digitados.';
     if (code === 'AUTH_RATE_LIMITED') return 'Você fez várias tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente. Se precisar, peça ajuda à administração.';
     if (code === 'DEVICE_NOT_ALLOWED') return 'A confirmação do aparelho não abriu, foi cancelada ou expirou. Tente novamente. Se a janela não abrir, confira se o Chrome está atualizado e se o bloqueio de tela está configurado.';
     if (code === 'DEVICE_NOT_SUPPORTED') return 'Este navegador ou aparelho não oferece a confirmação necessária. Use um navegador atualizado em um aparelho com bloqueio de tela.';
     if (code === 'DEVICE_SECURITY_ERROR') return 'O navegador bloqueou a confirmação neste endereço. Abra o link da livraria diretamente em uma nova aba e tente novamente.';
-    if (code === 'DEVICE_ALREADY_REGISTERED') return 'Este aparelho já possui uma chave de acesso para a conta. Volte ao início e tente entrar com seu CPF ou e-mail e PIN.';
+    if (code === 'DEVICE_ALREADY_REGISTERED') return 'Este aparelho já possui uma chave de acesso para a conta. Volte ao início e tente entrar com seu CPF ou e-mail e password.';
     if (code === 'DEVICE_ABORTED') return 'A confirmação do aparelho foi interrompida. Tente novamente.';
     if (code === 'DEVICE_RESPONSE_INVALID') return 'O aparelho não retornou a confirmação. Tente novamente.';
     if (code === 'ACCESS_CONTEXT_EXPIRED') return ['start','login','recover'].includes(error.transport?.operation) ? 'Não conseguimos renovar sua tentativa de acesso. Atualize a página e tente novamente.' : 'Sua tentativa de acesso expirou. Volte ao início e solicite um novo código.';
@@ -73,8 +72,8 @@
     if (code.includes('REJECTED')) {
       if (error.transport?.operation === 'start') return 'Não foi possível iniciar seu acesso. Atualize a página e tente novamente.';
       if (error.transport?.operation === 'recover') return 'Não foi possível iniciar a recuperação. Atualize a página e tente novamente.';
-      if (!$('email-form').hidden) return 'Não foi possível validar o código. Confira se copiou o código completo do e-mail mais recente. Ele vale por 10 minutos. Se venceu, volte ao início para solicitar outro.';
-      if (!$('initial').hidden) return 'Não foi possível entrar com os dados informados. Confira o CPF ou e-mail e o PIN. Se ainda não cadastrou seu acesso, escolha “É meu primeiro acesso”.';
+      if (!$('email-form').hidden) return 'Não foi possível validar o código. Confira se copiou o código completo do e-mail mais recente. Ele vale por 15 minutos. Se venceu, volte ao início para solicitar outro.';
+      if (!$('initial').hidden) return 'Não foi possível entrar com os dados informados. Confira o CPF ou e-mail e a senha. Se ainda não cadastrou seu acesso, escolha “É meu primeiro acesso”.';
       if (code === 'PASSKEY_REJECTED') return 'Não foi possível entrar com os dados informados. A confirmação pelo aparelho não foi aceita. Tente novamente ou volte ao início para entrar de outra forma.';
       return 'Não foi possível confirmar sua identidade nesta tentativa. Volte ao início para entrar novamente. Se o problema continuar, peça ajuda à administração.';
     }
@@ -136,7 +135,7 @@
         return api(operation,body,canRenew,openLogin,1);
       }
       // Renew only a server-confirmed preflight rejection: no command ran.
-      // Never replay a timeout, invalid response, PIN/code guess or ceremony.
+      // Never replay a timeout, invalid response, password/code guess or ceremony.
       if (canRenew && response.status === 401 && result?.error?.code === 'ACCESS_CONTEXT_EXPIRED' && ['start','login','recover'].includes(operation)) {
         const fresh = await api('state', undefined, false);
         if (fresh.stage !== 'INITIAL') throw failure('ACCESS_CONTEXT_CHANGED');
@@ -156,7 +155,7 @@
     if (scope) feedbackIn(scope);
     accessPhase = 'ACCESS';
     actionRevision++;
-    maskPins();
+    maskPasswords();
     busy = true; document.querySelectorAll('button').forEach(button => { button.disabled = true; });
     const detail = document.getElementById('access-diagnostic'); if (detail) { detail.hidden = true; detail.textContent = ''; }
     $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true; $('environment-access').hidden = true;
@@ -183,33 +182,39 @@
     }
     return '';
   }
+  function passwordError(value) {
+    if (typeof value !== 'string') return 'Digite sua senha.';
+    const length = Array.from(value).length;
+    if (length < 8 || length > 40) return 'A senha precisa ter de 8 a 40 caracteres Unicode.';
+    return '';
+  }
   function validateAccessForm(id) {
     const field = {'login-form':'login-email','start-form':'activation-email','recovery-form':'recovery-email'}[id];
     if (!field) return true;
-    const fields = id === 'login-form' ? [field, 'login-pin'] : [field]; fields.forEach(clearFieldError);
+    const fields = id === 'login-form' ? [field, 'login-password'] : [field]; fields.forEach(clearFieldError);
     let error = identifierError($(field).value), target = field;
-    if (!error && id === 'login-form' && !/^[0-9]{4}$/.test($('login-pin').value)) { target = 'login-pin'; error = 'Digite seu PIN de quatro números.'; }
+    if (!error && id === 'login-form') { target = 'login-password'; error = passwordError($('login-password').value); }
     if (!error) return true;
     const node = $(target + '-error'); node.textContent = error; node.hidden = false;
     $(target).setAttribute('aria-invalid','true'); $(target).focus();
     $('support-details').hidden = true; $('check-step').hidden = true;
     message(error, 'error'); return false;
   }
-  ['login-email','login-pin','activation-email','recovery-email'].forEach(field => $(field).addEventListener('input', () => {
+  ['login-email','login-password','new-password','confirm-password','activation-email','recovery-email'].forEach(field => $(field).addEventListener('input', () => {
     if ($(field).getAttribute('aria-invalid') === 'true') {
       clearFieldError(field); if (!busy) { $('status').hidden = true; $('status').textContent = ''; }
     }
   }));
   function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); if (busy) return; feedbackIn(id); if (validateAccessForm(id)) run(action, id); }); }
-  function clearSecrets() { ['login-email','login-pin','activation-email','recovery-email'].forEach(clearFieldError); maskPins(); ['login-pin', 'new-pin', 'confirm-pin', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
-  function maskPins() {
-    document.querySelectorAll('[data-pin-target]').forEach(button => {
-      $(button.dataset.pinTarget).type = 'password'; button.setAttribute('aria-pressed', 'false');
+  function clearSecrets() { ['login-email','login-password','activation-email','recovery-email'].forEach(clearFieldError); maskPasswords(); ['login-password', 'new-password', 'confirm-password', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
+  function maskPasswords() {
+    document.querySelectorAll('[data-password-target]').forEach(button => {
+      $(button.dataset.passwordTarget).type = 'password'; button.setAttribute('aria-pressed', 'false');
       button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^Ocultar /, 'Mostrar '));
     });
   }
-  document.querySelectorAll('[data-pin-target]').forEach(button => button.addEventListener('click', () => {
-    const field = $(button.dataset.pinTarget), reveal = field.type === 'password';
+  document.querySelectorAll('[data-password-target]').forEach(button => button.addEventListener('click', () => {
+    const field = $(button.dataset.passwordTarget), reveal = field.type === 'password';
     field.type = reveal ? 'text' : 'password'; button.setAttribute('aria-pressed', String(reveal));
     button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^(Mostrar|Ocultar) /, reveal ? 'Ocultar ' : 'Mostrar '));
   }));
@@ -229,7 +234,7 @@
     if ([401,403].includes(response.status)) return false;
     if (!response.ok) throw failure('UPSTREAM_UNAVAILABLE');
     const data = result?.data;
-    if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || !['pin','mfa','passkey'].includes(data.user.assurance) || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
+    if (!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role) || !['password','mfa','passkey'].includes(data.user.assurance) || typeof data.csrfToken !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     if (!shouldApply()) return false;
     if(verificationView){show('COMPLETE');message('Acesso verificado com sucesso.','success');}else message('Abrindo sua livraria…');
     $('identity-result').textContent = 'Sua conta está pronta para uso.'; $('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role);enterApp(); return true;
@@ -243,7 +248,7 @@
         throw error;
       }
     }
-    if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||!['pin','mfa','passkey'].includes(result.user.assurance)||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
+    if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(result.user?.role)||!['password','mfa','passkey'].includes(result.user.assurance)||!/^[A-Za-z0-9_-]{43}$/.test(result.sessionCsrfToken))throw unavailable('ACCESS_RESPONSE_INVALID');
     pendingConfirmation=null;if(verificationView){show('COMPLETE');message('Acesso verificado com sucesso.','success');}else message('Abrindo sua livraria…');
     $('identity-result').textContent='Sua conta está pronta para uso.';$('team-link').hidden=!['SUPER_ADMIN','ADMIN'].includes(result.user.role);enterApp();
   }
@@ -274,10 +279,10 @@
   }
   $('check-step').addEventListener('click', () => run(async () => {
     const state = await api('state');
-    if (!['INITIAL','EMAIL','PIN','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage)) throw unavailable('ACCESS_RESPONSE_INVALID');
+    if (!['INITIAL','EMAIL','PASSWORD','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage)) throw unavailable('ACCESS_RESPONSE_INVALID');
     show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage);
     if (state.stage === 'COMPLETE' && await current()) return;
-    message({ INITIAL: 'Escolha como deseja acessar sua conta.', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PIN: 'E-mail confirmado. Crie seu PIN para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Clique em “Confirmar no meu aparelho” para continuar.' }[state.stage] || 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
+    message({ INITIAL: 'Escolha como deseja acessar sua conta.', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PASSWORD: 'E-mail confirmado. Crie sua senha para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Clique em “Confirmar no meu aparelho” para continuar.' }[state.stage] || 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
   }));
   $('recovery-open').addEventListener('click',()=>{if(busy)return;$('recovery-form').hidden=!$('recovery-form').hidden;if(!$('recovery-form').hidden){feedbackIn('recovery-form');$('status').hidden=true;}});
   $('first-access-box').addEventListener('toggle',()=>{if(!busy&&$('first-access-box').open){feedbackIn('start-form');$('status').hidden=true;}});
@@ -286,8 +291,8 @@
     lastIdentifier=$('activation-email').value;const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);
   });
   submit('login-form', async () => {
-    lastIdentifier=$('login-email').value;try { const data = await api('login', { email: $('login-email').value, pin: $('login-pin').value }); if(data.loginReceipt){pendingLogin=data.loginReceipt;show('COMMITTING');await finish();}else{show(data.stage);message('Confirme sua identidade pelo aparelho cadastrado.');} }
-    finally { $('login-pin').value = ''; }
+    lastIdentifier=$('login-email').value;try { const data = await api('login', { email: $('login-email').value, password: $('login-password').value }); if(data.loginReceipt){pendingLogin=data.loginReceipt;show('COMMITTING');await finish();}else if(data.stage==='MIGRATION_REQUIRED'){show('INITIAL');$('recovery-form').hidden=false;$('recovery-email').value=$('login-email').value;$('recovery-choice').hidden=false;message('Esta conta ainda usa uma credencial antiga. Confirme o e-mail e o aparelho para criar sua senha nova.');}else{show(data.stage);message('Confirme sua identidade pelo aparelho cadastrado.');} }
+    finally { $('login-password').value = ''; }
   });
   $('biometric-login').addEventListener('click',()=>run(async()=>{
     if(!window.PublicKeyCredential||!navigator.credentials)throw unavailable('DEVICE_NOT_SUPPORTED');
@@ -307,7 +312,7 @@
     try { return await api(operation, body); }
     catch (error) {
       if (!uncertainCodes.has(error.code)) throw error;
-      // Read once after an uncertain mutation. Never repeat a code/PIN guess,
+      // Read once after an uncertain mutation. Never repeat a code/password guess,
       // resend mail, or interpret a local expectation as a verified transition.
       message('Conferindo se a etapa foi salva…');
       let state; try { state = await api('state'); } catch { throw error; }
@@ -316,16 +321,17 @@
     }
   }
   submit('email-form', async () => {
-    const data = await saveAccessStep('email', { code: $('email-code').value.trim() }, 'PIN'); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina seu PIN novo.', 'success');
+    const data = await saveAccessStep('email', { code: $('email-code').value.trim() }, 'PASSWORD'); $('email-code').value = ''; show(data.stage); message('E-mail confirmado. Defina sua senha nova.', 'success');
   });
   $('use-rescue').addEventListener('change',()=>{$('rescue-inputs').hidden=!$('use-rescue').checked;});
-  $('rescue-confirm').addEventListener('click',()=>run(async()=>{try{await api('rescue',{recoveryCode:$('rescue-code').value});$('rescue-status').textContent='Código confirmado. Defina um PIN novo e cadastre novamente a confirmação pelo aparelho.';}finally{$('rescue-code').value='';}}));
-  submit('pin-form', async () => {
+  $('rescue-confirm').addEventListener('click',()=>run(async()=>{try{await api('rescue',{recoveryCode:$('rescue-code').value});$('rescue-status').textContent='Código confirmado. Defina uma senha nova e cadastre novamente a confirmação pelo aparelho.';}finally{$('rescue-code').value='';}}));
+  submit('password-form', async () => {
     if(recoveryFlow&&emergencyEnabled&&$('use-rescue').checked&&!replacementReady){message('Valide o código de recuperação antes de continuar.', 'error');return;}
-    if (/([0-9])\1/.test($('new-pin').value)) { message('Escolha um PIN sem números iguais lado a lado. Por exemplo, não use dois números 1 seguidos.', 'error'); return; }
-    if ($('new-pin').value !== $('confirm-pin').value) { message('Os PINs precisam ser iguais.', 'error'); return; }
-    try { const data = await saveAccessStep('pin', { pin: $('new-pin').value }, 'PASSKEY'); show(data.stage); message('Agora confirme sua identidade pelo aparelho para proteger sua conta.', 'success'); }
-    finally { $('new-pin').value = ''; $('confirm-pin').value = ''; }
+    const password=$('new-password').value, error=passwordError(password);
+    if (error) { message(error, 'error'); return; }
+    if (password !== $('confirm-password').value) { message('As senhas precisam ser iguais.', 'error'); return; }
+    try { const data = await saveAccessStep('password', { newPassword: password }, 'PASSKEY'); show(data.stage); message('Agora confirme sua identidade pelo aparelho para proteger sua conta.', 'success'); }
+    finally { $('new-password').value = ''; $('confirm-password').value = ''; }
   });
   async function prepareDevice() {
     accessPhase = 'PREPARE';
@@ -373,8 +379,8 @@
     pendingResponse=null;show(state.stage);message('Continue pela etapa indicada abaixo.');
   }));
   $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('Escolha como deseja entrar.');}));
-  function requestedView(state){if(!['#entrar','#recuperar-pin'].includes(location.hash))return false;clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-pin'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
-  window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-pin')run(async()=>{if(!await current()){await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');}});});
+  function requestedView(state){if(!['#entrar','#recuperar-senha'].includes(location.hash))return false;clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-senha'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
+  window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-senha')run(async()=>{if(!await current()){await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');}});});
   window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;});
   window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
   if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
@@ -382,7 +388,7 @@
     accessPhase = 'STATE';
     const state = await api('state',undefined,true,location.hash==='#entrar');
     accessPhase = 'RENDER';
-    if(requestedView(state)){if(!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-pin'){const revision=actionRevision;setTimeout(()=>current(()=>revision===actionRevision).catch(()=>{}),0);}return;}
+    if(requestedView(state)){if(!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-senha'){const revision=actionRevision;setTimeout(()=>current(()=>revision===actionRevision).catch(()=>{}),0);}return;}
     // A session lookup is optional here: never hide a server-confirmed access
     // flow because that separate read failed. Authentication still happens only
     // after the session endpoint confirms a passkey-backed principal.

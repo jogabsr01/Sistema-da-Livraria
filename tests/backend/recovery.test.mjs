@@ -41,13 +41,13 @@ test('failure at every recovery projection cannot revive an old session and repl
 
 test('email proof does not authorize registering a replacement passkey; stale logins and expired flows are refused',async()=>{
  const s=enableRecovery();await s.activateOwner();const p=await s.pendingRecovery();const options=await p.svc.execute('options',{},p.token,p.ip);assert.equal(options.kind,'get');assert.ok(options.options.allowCredentials.length>0);
- const flows=s.priv.getSheetByName('_Identity_Flows'),cols=flows.rows[0],f=flows.rows.at(-1);f[cols.indexOf('Created_At')]=new Date(Date.now()-700000).toISOString();f[cols.indexOf('Expires_At')]=new Date(Date.parse(f[cols.indexOf('Created_At')])+600000).toISOString();await assert.rejects(p.svc.execute('pin',{pin:'1234'},p.token,p.ip));
+ const flows=s.priv.getSheetByName('_Identity_Flows'),cols=flows.rows[0],f=flows.rows.at(-1);f[cols.indexOf('Created_At')]=new Date(Date.now()-1000000).toISOString();f[cols.indexOf('Expires_At')]=new Date(Date.parse(f[cols.indexOf('Created_At')])+900000).toISOString();await assert.rejects(p.svc.execute('pin',{pin:'1234'},p.token,p.ip));
 });
 
 test('staff recovery by CPF retains attendant permissions and is bound to the enrolled email',async()=>{
  const base=staffFixture(),s=enableRecovery(base),c=s.command();await s.http('save',c);let token=randomBytes(32).toString('base64url'),svc=s.recoveryService(),ip='192.0.2.15';await svc.execute('start',{email:c.contact.email},token,ip);await svc.execute('email',{code:s.code()},token,ip);await svc.execute('pin',{pin:'8274'},token,ip);s.storageProof(s.hash());await svc.execute('complete',{response:null},token,ip);
  // Move test flow clocks past the delivery cooldown without sleeping.
- const f=s.priv.getSheetByName('_Identity_Flows');for(const row of f.rows.slice(1)){row[5]=new Date(Date.now()-70000).toISOString();row[6]=new Date(Date.parse(row[5])+600000).toISOString();}
+ const f=s.priv.getSheetByName('_Identity_Flows');for(const row of f.rows.slice(1)){row[5]=new Date(Date.now()-70000).toISOString();row[6]=new Date(Date.parse(row[5])+900000).toISOString();}
  const p=await s.pendingRecovery(c.contact.cpf,'192.0.2.16');assert.equal(s.gas.outbox.at(-1).to,c.contact.email);s.proof();
  const save=s.gas.context.accessSaveMain_;let once=true;s.gas.context.accessSaveMain_=(table,row)=>{if(once&&table.sheet.name==='Logs_Auditoria'){once=false;save(table,row);throw Error('INJECTED_STAFF_RECOVERY');}return save(table,row);};
  await assert.rejects(p.svc.execute('complete',{response:null},p.token,p.ip));

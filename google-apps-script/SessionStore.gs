@@ -5,10 +5,10 @@
 function identityUuid_(value) {
   return typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 }
-// DEV policy explicitly authorized by the project owner: PIN is an alternate
-// sign-in method. Other environments retain the strong administrator policy.
-function devPinLoginEnabled_(){return scriptProperties_().getProperty('APP_ENV')==='dev'&&(scriptFlag_('ADMIN_PIN_LOGIN_ENABLED')===null||scriptFlag_('ADMIN_PIN_LOGIN_ENABLED')==='true');}
-function businessAssurance_(principal){return ['mfa','passkey'].includes(principal.assurance)||principal.assurance==='pin'&&devPinLoginEnabled_();}
+// DEV policy permits the fast password sign-in path. PIN records remain legacy-only.
+function devPasswordLoginEnabled_(){var value=scriptFlag_('ADMIN_PASSWORD_LOGIN_ENABLED');if(value===null||value===undefined)value=scriptFlag_('ADMIN_PIN_LOGIN_ENABLED');return scriptProperties_().getProperty('APP_ENV')==='dev'&&(value===null||value===undefined||value==='true');}
+function devPinLoginEnabled_(){return devPasswordLoginEnabled_();}
+function businessAssurance_(principal){return ['mfa','passkey'].includes(principal.assurance)||(principal.assurance==='password'||principal.assurance==='pin')&&devPasswordLoginEnabled_();}
 function identityRows_(spreadsheet, name) {
   var sheet = rpcSheet_(spreadsheet, name), lastRow = sheet ? rpcLastRow_(sheet) : 0;
   var definition = LIVRARIA_SCHEMA.tables.filter(function (table) { return table.name === name; })[0];
@@ -48,7 +48,7 @@ function identitySession_(spreadsheet, tokenHash, now) {
         flows[0].Subject_ID !== session.ID_Usuario || flows[0].Session_Token_Hash !== tokenHash ||
         (flows[0].Authorization_Version+(flows[0].Purpose==='RECOVER'?1:0)) !== session.Versao_Autorizacao) failure_('UNAUTHENTICATED');
   }
-  if (session.Revogado_Em !== '' || !['pin', 'mfa', 'passkey'].includes(session.Nivel_Autenticacao) ||
+  if (session.Revogado_Em !== '' || !['password', 'pin', 'mfa', 'passkey'].includes(session.Nivel_Autenticacao) ||
       !Number.isSafeInteger(session.Versao_Autorizacao) || session.Versao_Autorizacao < 1) failure_('UNAUTHENTICATED');
   // 24h absolute lifetime, explicit-logout-only: the session stays valid for
   // its full span regardless of idle time; only revocation (logout, role or
@@ -64,7 +64,7 @@ function identitySession_(spreadsheet, tokenHash, now) {
   var user = userMatches[0];
   if (user.Status !== 'ATIVO' || user.Primeiro_Acesso_Concluido !== true ||
       !['ATENDENTE', 'ADMIN', 'SUPER_ADMIN'].includes(user.Perfil)) failure_('UNAUTHENTICATED');
-  if (user.Perfil !== 'ATENDENTE' && !['mfa', 'passkey'].includes(session.Nivel_Autenticacao)&&!(session.Nivel_Autenticacao==='pin'&&devPinLoginEnabled_())) failure_('UNAUTHENTICATED');
+  if (user.Perfil !== 'ATENDENTE' && !['mfa', 'passkey'].includes(session.Nivel_Autenticacao)&&!(['password','pin'].includes(session.Nivel_Autenticacao)&&devPasswordLoginEnabled_())) failure_('UNAUTHENTICATED');
   var versions = identityRows_(spreadsheet, 'Configuracoes').rows.filter(function (row) { return row.Chave === 'identity.version.' + user.ID_Usuario; });
   if (versions.length !== 1 || !Number.isSafeInteger(versions[0].Valor) || versions[0].Valor < 1) failure_('IDENTITY_UNAVAILABLE');
   if (session.Versao_Autorizacao !== versions[0].Valor) failure_('UNAUTHENTICATED');

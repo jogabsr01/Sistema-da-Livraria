@@ -9,7 +9,7 @@ import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
 import { loadLoginGuardSettings, createLoginGuard } from './login-guard.mjs';
 import { loadPasskeySettings, createPasskeyService, preparedAccessOptions, validatePasskeyResponse } from './passkey-service.mjs';
-import { createPinHasher, createSessionTokens } from './credential-core.mjs';
+import { createPinHasher, createPasswordHasher, createSessionTokens } from './credential-core.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
 import { sessionCookie, validateSessionPrincipal, readSessionToken } from './session-service.mjs';
@@ -61,7 +61,7 @@ function readCookie(request) {
   if (found.length !== 1 || !canonical(found[0].slice(ACCESS_COOKIE.length + 1))) rejected();
   return found[0].slice(ACCESS_COOKIE.length + 1);
 }
-export function createOwnerAccessService(settings, { client, stagedCompletion = false, segmentedCompletion = false, pinLogin = false }) {
+export function createOwnerAccessService(settings, { client, stagedCompletion = false, segmentedCompletion = false, passwordLogin = false, pinLogin = passwordLogin } = {}) {
   const { config, guardKey, tokenKey, pepper } = settings;
   if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   const vault=settings.cpfEnabled||settings.staffEnabled?createPersonalDataVault(settings):null;
@@ -88,16 +88,16 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
   }
   const scope = [config.environment, config.installationId];
   const digest = (purpose, value, format = 'hex', key = guardKey) => createHmac('sha256', key).update(JSON.stringify([purpose, scope, value])).digest(format);
-  const guard = createLoginGuard(settings, { client }), pins = createPinHasher({ ...config, pepper });
+  const guard = createLoginGuard(settings, { client }), pins = createPinHasher({ ...config, pepper }), passwords = createPasswordHasher({ ...config, pepper });
   const passkeys = createPasskeyService(settings, { client }), tokens = createSessionTokens({ ...config, tokenKey });
   const csrf = token => digest('access.csrf.v1', token, 'base64url');
   const hash = token => digest('access.token.v1', token);
-  // Fixed fake record still performs the same KDF for unknown account/wrong PIN.
-  const dummy = { version: 1, algorithm: 'scrypt-N32768-r8-p1', salt: '00'.repeat(32), hash: '00'.repeat(32) };
+  // Fixed fake records keep the KDF path indistinguishable for unknown accounts.
+  const dummy = { version: 1, credentialType: 'PASSWORD_V1', algorithm: 'scrypt-N32768-r8-p1', salt: '00'.repeat(32), hash: '00'.repeat(32) };
   async function read(token) { return client.access('read', { tokenHash: hash(token) }); }
   function completedOutput(flow, value, rawToken) {
-    const principal=validateSessionPrincipal(value,Date.now(),config.adminPinLogin===true);
-    if(principal.id!==flow.subjectId||principal.sessionId!==flow.flowId||principal.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role)||principal.assurance!==(flow.purpose==='PIN_LOGIN'?'pin':'passkey'))rejected();
+    const principal=validateSessionPrincipal(value,Date.now(),config.adminPasswordLogin===true);
+    if(principal.id!==flow.subjectId||principal.sessionId!==flow.flowId||principal.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role)||principal.assurance!==(flow.purpose==='PIN_LOGIN'?'pin':flow.purpose==='PASSWORD_LOGIN'?'password':'passkey'))rejected();
     const sessionCsrfToken=createHmac('sha256',tokenKey).update(JSON.stringify(['csrf.v1',config.environment,config.installationId,rawToken])).digest('base64url');
     return {stage:'COMPLETE',user:{role:principal.role,assurance:principal.assurance},cookie:sessionCookie(rawToken),sessionCsrfToken};
   }
@@ -157,7 +157,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
       return {receipt:accessReceipts(settings,token).seal('device-login',{challenge,flowId,ceremonyId}),options:{challenge,rpId:new URL(ACCESS_ORIGIN).hostname,allowCredentials:[],userVerification:'required',timeout:120000}};
     },
     async state(token) {
-      try { const f=await read(token);return {stage:f.state==='PASSKEY'&&f.proofReady?'COMMITTING':f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
+      try { const f=await read(token);return {stage:f.state==='PASSKEY'&&f.proofReady?'COMMITTING':f.state==='PIN'?'PASSWORD':f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
       catch (error) { if (error?.code === 'WORKSPACE_ACCESS_REJECTED') return { stage: 'INITIAL' }; throw error; }
     },
     async execute(operation, input, token, ip) {
@@ -180,16 +180,21 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         const code=normalizeAccessEmailCode(input.code);
         const result=await client.verifyAccessEmail({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code])});
         if (!result.verified) rejected();
-        return {stage:'PIN'};
+        return {stage:'PASSWORD'};
       }
       if(operation==='continue-login'){
         const saved=accessReceipts(settings,token).open(input.receipt,'login');
+        if(saved.mode==='password-session'){
+          if(!passwordLogin||!config.adminPasswordLogin)rejected();
+          const principal=await client.access('passwordLogin',{...saved.command,tokenHash:hash(token)});
+          return completedOutput({subjectId:saved.command.subjectId,flowId:saved.command.flowId,authorizationVersion:saved.command.authorizationVersion,purpose:'PASSWORD_LOGIN'},principal,digest('access.session.v1',token,'base64url',tokenKey));
+        }
         if(saved.mode==='pin-session'){
           if(!pinLogin||!config.adminPinLogin)rejected();
           const principal=await client.access('pinLogin',{...saved.command,tokenHash:hash(token)});
           return completedOutput({subjectId:saved.command.subjectId,flowId:saved.command.flowId,authorizationVersion:saved.command.authorizationVersion,purpose:'PIN_LOGIN'},principal,digest('access.session.v1',token,'base64url',tokenKey));
         }
-        if(!['biometric','pin'].includes(saved.mode))rejected();
+        if(!['biometric','password','pin'].includes(saved.mode))rejected();
         const prepared=await client.prepareBiometricOptions({...saved.command,tokenHash:hash(token),...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),ceremonyId:randomUUID(),challenge:randomBytes(32).toString('base64url')});
         if(prepared.subjectId!==saved.command.subjectId||prepared.authorizationVersion!==saved.command.authorizationVersion||prepared.kind!=='get')rejected();
         return await preparedAccessOptions(prepared);
@@ -202,22 +207,31 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
           let contact;try{contact=normalizeStaffContact(vault.open('users',account.subjectId,account.contact));}catch{throw new ApiError(502,'UPSTREAM_UNTRUSTED');}
           if((isEmail?contact.email:contact.cpf)!==value)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
         }
-        const biometric=operation==='biometric';
-        const valid=biometric?!!account:await pins.verify(input.pin,account?.subjectId||'00000000-0000-4000-8000-000000000000',account?.record||dummy);
+        const biometric=operation==='biometric',legacyPinLogin=typeof input.pin==='string'&&input.password===undefined;
+        const credentialType=account?.record?.credentialType;
+        let valid=false;
+        if(biometric) valid=!!account&&credentialType!=='PIN_LEGACY';
+        else if(legacyPinLogin&&credentialType==='PIN_LEGACY') valid=await pins.verify(input.pin,account.subjectId,account.record);
+        else if(credentialType==='PASSWORD_V1') valid=await passwords.verify(input.password,account.subjectId,account.record);
+        else if(account) { await passwords.verify(input.password,'00000000-0000-4000-8000-000000000000',dummy); }
+        if(account?.record?.credentialType==='PIN_LEGACY'&&!legacyPinLogin) return {stage:'MIGRATION_REQUIRED'};
         if(!account||!valid)rejected();
-        if(!biometric&&pinLogin&&config.adminPinLogin){
+        if(!biometric&&((legacyPinLogin&&pinLogin&&config.adminPinLogin)||(!legacyPinLogin&&passwordLogin&&config.adminPasswordLogin))){
           const raw=digest('access.session.v1',token,'base64url',tokenKey),command={flowId:randomUUID(),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion,sessionTokenHash:tokens.hash(raw),verifierHash:createHash('sha256').update(JSON.stringify(account.record)).digest('hex')};
-          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:'pin-session',command})};
+          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:legacyPinLogin?'pin-session':'password-session',command})};
         }
         if(biometric||stagedCompletion){
           const command={flowId:randomUUID(),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion};
-          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:biometric?'biometric':'pin',command})};
+          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:biometric?'biometric':legacyPinLogin?'pin':'password',command})};
         }
         await client.access('login',{flowId:randomUUID(),tokenHash:hash(token),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion});
         return {stage:'PASSKEY'};
       }
-      let pinFlow;
-      if (operation === 'pin' && typeof client.readAccessForPin === 'function') pinFlow=await client.readAccessForPin({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token)});
+      let passwordFlow;
+      if (['password','pin'].includes(operation)) {
+        const reader=operation==='password'?client.readAccessForPassword:client.readAccessForPin;
+        if(typeof reader==='function') passwordFlow=await reader({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token)});
+      }
       if (operation === 'start' && !settings.staffEnabled && typeof client.startOwnerAccess === 'function' && typeof input.email === 'string' && input.email.includes('@')) {
         const value=identifier(input.email), code=createAccessEmailCode();
         const result=await client.startOwnerAccess({...guard.attemptKeys({identifier:value,originAddress:ip}),email:value,flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code});
@@ -236,7 +250,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
       if(operation==='complete'&&typeof client.prepareAccessCompletion==='function')return await completePrepared(input,token,ip);
       let completedRetry=false;if(operation==='complete'){try{const previous=await read(token);completedRetry=previous.state==='COMPLETE'&&previous.proofReady;}catch{}}
       // Releasing the same durable, cookie-bound grant is not another guess.
-      if(!completedRetry&&!pinFlow)await guard.reserveAttempt({ identifier: ['start', 'login','biometric','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
+      if(!completedRetry&&!passwordFlow)await guard.reserveAttempt({ identifier: ['start', 'login','biometric','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
       if (operation === 'start'||operation==='recover') {
         if(operation==='recover'&&!settings.recoveryEnabled)throw new ApiError(503,'RECOVERY_NOT_ACTIVATED');
         const code = createAccessEmailCode();
@@ -246,10 +260,11 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         return operation==='start'?acceptedStart(result,value):{stage:'EMAIL',message:'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.'};
       }
       if (operation === 'login') {
-        if (typeof input.pin !== 'string' || !/^[0-9]{4}$/.test(input.pin)) rejected();
+        if (typeof input.password !== 'string') rejected();
         const value=identifier(input.email),staff=await staffLookup(value);
         const {account}=staff?{account:staff.activated&&staff.record?staff:null}:await client.access('lookup',{email:await ownerDelivery(value,'login')});
-        const valid = await pins.verify(input.pin, account?.subjectId || '00000000-0000-4000-8000-000000000000', account?.record || dummy);
+        const valid = account?.record?.credentialType==='PASSWORD_V1' ? await passwords.verify(input.password, account.subjectId, account.record) : account ? (await passwords.verify(input.password,'00000000-0000-4000-8000-000000000000',dummy),false) : await passwords.verify(input.password,'00000000-0000-4000-8000-000000000000',dummy);
+        if(account?.record?.credentialType==='PIN_LEGACY') return {stage:'MIGRATION_REQUIRED'};
         if (!account || !valid) rejected();
         await client.access('login', { flowId: randomUUID(), tokenHash: hash(token), subjectId: account.subjectId, authorizationVersion: account.authorizationVersion });
         return { stage: 'PASSKEY' };
@@ -257,14 +272,14 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
       if (operation === 'email') {
         const code = normalizeAccessEmailCode(input.code);
         const { verified } = await client.access('email', { tokenHash: hash(token), codeHash: digest('access.email.v1', [hash(token), code]) });
-        if (!verified) rejected(); return { stage: 'PIN' };
+        if (!verified) rejected(); return { stage: 'PASSWORD' };
       }
-      const flow = pinFlow || await read(token), subject = { subjectId: flow.subjectId, authorizationVersion: flow.authorizationVersion };
-      if(operation==='rescue'){if(!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');if(flow.purpose!=='RECOVER'||flow.state!=='PIN')rejected();const result=await client.access('rescue',{tokenHash:hash(token),codeHash:emergencyCodeHash(settings,flow.subjectId,input.recoveryCode)});if(!result.authorized)rejected();return {stage:'PIN',replacementAllowed:true};}
-      if (operation === 'pin') {
-        if (flow.state !== 'PIN') rejected();
-        const record = await pins.hash(input.pin, flow.subjectId);
-        await client.access('pin', { tokenHash: hash(token), record: JSON.stringify(record) }); return { stage: 'PASSKEY' };
+      const flow = passwordFlow || await read(token), subject = { subjectId: flow.subjectId, authorizationVersion: flow.authorizationVersion };
+      if(operation==='rescue'){if(!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');if(flow.purpose!=='RECOVER'||!['PASSWORD','PIN'].includes(flow.state))rejected();const result=await client.access('rescue',{tokenHash:hash(token),codeHash:emergencyCodeHash(settings,flow.subjectId,input.recoveryCode)});if(!result.authorized)rejected();return {stage:'PASSWORD',replacementAllowed:true};}
+      if (['password','pin'].includes(operation)) {
+        if (flow.state !== 'PASSWORD' && flow.state !== 'PIN') rejected();
+        const record = operation==='password' ? await passwords.hash(input.newPassword, flow.subjectId) : await pins.hash(input.pin, flow.subjectId);
+        await client.access(operation==='password'?'password':'pin', { tokenHash: hash(token), record: JSON.stringify(record) }); return { stage: 'PASSKEY' };
       }
       if (operation === 'options') {
         if (flow.state !== 'PASSKEY') rejected();
@@ -284,7 +299,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         // Deterministic only for this unguessable pre-auth cookie and deployment.
         // A lost acknowledgement retries the SAME session, never a second grant.
         const rawToken = digest('access.session.v1', token, 'base64url', tokenKey), tokenHash = tokens.hash(rawToken);
-        const principal = validateSessionPrincipal(await client.access('commit', { tokenHash: hash(token), sessionTokenHash: tokenHash }),Date.now(),config.adminPinLogin===true);
+        const principal = validateSessionPrincipal(await client.access('commit', { tokenHash: hash(token), sessionTokenHash: tokenHash }),Date.now(),config.adminPasswordLogin===true);
         if (principal.id !== flow.subjectId || principal.sessionId !== flow.flowId || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role) || principal.assurance !== 'passkey') rejected();
         return completedOutput(flow,principal,rawToken);
       }
@@ -296,7 +311,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
     },
   };
 }
-const shapes = { cookie:[], 'device-login':['response','receipt'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'pin'], email: ['code'], pin: ['pin'], options: [], complete: ['response'] };
+const shapes = { cookie:[], 'device-login':['response','receipt'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'password'], email: ['code'], password: ['newPassword'], options: [], complete: ['response'] };
 export const OWNER_ACCESS_BUDGET_MS = 55_000;
 export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
 export const OPTIONS_REQUEST_BUDGET_MS = 27_000;
@@ -318,7 +333,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
       settingsLoaded = true;
       client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt, ...(optionsRequest||completionRequest||loginRequest?{timeoutMs:COMPLETION_REQUEST_BUDGET_MS}:{}) });
-      const service = createOwnerAccessService(settings, { client,pinLogin:settings.config.adminPinLogin===true&&request.headers.get('x-access-step-up')!=='passkey', stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3'||operation==='device-login' });
+      const service = createOwnerAccessService(settings, { client,passwordLogin:settings.config.adminPasswordLogin===true&&request.headers.get('x-access-step-up')!=='passkey', stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3'||operation==='device-login' });
       if (operation === 'state') {
         let fresh = request.headers.get('x-access-view')==='login';
         try { if(fresh)throw new Error('NEW_LOGIN_VIEW'); token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }

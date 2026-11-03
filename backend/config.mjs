@@ -1,5 +1,6 @@
 import { ApiError } from './errors.mjs';
 import { deploymentMetadata } from './deployment-metadata.mjs';
+import { loadFirestoreSettings } from './firestore-config.mjs';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RESOURCE = /^[A-Za-z0-9_-]{20,160}$/;
 function invalid() { throw new ApiError(503, 'CONFIGURATION_UNAVAILABLE'); }
@@ -25,15 +26,22 @@ export function loadConfig(env = process.env, built = env === process.env ? depl
     ? env.CONTEXT === 'branch-deploy' && env.BRANCH === 'dev'
     : env.CONTEXT === 'production' && env.BRANCH === 'main';
   if (!validContext) invalid();
+  const firestore = loadFirestoreSettings(env);
   let deployment, script;
-  try { deployment = new URL(env.DEPLOY_PRIME_URL); script = new URL(env.WORKSPACE_SCRIPT_URL); } catch { invalid(); }
+  try {
+    deployment = new URL(env.DEPLOY_PRIME_URL);
+    script = firestore.mode === 'firestore' ? null : new URL(env.WORKSPACE_SCRIPT_URL);
+  } catch { invalid(); }
   if (deployment.protocol !== 'https:' || deployment.hostname !== expectedHost || deployment.port || deployment.username || deployment.password || deployment.pathname !== '/' || deployment.search || deployment.hash) invalid();
-  if (script.protocol !== 'https:' || script.hostname !== 'script.google.com' || script.port || script.username || script.password || script.search || script.hash || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(script.pathname)) invalid();
-  if (!UUID.test(env.WORKSPACE_INSTALLATION_ID || '') || !RESOURCE.test(env.WORKSPACE_SPREADSHEET_ID || '') || !RESOURCE.test(env.WORKSPACE_DRIVE_ROOT_ID || '') || !/^[a-f0-9]{64}$/i.test(env.WORKSPACE_HMAC_SECRET || '')) invalid();
-  const pinPolicy=env.WORKSPACE_ADMIN_PIN_LOGIN_ENABLED;
-  if(pinPolicy!==undefined&&!['true','false'].includes(pinPolicy))invalid();
-  const adminPinLogin=environment==='dev'&&pinPolicy!=='false';
-  return Object.freeze({ environment, adminPinLogin, installationId: env.WORKSPACE_INSTALLATION_ID,
-    scriptUrl: script.href, spreadsheetId: env.WORKSPACE_SPREADSHEET_ID,
+  if (script && (script.protocol !== 'https:' || script.hostname !== 'script.google.com' || script.port || script.username || script.password || script.search || script.hash || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(script.pathname))) invalid();
+  if (!UUID.test(env.WORKSPACE_INSTALLATION_ID || '') || !RESOURCE.test(env.WORKSPACE_DRIVE_ROOT_ID || '') || !/^[a-f0-9]{64}$/i.test(env.WORKSPACE_HMAC_SECRET || '') || firestore.mode !== 'firestore' && !RESOURCE.test(env.WORKSPACE_SPREADSHEET_ID || '')) invalid();
+  const passwordPolicy=env.WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED ?? env.WORKSPACE_ADMIN_PIN_LOGIN_ENABLED;
+  if(passwordPolicy!==undefined&&!['true','false'].includes(passwordPolicy))invalid();
+  const adminPasswordLogin=environment==='dev'&&passwordPolicy!=='false';
+  return Object.freeze({ environment, storageMode: firestore.mode, firestore, adminPasswordLogin, adminPinLogin: adminPasswordLogin,
+    keyManagementEnabled: env.WORKSPACE_KEY_MANAGEMENT_ENABLED === 'true',
+    emergencyRecoveryEnabled: env.WORKSPACE_EMERGENCY_RECOVERY_ENABLED === 'true' && env.WORKSPACE_RECOVERY_ENABLED === 'true',
+    installationId: env.WORKSPACE_INSTALLATION_ID,
+    scriptUrl: script?.href || null, spreadsheetId: env.WORKSPACE_SPREADSHEET_ID || null,
     driveRootId: env.WORKSPACE_DRIVE_ROOT_ID, secret: env.WORKSPACE_HMAC_SECRET });
 }

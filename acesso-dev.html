@@ -23,7 +23,7 @@
     <a id="environment-access" class="action-link secondary" href="/" target="_blank" rel="noopener" hidden>Autorizar acesso ao ambiente DEV</a>
     <details id="support-details" hidden>
       <summary>Informações para o suporte</summary>
-      <p>Se precisar de ajuda, informe à administração o detalhe abaixo. Não envie seu PIN nem o código do e-mail.</p>
+      <p>Se precisar de ajuda, informe à administração o detalhe abaixo. Não envie sua senha nem o código do e-mail.</p>
       <p id="access-diagnostic" class="diagnostic" hidden></p>
       <button id="download-access-diagnostic" type="button" class="secondary">Baixar diagnóstico de acesso</button>
     </details>
@@ -33,13 +33,13 @@
         <h2>Entrar</h2>
         <label for="login-email">CPF ou e-mail cadastrado</label>
         <input id="login-email" aria-describedby="login-email-error" type="text" autocomplete="username webauthn" maxlength="254" required><p id="login-email-error" class="field-error" hidden></p>
-        <label for="login-pin">PIN de 4 números</label>
-        <div class="pin-field"><input id="login-pin" aria-describedby="login-pin-error" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="login-pin" aria-controls="login-pin" aria-label="Mostrar PIN de entrada" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
-        <p id="login-pin-error" class="field-error" hidden></p>
+        <label for="login-password">Senha</label>
+        <div class="password-field"><input id="login-password" aria-describedby="login-password-error" type="password" autocomplete="current-password" required><button class="password-visibility" type="button" data-password-target="login-password" aria-controls="login-password" aria-label="Mostrar senha de entrada" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+        <p id="login-password-error" class="field-error" hidden></p>
         <button>Entrar na minha conta</button>
         <button id="biometric-login" type="button" class="secondary">Entrar com biometria</button>
         <label class="remember-choice"><input id="remember-identifier" type="checkbox" checked> Lembrar meu CPF ou e-mail neste navegador</label>
-        <p class="login-method-help">Use a chave de acesso salva no seu aparelho ou gerenciador de senhas. Para entrar com biometria, você não precisa digitar o PIN da livraria.</p>
+        <p class="login-method-help">Use a chave de acesso salva no seu aparelho ou gerenciador de senhas. Para entrar com biometria, você não precisa digitar a senha da livraria.</p>
       </form>
       <details id="first-access-box">
         <summary>É meu primeiro acesso</summary>
@@ -50,23 +50,23 @@
           <button>Receber código por e-mail</button>
         </form>
       </details>
-      <section id="recovery-choice" hidden><button id="recovery-open" type="button" class="secondary">Alterar ou recuperar meu PIN</button><form id="recovery-form" novalidate hidden><h2>Recuperar seu PIN</h2><p>Confirme o e-mail cadastrado e a confirmação pelo aparelho já cadastrado. As sessões antigas serão encerradas ao concluir. Sem acesso aos aparelhos cadastrados, use um código de recuperação que tenha guardado. Sem esse código, solicite verificação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" aria-describedby="recovery-email-error" autocomplete="username" maxlength="254" required><p id="recovery-email-error" class="field-error" hidden></p><button>Enviar código de recuperação</button></form></section>
+      <section id="recovery-choice" hidden><button id="recovery-open" type="button" class="secondary">Alterar ou recuperar minha senha</button><form id="recovery-form" novalidate hidden><h2>Recuperar sua senha</h2><p>Confirme o e-mail cadastrado e a confirmação pelo aparelho já cadastrado. As sessões antigas serão encerradas ao concluir. Sem acesso aos aparelhos cadastrados, use um código de recuperação que tenha guardado. Sem esse código, solicite verificação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" aria-describedby="recovery-email-error" autocomplete="username" maxlength="254" required><p id="recovery-email-error" class="field-error" hidden></p><button>Enviar código de recuperação</button></form></section>
     </section>
     <form id="email-form" hidden>
       <h2>Confirme seu e-mail</h2>
-      <p id="email-code-help">Copie o código recebido e cole abaixo. O novo código tem 7 letras e números, vale por 10 minutos e só funciona neste navegador.</p>
+      <p id="email-code-help">Copie o código recebido e cole abaixo. O novo código tem 7 letras e números, vale por 15 minutos e só funciona neste navegador.</p>
       <label for="email-code">Código do e-mail</label>
       <input id="email-code" type="text" aria-describedby="email-code-help" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="43" required>
       <button>Confirmar código</button>
     </form>
-    <form id="pin-form" hidden>
-      <h2>Crie seu PIN</h2>
-      <p>Escolha um PIN novo. Não reutilize um PIN enviado por mensagem.</p>
-      <fieldset id="rescue-choice" hidden><legend>Não consegue confirmar pelo aparelho?</legend><label><input id="use-rescue" type="checkbox"> Usar um código de recuperação guardado</label><div id="rescue-inputs" hidden><label for="rescue-code">Código de recuperação</label><input id="rescue-code" type="password" autocomplete="off" maxlength="80" spellcheck="false"><button id="rescue-confirm" type="button">Validar código de recuperação</button><p id="rescue-status" role="status"></p></div></fieldset><p id="pin-rules">Use quatro números, sem repetir números iguais lado a lado.</p><label for="new-pin">PIN de 4 números</label>
-      <div class="pin-field"><input id="new-pin" aria-describedby="pin-rules" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="new-pin" aria-controls="new-pin" aria-label="Mostrar novo PIN" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
-      <label for="confirm-pin">Repita o PIN</label>
-      <div class="pin-field"><input id="confirm-pin" type="password" inputmode="numeric" autocomplete="new-password" pattern="[0-9]{4}" maxlength="4" required><button class="pin-visibility" type="button" data-pin-target="confirm-pin" aria-controls="confirm-pin" aria-label="Mostrar confirmação do PIN" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
-      <button>Salvar PIN e continuar</button>
+    <form id="password-form" hidden>
+      <h2>Crie sua senha</h2>
+      <p>Escolha uma senha nova. Não reutilize uma senha enviada por mensagem.</p>
+      <fieldset id="rescue-choice" hidden><legend>Não consegue confirmar pelo aparelho?</legend><label><input id="use-rescue" type="checkbox"> Usar um código de recuperação guardado</label><div id="rescue-inputs" hidden><label for="rescue-code">Código de recuperação</label><input id="rescue-code" type="password" autocomplete="off" maxlength="80" spellcheck="false"><button id="rescue-confirm" type="button">Validar código de recuperação</button><p id="rescue-status" role="status"></p></div></fieldset><p id="password-rules">Use de 8 a 40 caracteres. Espaços, símbolos e letras são aceitos como você digitar.</p><label for="new-password">Senha</label>
+      <div class="password-field"><input id="new-password" aria-describedby="password-rules" type="password" autocomplete="new-password" required><button class="password-visibility" type="button" data-password-target="new-password" aria-controls="new-password" aria-label="Mostrar nova senha" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+      <label for="confirm-password">Repita a senha</label>
+      <div class="password-field"><input id="confirm-password" type="password" autocomplete="new-password" required><button class="password-visibility" type="button" data-password-target="confirm-password" aria-controls="confirm-password" aria-label="Mostrar confirmação da senha" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+      <button>Salvar senha e continuar</button>
     </form>
     <section id="passkey" hidden>
       <h2>Confirme seu acesso</h2>

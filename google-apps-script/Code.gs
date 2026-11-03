@@ -341,6 +341,7 @@ function processRequest_(request, c) {
       if (request.action === 'identity.access.loginLookup') return accessLoginLookup_(request,c);
       if (request.action === 'identity.access.startGuarded') return accessStartGuarded_(request, c);
       if (request.action === 'identity.access.emailGuarded') return accessEmailGuarded_(request, c);
+      if (request.action === 'identity.access.passwordReadGuarded') return accessPasswordReadGuarded_(request, c);
       if (request.action === 'identity.access.pinReadGuarded') return accessPinReadGuarded_(request, c);
       if (request.action === 'identity.access.devicePrepare') return accessDevicePrepare_(request,c);
       if (request.action === 'identity.access.biometricOptions') return accessBiometricOptions_(request,c);

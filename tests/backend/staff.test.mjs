@@ -84,7 +84,7 @@ test('role change revokes old credentials and requires new email proof and enrol
  await s.http('save',{...c,commandId:randomUUID(),expectedRevision:1,role:'ADMIN'});
  await assert.rejects(service.execute('complete',{response:null},token,ip));
  // Age prior flow to satisfy delivery cooldown; fixture clock only.
- const flows=s.priv.getSheetByName('_Identity_Flows');for(const row of flows.rows.slice(1)){row[5]=new Date(Date.now()-70000).toISOString();row[6]=new Date(Date.parse(row[5])+600000).toISOString();}
+ const flows=s.priv.getSheetByName('_Identity_Flows');for(const row of flows.rows.slice(1)){row[5]=new Date(Date.now()-70000).toISOString();row[6]=new Date(Date.parse(row[5])+900000).toISOString();}
  const next=randomBytes(32).toString('base64url');await service.execute('start',{email:c.contact.email},next,'192.0.2.7');await service.execute('email',{code:emailCode(s)},next,'192.0.2.7');await service.execute('pin',{pin:'9382'},next,'192.0.2.7');s.storageProof(hash(s));
  const done=await service.execute('complete',{response:null},next,'192.0.2.7');assert.equal(done.user.role,'ADMIN');assert.equal(s.priv.getSheetByName('_Pin_Verifiers').getLastRow(),2);
 });

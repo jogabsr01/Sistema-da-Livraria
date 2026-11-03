@@ -35,6 +35,7 @@
     "test:customer-insights": "python3 scripts/test-customer-insights.py",
     "test:key-management": "python3 scripts/test-key-management.py",
     "test:emergency-recovery": "python3 scripts/test-emergency-recovery.py",
+    "test:firestore-concurrency": "node --test tests/backend/firestore-concurrency.test.mjs",
     "test:catalog-reconnection": "python3 scripts/test-catalog-reconnection.py",
     "test:operations-reconnection": "python3 scripts/test-operations-reconnection.py",
     "test:notifications-reconnection": "python3 scripts/test-notifications-reconnection.py",
@@ -52,6 +53,7 @@
     "google:single": "node scripts/generate-google-single.mjs"
   },
   "dependencies": {
+    "@google-cloud/firestore": "9.4.0",
     "@simplewebauthn/server": "14.0.3",
     "sharp": "0.35.5"
   }

@@ -19,10 +19,10 @@ test('successful access reduces Google round trips without changing flow or skip
  await service.execute('start',{email:properties.OWNER_EMAIL},token,ip);
  assert.deepEqual(o.calls,['identity.access.startGuarded']);
  const code=s.gas.outbox.at(-1).body.match(/\n([A-HJ-NP-Z2-9]{7})\n/)[1];
- o.reset();assert.equal((await service.execute('email',{code},token,ip)).stage,'PIN');
+ o.reset();assert.equal((await service.execute('email',{code},token,ip)).stage,'PASSWORD');
  assert.deepEqual(o.calls,['identity.access.emailGuarded']);
- o.reset();assert.equal((await service.execute('pin',{pin:'8274'},token,ip)).stage,'PASSKEY');
- assert.deepEqual(o.calls,['identity.access.pinReadGuarded','identity.access.pin']);
+ o.reset();assert.equal((await service.execute('password',{newPassword:'Senha 8274'},token,ip)).stage,'PASSKEY');
+ assert.deepEqual(o.calls,['identity.access.passwordReadGuarded','identity.access.password']);
  o.reset();assert.equal((await service.state(token)).stage,'PASSKEY');
  assert.deepEqual(o.calls,['identity.access.read']);
  assert.ok([...o.headers.values()].every(n=>n===1),'headers read at most once per table per locked RPC');

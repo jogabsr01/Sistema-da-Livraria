@@ -92,7 +92,7 @@ test("generated module supplies default runtime loader without build-only enviro
   const root = mkdtempSync(join(tmpdir(), "livraria-meta-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "backend"));
-  for (const name of ["config.mjs", "errors.mjs"])
+  for (const name of ["config.mjs", "errors.mjs", "firestore-config.mjs"])
     copyFileSync(
       new URL("../../backend/" + name, import.meta.url),
       join(root, "backend", name),

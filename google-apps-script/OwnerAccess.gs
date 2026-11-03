@@ -73,21 +73,22 @@ function accessPins_(ss) {
   }); return table;
 }
 function accessPinRecord_(value) {
-  var record;
-  try { if (typeof value !== 'string' || value.length > 300) accessReject_(); record = JSON.parse(value); } catch (_) { accessReject_(); }
-  authControlExact_(record, ['version', 'algorithm', 'salt', 'hash']);
-  if (record.version !== 1 || record.algorithm !== 'scrypt-N32768-r8-p1' || !accessHash_(record.salt) || !accessHash_(record.hash)) accessReject_();
-  return record;
+  var record,keys;
+  try { if (typeof value !== 'string' || value.length > 300) accessReject_(); record = JSON.parse(value);keys=Object.keys(record).sort(); } catch (_) { accessReject_(); }
+  if (!same_(keys,['version','credentialType','algorithm','salt','hash'].sort())&&!same_(keys,['version','algorithm','salt','hash'].sort())) accessReject_();
+  var credentialType=record.credentialType||'PIN_LEGACY';
+  if (!['PASSWORD_V1','PIN_LEGACY'].includes(credentialType)||record.version !== 1 || record.algorithm !== 'scrypt-N32768-r8-p1' || !accessHash_(record.salt) || !accessHash_(record.hash)) accessReject_();
+  return {version:1,credentialType:credentialType,algorithm:record.algorithm,salt:record.salt,hash:record.hash};
 }
 function accessFlows_(ss) {
   var table = authControlRows_(ss, '_Identity_Flows'), seen = new Set(), hashes = new Set(), ceremonies = new Set();
   table.rows.forEach(function (row) {
     if (!identityUuid_(row.ID) || seen.has(row.ID) || !accessHash_(row.Token_Hash) || hashes.has(row.Token_Hash) ||
-        row.Subject_ID !== '' && !identityUuid_(row.Subject_ID) || !['ACTIVATE', 'LOGIN','RECOVER','PIN_LOGIN'].includes(row.Purpose) ||
+        row.Subject_ID !== '' && !identityUuid_(row.Subject_ID) || !['ACTIVATE', 'LOGIN','RECOVER','PIN_LOGIN','PASSWORD_LOGIN'].includes(row.Purpose) ||
         !['EMAIL', 'PIN', 'PASSKEY', 'COMMITTING', 'COMPLETE', 'REVOKED'].includes(row.State) ||
         !Number.isSafeInteger(row.Attempt_Count) || row.Attempt_Count < 0 || row.Attempt_Count > 5 ||
         !Number.isSafeInteger(row.Authorization_Version) || row.Authorization_Version < 0 ||
-        authControlTime_(row.Expires_At) - authControlTime_(row.Created_At) !== 600000 ||
+        authControlTime_(row.Expires_At) - authControlTime_(row.Created_At) !== 900000 ||
         row.Ceremony_ID !== '' && (!identityUuid_(row.Ceremony_ID) || ceremonies.has(row.Ceremony_ID))) failure_('IDENTITY_UNAVAILABLE');
     seen.add(row.ID); hashes.add(row.Token_Hash); if (row.Ceremony_ID) ceremonies.add(row.Ceremony_ID);
   }); return table;
@@ -102,14 +103,14 @@ function accessFlowOwner_(c, row) {
   if(row.Purpose==='RECOVER')return recoverySubject_(c,row);
   var owner = row.Subject_ID === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
   if (!owner || owner.row.ID_Usuario !== row.Subject_ID || owner.version !== row.Authorization_Version) accessReject_();
-  if (['LOGIN','PIN_LOGIN'].includes(row.Purpose) && owner.row.Primeiro_Acesso_Concluido !== true ||
+  if (['LOGIN','PIN_LOGIN','PASSWORD_LOGIN'].includes(row.Purpose) && owner.row.Primeiro_Acesso_Concluido !== true ||
       row.Purpose === 'ACTIVATE' && !['COMMITTING', 'COMPLETE'].includes(row.State) && owner.row.Primeiro_Acesso_Concluido !== false) accessReject_();
   return owner;
 }
 function accessNewFlow_(table, p, owner, purpose, now) {
   if (!identityUuid_(p.flowId) || !accessHash_(p.tokenHash) || table.rows.some(function (row) { return row.ID === p.flowId || row.Token_Hash === p.tokenHash; }) || table.rows.length >= 3000) accessReject_();
   var row = { ID: p.flowId, Token_Hash: p.tokenHash, Subject_ID: owner ? owner.row.ID_Usuario : '', Purpose: purpose,
-    State: purpose !== 'LOGIN' ? 'EMAIL' : 'PASSKEY', Created_At: new Date(now).toISOString(), Expires_At: new Date(now + 600000).toISOString(),
+    State: purpose !== 'LOGIN' ? 'EMAIL' : 'PASSKEY', Created_At: new Date(now).toISOString(), Expires_At: new Date(now + 900000).toISOString(),
     Email_Code_Hash: purpose !== 'LOGIN' ? p.codeHash : '', Attempt_Count: 0, Pin_JSON: '', Ceremony_ID: '', Session_Token_Hash: '',
     Authorization_Version: owner ? owner.version : 0, Commit_Started_At: '', Completed_At: '' };
   authControlSave_(table, row); return row;
@@ -132,8 +133,8 @@ function accessStart_(ss, c, p, now, recovery) {
   if (owner) {
     try {
       if (MailApp.getRemainingDailyQuota() < 1) throw new Error('MAIL_QUOTA');
-      MailApp.sendEmail({ to: ownerLoginEmail_(c), subject:recovery?'Livraria IPB DEV — recuperar PIN':'Livraria IPB DEV — confirmar primeiro acesso',
-        body:(recovery?'Foi solicitada a recuperação do PIN da conta proprietária no ambiente DEV.':'Foi solicitado o primeiro acesso da conta proprietária no ambiente DEV.')+'\n\nCódigo de uso único (válido por 10 minutos):\n' + p.code +
+      MailApp.sendEmail({ to: ownerLoginEmail_(c), subject:recovery?'Livraria IPB DEV — recuperar senha':'Livraria IPB DEV — confirmar primeiro acesso',
+        body:(recovery?'Foi solicitada a recuperação da senha da conta proprietária no ambiente DEV.':'Foi solicitado o primeiro acesso da conta proprietária no ambiente DEV.')+'\n\nCódigo de uso único (válido por 15 minutos):\n' + p.code +
           '\n\nDigite esse código somente em:\nhttps://dev--merry-chimera-49a1f3.netlify.app/acesso-dev.html\n\nSe não solicitou, ignore este e-mail. Não compartilhe o código.' });
     } catch (_) {
       // No raw code is persisted or logged, including on provider errors.
@@ -144,7 +145,7 @@ function accessStart_(ss, c, p, now, recovery) {
   return recovery?{accepted:true}:{accepted:true,outcome:outcome};
 }
 function accessCommit_(ss, c, current, p, now) {
-  if(current.row.Purpose==='PIN_LOGIN')return accessPinCommit_(ss,c,current,p,now);
+  if(['PIN_LOGIN','PASSWORD_LOGIN'].includes(current.row.Purpose))return accessPinCommit_(ss,c,current,p,now,current.row.Purpose==='PASSWORD_LOGIN'?'password':'pin',current.row.Purpose);
   if(current.row.Purpose==='RECOVER')return recoveryCommit_(ss,c,current,p,now,false);
   var row = current.row, owner = accessFlowOwner_(c, row);
   if (!accessHash_(p.sessionTokenHash) || !['PASSKEY', 'COMMITTING', 'COMPLETE'].includes(row.State)) accessReject_();
@@ -195,6 +196,7 @@ function accessRecoverIntents_(ss, c, now) {
   // Recovery replays only a durable, previously verified intent, never a PIN or
   // email supplied by this request. It never returns a cookie or raw token.
   accessFlows_(ss).rows.filter(function (row) { return row.State === 'COMMITTING'; }).forEach(function (row) {
+    if(row.Purpose==='PASSWORD_LOGIN'&&!devPasswordLoginEnabled_()){row.State='REVOKED';authControlSave_(accessFlows_(ss),row);return;}
     if(row.Purpose==='PIN_LOGIN'&&!devPinLoginEnabled_()){row.State='REVOKED';authControlSave_(accessFlows_(ss),row);return;}
     var owner = row.Subject_ID === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,row.Subject_ID);
     if (!owner || row.Subject_ID !== owner.row.ID_Usuario || row.Authorization_Version !== owner.version) return;
@@ -219,9 +221,10 @@ function ownerAccessOperation_(request, c) {
     'identity.access.recover':['email','flowId','tokenHash','codeHash','code'],
     'identity.access.lookup': ['email'], 'identity.access.ownerLookup':['cpfIndex'],
     'identity.access.pinLogin':['flowId','tokenHash','subjectId','authorizationVersion','sessionTokenHash','verifierHash'],
+    'identity.access.passwordLogin':['flowId','tokenHash','subjectId','authorizationVersion','sessionTokenHash','verifierHash'],
     'identity.access.login': ['flowId', 'tokenHash', 'subjectId', 'authorizationVersion'],
     'identity.access.read': ['tokenHash'], 'identity.access.email': ['tokenHash', 'codeHash'],
-    'identity.access.pin': ['tokenHash', 'record'], 'identity.access.bind': ['tokenHash', 'ceremonyId'],
+    'identity.access.password': ['tokenHash', 'record'], 'identity.access.pin': ['tokenHash', 'record'], 'identity.access.bind': ['tokenHash', 'ceremonyId'],
     'identity.access.commit': ['tokenHash', 'sessionTokenHash']
   };
   if (!Object.prototype.hasOwnProperty.call(schemas, action)) failure_('FORBIDDEN'); authControlExact_(p, schemas[action]);
@@ -241,6 +244,7 @@ function ownerAccessOperation_(request, c) {
     return { account: { subjectId: owner.row.ID_Usuario, authorizationVersion: owner.version, record: accessPinRecord_(pin[0].Record_JSON) } };
   }
   if(action==='identity.access.pinLogin')return accessPinLogin_(ss,c,p,now);
+  if(action==='identity.access.passwordLogin')return accessPinLogin_(ss,c,p,now,'PASSWORD_V1','PASSWORD_LOGIN','password');
   if (action === 'identity.access.login') {
     var owner = p.subjectId === scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID') ? accessOwner_(c) : staffSubject_(c,p.subjectId);
     if (!owner || !owner.row.Primeiro_Acesso_Concluido || owner.row.ID_Usuario !== p.subjectId || owner.version !== p.authorizationVersion) accessReject_();
@@ -271,10 +275,11 @@ function ownerAccessOperation_(request, c) {
   if(action==='identity.access.rescueBegin')return emergencyBegin_(ss,c,current,p,now);
   if(action==='identity.access.rescueKey')return emergencyStartCommit_(ss,c,current,p,now);
   if (action === 'identity.access.read') return { flowId: row.ID, subjectId: row.Subject_ID, authorizationVersion: row.Authorization_Version,
-    purpose: row.Purpose, state: row.State,replacementAllowed:emergencyFlow_(c,row), ceremonyId: row.Ceremony_ID, proofReady: row.Purpose==='PIN_LOGIN'||row.Ceremony_ID !== '' && passkeyCeremonies_(ss).rows.some(function (item) { return item.ID === row.Ceremony_ID && item.Completed_At !== ''; }) };
-  if (action === 'identity.access.pin') {
+    purpose: row.Purpose, state: row.State,replacementAllowed:emergencyFlow_(c,row), ceremonyId: row.Ceremony_ID, proofReady: ['PIN_LOGIN','PASSWORD_LOGIN'].includes(row.Purpose)||row.Ceremony_ID !== '' && passkeyCeremonies_(ss).rows.some(function (item) { return item.ID === row.Ceremony_ID && item.Completed_At !== ''; }) };
+  if (action === 'identity.access.password' || action === 'identity.access.pin') {
     if (row.State !== 'PIN' || !['ACTIVATE','RECOVER'].includes(row.Purpose)) accessReject_();
-    accessPinRecord_(p.record); row.Pin_JSON = p.record; row.State = 'PASSKEY'; authControlSave_(current.table, row); return { stored: true };
+    var credential=accessPinRecord_(p.record);if(action==='identity.access.password'&&credential.credentialType!=='PASSWORD_V1')accessReject_();
+    row.Pin_JSON = p.record; row.State = 'PASSKEY'; authControlSave_(current.table, row); return { stored: true };
   }
   if (action === 'identity.access.bind') {
     if (row.State !== 'PASSKEY' || !identityUuid_(p.ceremonyId) || current.table.rows.some(function (flow) { return flow.Ceremony_ID === p.ceremonyId; })) accessReject_();
@@ -350,6 +355,7 @@ function accessEmailGuarded_(request,c) {
   var result=ownerAccessOperation_({action:'identity.access.email',payload:{tokenHash:p.tokenHash,codeHash:p.codeHash}},c);
   result.allowed=true;return result;
 }
+function accessPasswordReadGuarded_(request,c) { return accessPinReadGuarded_(request,c); }
 function accessPinReadGuarded_(request,c) {
   var p=request.payload;
   authControlExact_(p,['accountKey','originKey','tokenHash']);
@@ -444,32 +450,34 @@ function accessDevicePrepare_(request,c){
   return {allowed:true,done:false,flow:flow,ceremony:ceremony};
 }
 
-function accessPinLogin_(ss,c,p,now){
-  if(c.environment!=='dev'||!devPinLoginEnabled_())failure_('FORBIDDEN');
+function accessPinLogin_(ss,c,p,now,expectedType,purpose,assurance){
+  expectedType=expectedType||'PIN_LEGACY';purpose=purpose||'PIN_LOGIN';assurance=assurance||'pin';
+  if(c.environment!=='dev'||!devPasswordLoginEnabled_())failure_('FORBIDDEN');
   if(!identityUuid_(p.flowId)||!accessHash_(p.tokenHash)||!accessHash_(p.sessionTokenHash)||!accessHash_(p.verifierHash))accessReject_();
   var owner=p.subjectId===scriptProperties_().getProperty('IDENTITY_OWNER_USER_ID')?accessOwner_(c):staffSubject_(c,p.subjectId);
   if(!owner||owner.row.Primeiro_Acesso_Concluido!==true||owner.version!==p.authorizationVersion)accessReject_();
   var pins=accessPins_(ss).rows.filter(function(r){return r.Subject_ID===p.subjectId&&r.Authorization_Version===p.authorizationVersion;});
-  if(pins.length!==1||digest_(JSON.stringify(accessPinRecord_(pins[0].Record_JSON)))!==p.verifierHash)accessReject_();
+  if(pins.length!==1||accessPinRecord_(pins[0].Record_JSON).credentialType!==expectedType||digest_(JSON.stringify(accessPinRecord_(pins[0].Record_JSON)))!==p.verifierHash)accessReject_();
   var table=accessFlows_(ss),matches=table.rows.filter(function(r){return r.ID===p.flowId||r.Token_Hash===p.tokenHash;});
   if(matches.length>1)accessReject_();
   var row=matches[0];
-  if(row){if(row.ID!==p.flowId||row.Token_Hash!==p.tokenHash||row.Purpose!=='PIN_LOGIN'||row.Subject_ID!==p.subjectId||row.Authorization_Version!==p.authorizationVersion||row.Session_Token_Hash!==p.sessionTokenHash)accessReject_();}
+  if(row){if(row.ID!==p.flowId||row.Token_Hash!==p.tokenHash||row.Purpose!==purpose||row.Subject_ID!==p.subjectId||row.Authorization_Version!==p.authorizationVersion||row.Session_Token_Hash!==p.sessionTokenHash)accessReject_();}
   else {
     if(table.rows.length>=3000)accessReject_();
     var at=new Date(now).toISOString();
-    row={ID:p.flowId,Token_Hash:p.tokenHash,Subject_ID:p.subjectId,Purpose:'PIN_LOGIN',State:'COMMITTING',Created_At:at,Expires_At:new Date(now+600000).toISOString(),Email_Code_Hash:'',Attempt_Count:0,Pin_JSON:'',Ceremony_ID:'',Session_Token_Hash:p.sessionTokenHash,Authorization_Version:p.authorizationVersion,Commit_Started_At:at,Completed_At:''};
+    row={ID:p.flowId,Token_Hash:p.tokenHash,Subject_ID:p.subjectId,Purpose:purpose,State:'COMMITTING',Created_At:at,Expires_At:new Date(now+900000).toISOString(),Email_Code_Hash:'',Attempt_Count:0,Pin_JSON:'',Ceremony_ID:'',Session_Token_Hash:p.sessionTokenHash,Authorization_Version:p.authorizationVersion,Commit_Started_At:at,Completed_At:''};
     authControlSave_(table,row);
   }
-  return accessPinCommit_(ss,c,accessCurrent_(ss,p.tokenHash,now),p,now);
+  return accessPinCommit_(ss,c,accessCurrent_(ss,p.tokenHash,now),p,now,assurance,purpose);
 }
-function accessPinCommit_(ss,c,current,p,now){
-  if(c.environment!=='dev'||!devPinLoginEnabled_())failure_('FORBIDDEN');
+function accessPinCommit_(ss,c,current,p,now,assurance,purpose){
+  assurance=assurance||'pin';purpose=purpose||'PIN_LOGIN';
+  if(c.environment!=='dev'||!devPasswordLoginEnabled_())failure_('FORBIDDEN');
   var row=current.row,owner=accessFlowOwner_(c,row);
-  if(row.Purpose!=='PIN_LOGIN'||!['COMMITTING','COMPLETE'].includes(row.State)||row.Ceremony_ID!==''||row.Session_Token_Hash!==p.sessionTokenHash||authControlTime_(row.Expires_At)<=now)accessReject_();
+  if(row.Purpose!==purpose||!['COMMITTING','COMPLETE'].includes(row.State)||row.Ceremony_ID!==''||row.Session_Token_Hash!==p.sessionTokenHash||authControlTime_(row.Expires_At)<=now)accessReject_();
   var main=storage_(c,false).spreadsheet,sessions=identityRows_(main,'Sessoes'),audit=identityRows_(main,'Logs_Auditoria');
   if(row.State!=='COMPLETE'){
-    var at=row.Commit_Started_At,value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:at,Expira_Em:new Date(Date.parse(at)+86400000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:at,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:'pin',Versao_Autorizacao:row.Authorization_Version};
+    var at=row.Commit_Started_At,value={ID_Sessao:row.ID,ID_Usuario:row.Subject_ID,Criado_Em:at,Expira_Em:new Date(Date.parse(at)+86400000).toISOString(),Revogado_Em:'',Dispositivo:'identity-flow:'+row.ID,Ultima_Atividade:at,Token_Hash:p.sessionTokenHash,Nivel_Autenticacao:assurance,Versao_Autorizacao:row.Authorization_Version};
     var found=sessions.rows.filter(function(r){return r.ID_Sessao===row.ID||r.Token_Hash===p.sessionTokenHash;});
     if(found.length>1||found.length&&!sessions.columns.every(function(k){return found[0][k]===value[k];}))accessReject_();
     if(!found.length){if(sessions.rows.length>=5000)accessReject_();accessSaveMain_(sessions,value);}

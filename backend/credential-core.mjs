@@ -13,8 +13,8 @@ function binding(configuration, key) {
 function subject(value) { if (typeof value !== 'string' || !uuid.test(value)) throw new ApiError(400, 'INVALID_SUBJECT'); }
 const validPin = value => typeof value === 'string' && /^[0-9]{4}$/.test(value);
 
-// This is a verifier primitive, NOT a login route. Four digits require durable
-// rate limits, verified enrollment and additional factors before deployment.
+// This is a verifier primitive for imported credentials only. New enrollment and
+// login use PASSWORD_V1; PIN_LEGACY remains readable solely during transition.
 export function createPinHasher(configuration) {
   const scope = binding(configuration, 'pepper'), pepper = Buffer.from(configuration.pepper);
   async function derive(pin, subjectId, salt) {
@@ -28,11 +28,11 @@ export function createPinHasher(configuration) {
       if (/([0-9])\1/.test(pin)) throw new ApiError(400, 'PIN_ADJACENT_REPETITION');
       const salt = randomBytes(32);
       const hash = await derive(pin, subjectId, salt);
-      return { version: 1, algorithm: 'scrypt-N32768-r8-p1', salt: salt.toString('hex'), hash: hash.toString('hex') };
+      return { version: 1, credentialType: 'PIN_LEGACY', algorithm: 'scrypt-N32768-r8-p1', salt: salt.toString('hex'), hash: hash.toString('hex') };
     },
     async verify(pin, subjectId, record) {
       subject(subjectId);
-      if (!validPin(pin) || !record || record.version !== 1 || record.algorithm !== 'scrypt-N32768-r8-p1' ||
+      if (!validPin(pin) || !record || record.version !== 1 || record.credentialType !== undefined && record.credentialType !== 'PIN_LEGACY' || record.algorithm !== 'scrypt-N32768-r8-p1' ||
           typeof record.salt !== 'string' || !/^[a-f0-9]{64}$/.test(record.salt) ||
           typeof record.hash !== 'string' || !/^[a-f0-9]{64}$/.test(record.hash)) return false;
       // Never accept KDF parameters from the record or HTTP caller.
@@ -52,4 +52,29 @@ export function createSessionTokens(configuration) {
     return createHmac('sha256', key).update(JSON.stringify(['session.v1', scope, rawToken])).digest('hex');
   }
   return { hash, issue() { const rawToken = randomBytes(32).toString('base64url'); return { rawToken, tokenHash: hash(rawToken) }; } };
+}
+
+const validPassword = value => typeof value === 'string' && Array.from(value).length >= 8 && Array.from(value).length <= 40;
+export function createPasswordHasher(configuration) {
+  const scope = binding(configuration, 'pepper'), pepper = Buffer.from(configuration.pepper);
+  async function derive(password, subjectId, salt) {
+    const input = createHmac('sha256', pepper).update(JSON.stringify(['password.v1', scope, subjectId, password])).digest();
+    try { return await scrypt(input, salt, 32, options); } finally { input.fill(0); }
+  }
+  return {
+    valid(value) { return validPassword(value); },
+    async hash(password, subjectId) {
+      subject(subjectId);
+      if (!validPassword(password)) throw new ApiError(400, 'INVALID_PASSWORD');
+      const salt = randomBytes(32), digest = await derive(password, subjectId, salt);
+      return { version: 1, credentialType: 'PASSWORD_V1', algorithm: 'scrypt-N32768-r8-p1', salt: salt.toString('hex'), hash: digest.toString('hex') };
+    },
+    async verify(password, subjectId, record) {
+      subject(subjectId);
+      if (!validPassword(password) || !record || record.version !== 1 || record.credentialType !== 'PASSWORD_V1' || record.algorithm !== 'scrypt-N32768-r8-p1' ||
+          typeof record.salt !== 'string' || !/^[a-f0-9]{64}$/.test(record.salt) || typeof record.hash !== 'string' || !/^[a-f0-9]{64}$/.test(record.hash)) return false;
+      const actual = await derive(password, subjectId, Buffer.from(record.salt, 'hex'));
+      try { return timingSafeEqual(actual, Buffer.from(record.hash, 'hex')); } finally { actual.fill(0); }
+    },
+  };
 }

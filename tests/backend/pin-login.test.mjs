@@ -33,7 +33,7 @@ test('PIN receipt is cookie-bound, rejects wrong PIN and rechecks disabled accou
   if(mode==='disabled'){const t=s.main.getSheetByName('Usuarios');t.rows[1][t.rows[0].indexOf('Status')]='INATIVO';}
   if(mode==='epoch'){const t=s.main.getSheetByName('Configuracoes');t.rows.find(r=>r[0]==='identity.version.'+s.gas.props.IDENTITY_OWNER_USER_ID)[1]=2;}
   if(mode==='verifier'){const t=s.priv.getSheetByName('_Pin_Verifiers');t.rows[1][t.rows[0].indexOf('Record_JSON')]='{}';}
-  if(mode==='policy')s.gas.props.ADMIN_PIN_LOGIN_ENABLED='false';
+  if(mode==='policy'){s.gas.props.ADMIN_PASSWORD_LOGIN_ENABLED='false';s.gas.props.ADMIN_PIN_LOGIN_ENABLED='false';}
   await assert.rejects(s.svc.execute('continue-login',{receipt:first.loginReceipt},mode==='cookie'?randomBytes(32).toString('base64url'):s.token,s.ip));assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),2);
  }
 });

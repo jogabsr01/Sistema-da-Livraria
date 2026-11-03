@@ -3,7 +3,7 @@ import { ApiError } from './errors.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const roles = new Set(['ATENDENTE', 'ADMIN', 'SUPER_ADMIN']);
-const assurances = new Set(['pin', 'mfa', 'passkey']);
+const assurances = new Set(['password', 'pin', 'mfa', 'passkey']);
 const strong = new Set(['mfa', 'passkey']);
 const attendant = new Set([
   'sales.self.read', 'customers.read', 'customers.write', 'products.read', 'products.write', 'stock.receive', 'sales.create',
@@ -41,9 +41,10 @@ export function requirePermission(principal, operation, { targetUserId, targetRo
   }
   if (!roles.has(principal.role) || !assurances.has(principal.assurance) ||
       typeof operation !== 'string' || !permissions[principal.role].has(operation)) denied();
+  const businessPassword=principal.assurance==='password'&&principal.adminPasswordLogin===true;
   const businessPin=principal.assurance==='pin'&&principal.adminPinLogin===true;
-  if (principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
-  if (recent.has(operation) && ((!strong.has(principal.assurance)&&!(businessPin&&operation!=='credentials.self.manage')) || now - principal.authenticatedAt > 300_000)) {
+  if (principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPassword&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
+  if (recent.has(operation) && ((!strong.has(principal.assurance)&&!((businessPassword||businessPin)&&operation!=='credentials.self.manage')) || now - principal.authenticatedAt > 300_000)) {
     denied(401, 'REAUTHENTICATION_REQUIRED');
   }
   if (selfOperations.has(operation) && targetUserId !== undefined &&
