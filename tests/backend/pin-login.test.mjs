@@ -58,6 +58,7 @@ test('PIN sessions still reject revocation, disabled user, changed epoch and abs
   await assert.rejects(createSessionService(s.settings,{client:s.client}).current(request(done)));
  }
  const s=await ready(),first=await begin(s),done=await s.svc.execute('continue-login',{receipt:first.loginReceipt},s.token,s.ip),table=s.main.getSheetByName('Sessoes'),row=table.rows.at(-1),set=(key,value)=>row[table.rows[0].indexOf(key)]=value;
- set('Criado_Em',new Date(Date.now()-23*3600_000).toISOString());set('Expira_Em',new Date(Date.now()+3600_000).toISOString());set('Ultima_Atividade',new Date(Date.now()-20*3600_000).toISOString());
+ const reference=Date.now();
+ set('Criado_Em',new Date(reference-23*3600_000).toISOString());set('Expira_Em',new Date(reference+3600_000).toISOString());set('Ultima_Atividade',new Date(reference-20*3600_000).toISOString());
  await assert.doesNotReject(createSessionService(s.settings,{client:s.client}).current(request(done)));
 });
