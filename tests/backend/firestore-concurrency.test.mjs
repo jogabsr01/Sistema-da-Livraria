@@ -6,6 +6,7 @@ import { createFirestoreAccessService } from '../../backend/firestore-access.mjs
 import { createFirestoreIdentityService } from '../../backend/firestore-identity.mjs';
 import { createFirestoreOperationsService } from '../../backend/firestore-operations.mjs';
 import { createFirestoreSalesService } from '../../backend/firestore-sales.mjs';
+import { createFirestoreCatalogService } from '../../backend/firestore-catalog.mjs';
 import { createFirestoreEmulatorDb, firestoreEmulatorAvailable } from '../helpers/firestore-emulator.mjs';
 
 const skip = !firestoreEmulatorAvailable();
@@ -43,6 +44,22 @@ async function seedIdentity(db, role = 'ATENDENTE') {
   await db.collection('sessionTokenIndex').doc(tokenHash).set({ sessionId, userId, expiresAt: new Date(now + 86400000 - 1000) });
   return { userId, sessionId, tokenHash, actor: { sessionTokenHash: tokenHash } };
 }
+
+test('Firestore emulator persists extended product and initial movement transactionally', { skip }, async t => {
+  const db = createFirestoreEmulatorDb({ namespace: 'productext', demo: true }); t.after(() => db.terminate());
+  const identity = await seedIdentity(db, 'ADMIN');
+  await db.collection('niches').doc(nicheId).set({ name: 'Geral', description: '', color: '#205B43', order: 0, active: true, version: 1, hasImage: false });
+  const service = createFirestoreCatalogService({ db, identityService: createFirestoreIdentityService({ db, now: () => now }), now: () => now, config: {} });
+  const id = randomUUID(), commandId = randomUUID(), record = { title: 'Caderno', subtitle: 'Pautado', costCents: 750, sku: 'ABC-123', coverUrl: 'https://covers.example.org/book.jpg', priceCents: 1500, nicheIds: [nicheId], active: true };
+  const command = { id, commandId, expectedVersion: 0, record, initialStock: 7 };
+  const result = await service.execute('save', identity.actor, command);
+  assert.deepEqual(await service.execute('save', identity.actor, command), result);
+  const saved = (await db.collection('products').doc(id).get()).data();
+  assert.equal(saved.subtitle, 'Pautado'); assert.equal(saved.costCents, 750); assert.equal(saved.sku, 'ABC-123'); assert.equal(saved.stock, 7);
+  assert.equal(saved.coverUrl, 'https://covers.example.org/book.jpg');
+  const movement = (await db.collection('stockMovements').doc(`${commandId}:${id}`).get()).data();
+  assert.equal(movement.quantity, 7); assert.equal(movement.stockAfter, 7);
+});
 
 function sale(id, productId, quantity = 1, totalCents = quantity * 1200) {
   return { idempotencyKey: id, customerId: null, expectedTotalCents: totalCents, paymentMethod: 'PIX', items: [{ productId, quantity }] };

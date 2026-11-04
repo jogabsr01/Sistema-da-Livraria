@@ -219,7 +219,7 @@ export function createFirestoreWorkspaceClient(config, {
     operations: (operation, actor, payload) => getOperations().execute(operation, actor, payload),
     customers: (operation, actor, payload) => getCustomers().execute(operation, actor, payload),
     staff: (operation, actor, payload) => getStaff().execute(operation, actor, payload),
-    staffAccess: (operation, payload) => operation === 'lookup' ? getCredentials().lookup(payload).then(account => ({ account })) : notReady(),
+    staffAccess: (operation, payload) => operation === 'lookup' ? getCredentials().lookup({ ...payload, staffLookup: true }).then(account => ({ account })) : operation === 'start' ? getAccess().staffStart(payload) : operation === 'recover' ? getAccess().staffRecover(payload) : notReady(),
     notifications: (operation, actor, payload) => getNotifications().execute(operation, actor, payload),
     checkoutReceipt: (actor, payload) => getSales().receipt(actor, payload),
     checkout: (actor, payload) => getSales().checkout(actor, payload),

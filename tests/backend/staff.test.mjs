@@ -38,7 +38,8 @@ test('privilege transitions resolve authoritative roles, protect owner/self and 
  // Direct signed GAS calls cannot trust Node's earlier authorization result.
  await assert.rejects(s.client.staff('save',worker.actor,{}),{code:'WORKSPACE_FORBIDDEN'});
  const table=s.main.getSheetByName('Sessoes'),entry=table.rows.find(r=>r[table.rows[0].indexOf('Token_Hash')]===s.master.tokenHash);entry[table.rows[0].indexOf('Criado_Em')]=new Date(Date.now()-301000).toISOString();
- assert.equal((await s.http('list')).status,401);
+ assert.equal((await s.http('list')).status,200);
+ assert.equal((await s.http('save',s.command())).status,401);
 });
 
 test('duplicate identity including inactive users, stale updates and reserved owner address are refused',async()=>{

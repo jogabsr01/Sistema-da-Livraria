@@ -24,6 +24,10 @@ body.app-shell {
 .app-shell h1 { font-family: inherit; font-weight: 650; line-height: 1.12; letter-spacing: -.045em; }
 .app-shell p { line-height: 1.6; }
 .app-shell .badge, .app-shell .eyebrow { letter-spacing: .09em; font-size: .7rem; font-weight: 750; }
+/* Routine success/checking banners duplicate the page status. Keep failures visible. */
+.app-shell :is(.connection,.staff-connection,.schedule-connection,.profile-connection,.niches-connection,.notification-connection,.operations-connection)[data-state="ready"],
+.app-shell :is(.connection,.staff-connection,.schedule-connection,.profile-connection,.niches-connection,.notification-connection,.operations-connection)[data-state="checking"] { display:none; }
+.app-shell .system-diagnostics { display:none; }
 .app-shell > header, .app-shell main > header:not(.home-masthead) {
   background: var(--app-white);
   border-color: var(--line);

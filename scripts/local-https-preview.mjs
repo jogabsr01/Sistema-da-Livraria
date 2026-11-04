@@ -2,16 +2,43 @@ import { createServer } from 'node:https';
 import { readFile, realpath } from 'node:fs/promises';
 import { extname, join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { connect } from 'node:net';
 import { loadLocalLabPolicy } from '../backend/local-lab-policy.mjs';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.json': 'application/json' };
 
+export function probeLocalEmulator({ timeoutMs = 750 } = {}) {
+  return new Promise(resolve => {
+    const socket = connect({ host: '127.0.0.1', port: 8080 });
+    let finished = false;
+    const finish = available => { if (finished) return; finished = true; socket.destroy(); resolve(available); };
+    socket.setTimeout(timeoutMs, () => finish(false));
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+
 // The optional laboratory dispatches local functions without impersonating DEV.
-export async function createLocalPreview({ certPath, keyPath, directory = root, localLab = false, functionOverrides = {} } = {}) {
+export async function createLocalPreview({ certPath, keyPath, directory = root, localLab = false, functionOverrides = {}, emulatorProbe = probeLocalEmulator } = {}) {
   if (!certPath || !keyPath) throw Error('LOCAL_HTTPS_CERT_REQUIRED');
-  if (localLab) loadLocalLabPolicy();
+  if (localLab) {
+    loadLocalLabPolicy();
+    // An explicit false remains effective, even in the laboratory.
+    if (process.env.WORKSPACE_CATALOG_ENABLED === undefined) process.env.WORKSPACE_CATALOG_ENABLED = 'true';
+    if (process.env.WORKSPACE_PROFILE_ENABLED === undefined) process.env.WORKSPACE_PROFILE_ENABLED = 'true';
+    if (process.env.WORKSPACE_STAFF_ENABLED === undefined) process.env.WORKSPACE_STAFF_ENABLED = 'true';
+    if (process.env.WORKSPACE_NOTIFICATIONS_ENABLED === undefined) process.env.WORKSPACE_NOTIFICATIONS_ENABLED = 'true';
+    if (process.env.WORKSPACE_SCHEDULES_ENABLED === undefined) process.env.WORKSPACE_SCHEDULES_ENABLED = 'true';
+    if (process.env.WORKSPACE_NICHES_ENABLED === undefined) process.env.WORKSPACE_NICHES_ENABLED = 'true';
+    if (process.env.WORKSPACE_OPERATIONS_ENABLED === undefined) process.env.WORKSPACE_OPERATIONS_ENABLED = 'true';
+    if (process.env.WORKSPACE_CHECKOUT_ENABLED === undefined) process.env.WORKSPACE_CHECKOUT_ENABLED = 'true';
+    if (process.env.WORKSPACE_CUSTOMERS_ENABLED === undefined) process.env.WORKSPACE_CUSTOMERS_ENABLED = 'true';
+    if (process.env.WORKSPACE_REPORTS_ENABLED === undefined) process.env.WORKSPACE_REPORTS_ENABLED = 'true';
+    if (process.env.WORKSPACE_CUSTOMER_INSIGHTS_ENABLED === undefined) process.env.WORKSPACE_CUSTOMER_INSIGHTS_ENABLED = 'true';
+    if (process.env.WORKSPACE_ISBN_LOOKUP_ENABLED === undefined) process.env.WORKSPACE_ISBN_LOOKUP_ENABLED = 'true';
+  }
   const routes = [];
   if (localLab) {
     const { readdir } = await import('node:fs/promises');
@@ -43,6 +70,10 @@ export async function createLocalPreview({ certPath, keyPath, directory = root, 
         const parts = url.pathname.split('/');
         const route = routes.find(r => r.parts.every((p, i) => p === '*' ? i === r.parts.length - 1 && parts.length > i : p.startsWith(':') ? Boolean(parts[i]) : p === parts[i]) && (r.parts.at(-1) === '*' || r.parts.length === parts.length));
         if (!route) { res.writeHead(404).end(); return; }
+        if (url.pathname !== '/api/v1/health' && !await emulatorProbe()) {
+          res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': '2' });
+          res.end(JSON.stringify({ error: { code: 'LOCAL_FIRESTORE_EMULATOR_UNAVAILABLE' } })); return;
+        }
         const chunks = []; let size = 0;
         for await (const chunk of req) { size += chunk.length; if (size > 2_000_000) { res.writeHead(413).end(); return; } chunks.push(chunk); }
         const headers = new Headers();

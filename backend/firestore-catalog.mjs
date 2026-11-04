@@ -10,7 +10,7 @@ import { runFirestoreTransaction } from './firestore-transactions.mjs';
 const PRODUCT_LIMIT = 5000;
 const NICHE_LIMIT = 200;
 const PAGE_SIZE = 10;
-const SEARCH_FIELDS = ['title', 'author', 'isbn', 'internalCode'];
+const SEARCH_FIELDS = ['title', 'author', 'isbn', 'internalCode', 'sku'];
 
 function unavailable() {
   throw new ApiError(503, 'CATALOG_UNAVAILABLE');
@@ -131,6 +131,7 @@ function productSummary(record, version, stock, hasPhoto) {
   return { version, stock, isbn: record.isbn, internalCode: record.internalCode, title: record.title,
     author: record.author, publisher: record.publisher, edition: record.edition, supplier: record.supplier,
     priceCents: record.priceCents, minimumStock: record.minimumStock, category: record.category,
+    ...(record.subtitle !== undefined ? { subtitle: record.subtitle } : {}), ...(record.costCents !== undefined ? { costCents: record.costCents } : {}), ...(record.sku !== undefined ? { sku: record.sku } : {}),
     year: record.year, pages: record.pages, active: record.active, nicheIds: record.nicheIds, hasPhoto };
 }
 
@@ -138,6 +139,7 @@ function reservationKeys(record) {
   const result = [];
   if (record.active && record.isbn) result.push({ id: `active-isbn:${record.isbn}`, kind: 'ISBN', value: record.isbn });
   if (record.active && record.internalCode) result.push({ id: `active-code:${record.internalCode}`, kind: 'CODE', value: record.internalCode });
+  if (record.active && record.sku) result.push({ id: `active-sku:${record.sku.toUpperCase()}`, kind: 'SKU', value: record.sku.toUpperCase() });
   return result;
 }
 
@@ -167,6 +169,7 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
     const currentTime = now();
     const principal = await identityService.readSessionInTransaction(transaction, tokenHash, currentTime);
     requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permissionFor(operation, payload), { now: currentTime });
+    if (operation === 'save' && payload?.initialStock > 0) requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'stock.receive', { now: currentTime });
     if (!payload || !catalogUuid(payload.commandId) || !catalogUuid(payload.id)) throw new ApiError(400, 'INVALID_PRODUCT');
     const photo = Object.hasOwn(payload, 'photo') && payload.photo !== null ? photoDescriptor(payload.photo) : null;
     const commandPayload = { ...payload, ...(Object.hasOwn(payload, 'photo') ? { photo: payload.photo === null ? null : { sha256: photo.sha256 } } : {}) };
@@ -188,6 +191,7 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
     if ((!existing && payload.record?.active === false) || existing && Object.hasOwn(payload, 'record') && payload.record.active !== existing.active) {
       if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role)) throw new ApiError(403, 'FORBIDDEN');
     }
+    if (Object.hasOwn(payload, 'initialStock') && (operation !== 'save' || existing || !Number.isSafeInteger(payload.initialStock) || payload.initialStock < 0 || payload.initialStock > 1_000_000)) throw new ApiError(400, 'INVALID_PRODUCT');
     let record = payload.record;
     if (operation === 'remove') {
       record = { ...existingRecord, active: false };
@@ -218,7 +222,7 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
     }
     const nextVersion = payload.expectedVersion + 1;
     const stockBefore = existing?.stock ?? 0;
-    const stockAfter = operation === 'receive' ? stockBefore + payload.quantity : stockBefore;
+    const stockAfter = operation === 'receive' ? stockBefore + payload.quantity : !existing ? payload.initialStock ?? 0 : stockBefore;
     if (operation === 'receive' && (!Number.isSafeInteger(payload.quantity) || payload.quantity < 1 || stockAfter > 1_000_000)) throw new ApiError(409, 'STOCK_LIMIT');
     const hasPhoto = Object.hasOwn(payload, 'photo') ? payload.photo !== null : existing?.hasPhoto === true;
     const nextProduct = {
@@ -239,11 +243,12 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
     const priorEvent = snapshotValue(eventSnapshot), priorAudit = snapshotValue(auditSnapshot);
     if (priorEvent && (priorEvent.commandId !== event.commandId || priorEvent.commandHash !== event.commandHash)) throw new ApiError(503, 'FIRESTORE_COMMAND_CORRUPT');
     if (priorAudit && (priorAudit.commandId !== payload.commandId || priorAudit.entityId !== payload.id)) throw new ApiError(503, 'FIRESTORE_COMMAND_CORRUPT');
-    const movementRef = operation === 'receive' ? repositories.ref('stockMovements', `${payload.commandId}:${payload.id}`) : null;
+    const hasMovement = operation === 'receive' || !existing && stockAfter > 0;
+    const movementRef = hasMovement ? repositories.ref('stockMovements', `${payload.commandId}:${payload.id}`) : null;
     const movementSnapshot = movementRef ? await transaction.get(movementRef) : null;
-    const movement = operation === 'receive' ? { id: `${payload.commandId}:${payload.id}`, at: event.createdAt, productId: payload.id,
-      type: 'ENTRADA', quantity: payload.quantity, stockBefore, stockAfter, versionBefore: payload.expectedVersion,
-      versionAfter: nextVersion, reason: payload.reason, saleId: null, operatorId: principal.id } : null;
+    const movement = hasMovement ? { id: `${payload.commandId}:${payload.id}`, at: event.createdAt, productId: payload.id,
+      type: 'ENTRADA', quantity: operation === 'receive' ? payload.quantity : stockAfter, stockBefore, stockAfter, versionBefore: payload.expectedVersion,
+      versionAfter: nextVersion, reason: operation === 'receive' ? payload.reason : 'ESTOQUE_INICIAL', saleId: null, operatorId: principal.id } : null;
     if (movementSnapshot && snapshotValue(movementSnapshot) && snapshotValue(movementSnapshot).commandId !== payload.commandId) throw new ApiError(503, 'FIRESTORE_COMMAND_CORRUPT');
     for (const item of newKeys) {
       const reservation = reservations.get(item.id);

@@ -1,12 +1,13 @@
 'use strict';
 (()=>{
+ const connectionNode=document.createElement('span'),reconnectNode=document.createElement('button');
  const $=id=>document.getElementById(id),ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app',money=v=>(v/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),date=v=>v?new Date(v).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):'';
  const kinds={SALES:'Vendas e faturamento',STOCK:'Posição atual do estoque',MOVEMENTS:'Movimentações de estoque'},payments={PIX:'Pix',DINHEIRO:'Dinheiro',DEBITO:'Débito',CREDITO:'Crédito'},types={ENTRADA:'Entrada',SAIDA:'Saída por venda',AJUSTE:'Ajuste',ESTORNO:'Estorno'};
  const textFields=['employeeId','customerId','cpf','productId','query','isbn','author','publisher','supplier','nicheId','category','city','paymentMethod','stock','activity','movementType'];
  let csrf='',userId='',data=null,applied=null,pending=null,busy=false,page=0,urls=new Set(),peopleChoices=new Map(),nicheChoices=new Map();
  let access=false,version=0,previewTimer;
  const online=()=>navigator.onLine!==false;
- function connection(){const state=!online()?'offline':access?'ready':'stale';$('report-connection').dataset.state=state;$('report-connection').textContent=!online()?'Sem conexão. Os resultados foram ocultados. Mantenha a aba aberta se houver uma exportação pendente.':pending?'Há uma exportação aguardando conferência. Reconectar não baixa o arquivo automaticamente.':access?'Acesso conferido. Faça uma consulta para preparar um arquivo com autorização atual.':'Confira a mesma conta administrativa para continuar. Resultados anteriores foram ocultados.';}
+ function connection(){const state=!online()?'offline':access?'ready':'stale';connectionNode.dataset.state=state;connectionNode.textContent=!online()?'Sem conexão. Os resultados foram ocultados. Mantenha a aba aberta se houver uma exportação pendente.':pending?'Há uma exportação aguardando conferência. Reconectar não baixa o arquivo automaticamente.':access?'Acesso conferido. Faça uma consulta para preparar um arquivo com autorização atual.':'Confira a mesma conta administrativa para continuar. Resultados anteriores foram ocultados.';}
  function invalidate(){version++;clear(true);controls();}
  function armExpiry(expiresAt){clearTimeout(previewTimer);const delay=Math.max(0,Math.min(300000,expiresAt-Date.now()));previewTimer=setTimeout(()=>{version++;clear();controls();$('status').textContent='A autorização da consulta venceu. Consulte novamente. Uma exportação anterior pode já ter sido autorizada no servidor.';},Number.isFinite(delay)?delay:0);}
  function today(){const p=new Intl.DateTimeFormat('en',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());return ['year','month','day'].map(k=>p.find(v=>v.type===k).value).join('-');}
@@ -45,7 +46,7 @@
   connection();
   for(const el of document.querySelectorAll('#filters input,#filters select,#filters button,#previous,#next,#export-report'))el.disabled=busy||!!pending||!online()||!access||el.dataset.incompatible==='true';
   $('retry-export').disabled=busy||!pending||!online();
-  $('discard-export').disabled=busy||!pending;$('reconnect-report').disabled=busy||!online();$('pending-export').hidden=!pending;
+  $('discard-export').disabled=busy||!pending;reconnectNode.disabled=busy||!online();$('pending-export').hidden=!pending;
   if(data)$('export-report').disabled=busy||!!pending||!online()||!access||dirty()||!data.rows.length;
  }
  function kindChanged(){const k=$('kind').value;for(const[selector,hidden]of [['.period-field',k==='STOCK'],['.employee-field',k==='STOCK'],['.sales-field',k!=='SALES'],['.movement-field',k!=='MOVEMENTS'],['.value-field',k==='MOVEMENTS']])for(const group of document.querySelectorAll(selector)){group.hidden=hidden;for(const el of group.querySelectorAll('input,select')){el.dataset.incompatible=String(hidden);el.disabled=hidden;}}$('kind-note').textContent=k==='SALES'?'Vendas pela data da compra e situação atual, com estornos descontados.':k==='STOCK'?'Uma posição do estoque de agora. O filtro de período não se aplica a este relatório.':'Entradas, saídas, ajustes e estornos pela data do movimento.';$('value-note').textContent=k==='SALES'?'O filtro de valor considera a venda completa. Quando houver filtro de produto, os totais somam os itens selecionados.':k==='STOCK'?'O filtro de valor considera o preço de venda atual do livro. Valor de estoque usa preço de venda e não representa custo ou lucro.':'Movimentações mostram unidades e saldos, sem atribuir valores que não foram registrados.';controls();}
@@ -84,7 +85,7 @@
  }
  $('filters').addEventListener('submit',e=>{e.preventDefault();query();});$('kind').addEventListener('change',kindChanged);$('filters').addEventListener('input',controls);$('filters').addEventListener('change',controls);$('export-report').addEventListener('click',exportFile);$('retry-export').addEventListener('click',exportFile);$('previous').addEventListener('click',()=>{if(data&&!busy&&!pending){page--;renderRows();}});$('next').addEventListener('click',()=>{if(data&&!busy&&!pending){page++;renderRows();}});$('close-detail').addEventListener('click',()=>{$('detail').close();$('detail-content').replaceChildren();});
  $('discard-export').addEventListener('click',()=>{if(busy||!pending)return;version++;clear();controls();$('status').textContent='Referência descartada nesta página. Autorizações anteriores permanecem na auditoria. Confira o acesso e faça uma nova consulta.';check();});
- $('reconnect-report').addEventListener('click',()=>check());
+ reconnectNode.addEventListener('click',()=>check());
  async function check(skipBusy=true,announce=true){
   if(document.hidden||!online()||skipBusy&&busy){controls();return;}
   const recovering=!access;

@@ -6,6 +6,7 @@ import { catalogUuid } from './catalog-model.mjs';
 import { createFirestoreRepositories } from './firestore-repositories.mjs';
 import { commandDocumentId, commandRetention, commitCommand, createCommandMetadata, createPendingCommand, inspectCommand } from './firestore-commands.mjs';
 import { runFirestoreTransaction } from './firestore-transactions.mjs';
+import { normalizeCpf } from './staff-model.mjs';
 
 function invalid() { throw new ApiError(400, 'INVALID_PROFILE'); }
 function unavailable() { throw new ApiError(503, 'PROFILE_UNAVAILABLE'); }
@@ -40,6 +41,12 @@ function emailDto(value) {
 function equalHash(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || !/^[a-f0-9]{64}$/.test(a) || !/^[a-f0-9]{64}$/.test(b)) return false;
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+function photoDescriptor(photo) {
+  if (!photo || typeof photo.bytes !== 'string' || photo.bytes.length > 65536 || !/^[A-Za-z0-9+/]+={0,2}$/.test(photo.bytes) || !/^[a-f0-9]{64}$/.test(photo.sha256 || '')) invalid();
+  const bytes = Buffer.from(photo.bytes, 'base64');
+  if (bytes.length < 4 || bytes.length > 49152 || bytes.toString('base64') !== photo.bytes || bytes[0] !== 255 || bytes[1] !== 216 || createHash('sha256').update(bytes).digest('hex') !== photo.sha256) invalid();
+  return { bytes: photo.bytes, sha256: photo.sha256 };
 }
 
 export function createFirestoreProfileService({ db, identityService, config, now = () => Date.now(), transactionOptions } = {}) {
@@ -114,22 +121,31 @@ export function createFirestoreProfileService({ db, identityService, config, now
   }
   async function execute(operation, actor, payload = {}) {
     if (!['bootstrap', 'get', 'save', 'photo', 'emailState', 'emailStart', 'emailConfirm', 'emailCancel'].includes(operation)) invalid();
-    if (operation === 'photo') throw new ApiError(503, 'FIRESTORE_OPERATION_NOT_READY');
     if (operation.startsWith('email')) return emailChange(operation, actor, payload);
     if (operation === 'save') return save(actor, payload);
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'profile.self.read', { targetUserId: principal.id, now: currentTime });
-      const result = { profile: profile(await repositories.transaction.get(transaction, 'users', principal.id)), principal };
-      return result;
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'profile.self.read', { targetUserId: principal.id, now: currentTime });
+      const current = profile(await repositories.transaction.get(transaction, 'users', principal.id));
+      if (operation === 'photo') {
+        if (!current.hasPhoto) throw new ApiError(404, 'PHOTO_NOT_FOUND');
+        const media = snapshotValue(await transaction.get(repositories.subref('users', principal.id, 'media', 'profile')));
+        if (!media) unavailable();
+        try { return photoDescriptor(media); } catch { unavailable(); }
+      }
+      return operation === 'bootstrap' ? { profile: current, principal } : current;
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
   }
   async function save(actor, payload) {
     if (!payload || !catalogUuid(payload.commandId) || !Number.isSafeInteger(payload.expectedRevision) || payload.expectedRevision < 0 || typeof payload.contact !== 'string' || typeof payload.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(payload.fingerprint)) invalid();
-    if (Object.hasOwn(payload, 'photo') && payload.photo !== null) throw new ApiError(503, 'PROFILE_UNAVAILABLE');
+    const photo = Object.hasOwn(payload, 'photo') && payload.photo !== null ? photoDescriptor(payload.photo) : null;
+    if (payload.ownerCpfIndex !== undefined && !/^[a-f0-9]{64}$/.test(payload.ownerCpfIndex)) invalid();
+    if (payload.ownerCpfIndex !== undefined) normalizeCpf(payload.cpf);
+    else if (payload.cpf !== undefined) invalid();
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'profile.self.write', { targetUserId: principal.id, now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'profile.self.write', { targetUserId: principal.id, now: currentTime, localProfileWrite: config?.localLab === true });
+      if (config?.localLab !== true && payload.ownerCpfIndex && !['passkey', 'mfa'].includes(principal.assurance)) throw new ApiError(401, 'REAUTHENTICATION_REQUIRED');
       const command = createCommandMetadata({ domain: 'profile', commandId: payload.commandId, operation: 'save', actor: principal.id, payloadHash: payload.fingerprint,
         now: new Date(currentTime), retentionMs: commandRetention(90) });
       const commandRef = repositories.ref('commands', commandDocumentId('profile', payload.commandId));
@@ -137,16 +153,36 @@ export function createFirestoreProfileService({ db, identityService, config, now
       if (state.status === 'COMMITTED') return state.result;
       const currentSnapshot = await repositories.transaction.get(transaction, 'users', principal.id), current = profile(currentSnapshot);
       if (current.revision !== payload.expectedRevision) throw new ApiError(409, 'PROFILE_CONFLICT');
-      if (payload.cpf !== undefined && !current.owner) invalid();
+      if (payload.ownerCpfIndex && !current.owner && config?.localLab !== true) invalid();
+      let cpfRef, oldCpfRef, oldCpf;
+      if (payload.ownerCpfIndex) {
+        if (config?.localLab !== true && current.owner && current.cpfIndex && current.cpfIndex !== payload.ownerCpfIndex) throw new ApiError(409, 'PROFILE_CPF_LOCKED');
+        if (current.cpfIndex && current.cpfIndex !== payload.ownerCpfIndex) {
+          oldCpfRef = repositories.ref('uniqueness', `staff-cpf:${current.cpfIndex}`);
+          oldCpf = snapshotValue(await transaction.get(oldCpfRef));
+          if (oldCpf && oldCpf.ownerId !== principal.id) unavailable();
+        }
+        cpfRef = repositories.ref('uniqueness', `staff-cpf:${payload.ownerCpfIndex}`);
+        const reservation = snapshotValue(await transaction.get(cpfRef));
+        const matches = await transaction.get(db.collection('users').where('cpfIndex', '==', payload.ownerCpfIndex));
+        if (reservation && reservation.ownerId !== principal.id || matches.docs.some(doc => doc.id !== principal.id)) throw new ApiError(409, 'STAFF_CPF_DUPLICATE');
+      }
       const eventRef = repositories.ref('domainEvents', `profile:${payload.commandId}`), auditRef = repositories.ref('auditEvents', `profile:${payload.commandId}`);
       const eventSnapshot = await transaction.get(eventRef), auditSnapshot = await transaction.get(auditRef);
       if (snapshotValue(eventSnapshot) || snapshotValue(auditSnapshot)) unavailable();
       const at = new Date(state.status === 'NEW' ? currentTime : new Date(command.createdAt).getTime()), result = { revision: current.revision + 1 };
       const next = { ...currentSnapshot.data(), id: principal.id, revision: result.revision, contact: payload.contact,
         hasPhoto: Object.hasOwn(payload, 'photo') ? payload.photo !== null : current.hasPhoto, updatedAt: at, updatedBy: principal.id,
-        ...(payload.ownerCpfIndex ? { cpfIndex: payload.ownerCpfIndex } : {}), ...(payload.ownerEmailIndex ? { emailIndex: payload.ownerEmailIndex } : {}) };
+        ...(payload.ownerCpfIndex ? { cpfIndex: payload.ownerCpfIndex } : {}) };
       if (state.status === 'NEW') createPendingCommand(transaction, commandRef, command);
       repositories.transaction.set(transaction, 'users', principal.id, next);
+      if (cpfRef) transaction.set(cpfRef, { ownerId: principal.id, kind: 'STAFF_CPF', value: payload.ownerCpfIndex, active: true, version: result.revision });
+      if (oldCpf) transaction.delete(oldCpfRef);
+      if (Object.hasOwn(payload, 'photo')) {
+        const mediaRef = repositories.subref('users', principal.id, 'media', 'profile');
+        if (photo) transaction.set(mediaRef, { ...photo, updatedAt: at });
+        else transaction.delete(mediaRef);
+      }
       transaction.create(eventRef, { schemaVersion: 1, type: 'PROFILE_UPDATED', commandId: payload.commandId, commandHash: command.payloadHash, actorId: principal.id, createdAt: at.toISOString(), entityId: principal.id });
       transaction.create(auditRef, { id: `profile:${payload.commandId}`, at: at.toISOString(), commandId: payload.commandId, actorId: principal.id, role: principal.role,
         operation: 'PROFILE_UPDATE', entity: 'Usuarios', entityId: principal.id, result: 'SUCESSO', requestId: payload.commandId, before: { revision: current.revision }, after: { revision: result.revision }, detailsOmitted: true });

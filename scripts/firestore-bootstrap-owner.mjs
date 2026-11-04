@@ -5,9 +5,8 @@
 // directly in Firestore so the existing activation flow
 // (POST /api/v1/access/start) has a user document to find by e-mail index.
 //
-// Safe to run more than once: it never touches an account that is already
-// activated, and it refuses to create a second SUPER_ADMIN under a
-// different e-mail.
+// Safe to run more than once: existing identity and activation state are
+// preserved, and a second SUPER_ADMIN under a different e-mail is refused.
 //
 // Usage:
 //   node scripts/firestore-bootstrap-owner.mjs --email=dono@exemplo.com
@@ -52,9 +51,16 @@ export async function bootstrapOwner({ db, email, environment, installationId, s
     const existing = byEmail.docs[0];
     if (existing) {
       const value = existing.data();
-      if (value.role !== 'SUPER_ADMIN' || value.status !== 'ATIVO' || value.activated === true || value.firstAccessCompleted === true) {
-        throw new Error('já existe uma conta com este e-mail, mas ela não está no estado de placeholder seguro para reaproveitar');
+      if (value.role !== 'SUPER_ADMIN' || value.owner !== true || value.status !== 'ATIVO' ||
+          (value.email !== undefined && value.email !== normalizedEmail)) {
+        throw new Error('a conta existente não corresponde ao proprietário esperado; investigue antes de continuar');
       }
+      const missing = {};
+      if (value.email === undefined) missing.email = normalizedEmail;
+      if (value.revision === undefined) missing.revision = 0;
+      if (value.contact === undefined) missing.contact = '';
+      if (value.hasPhoto === undefined) missing.hasPhoto = false;
+      if (Object.keys(missing).length) transaction.update(db.collection('users').doc(existing.id), missing);
       return { id: existing.id, created: false };
     }
 
@@ -72,6 +78,10 @@ export async function bootstrapOwner({ db, email, environment, installationId, s
       activated: false,
       firstAccessCompleted: false,
       emailIndex: index,
+      email: normalizedEmail,
+      revision: 0,
+      contact: '',
+      hasPhoto: false,
       createdAt: now,
       createdBy: id,
     });
@@ -103,7 +113,7 @@ async function main() {
   const result = await bootstrapOwner({ db, email, environment, installationId, secret });
   console.log(result.created
     ? `Conta criada: ${result.id}. Use "Primeiro acesso" em acesso-dev.html com este e-mail.`
-    : `Conta já existia e está pronta para ativação: ${result.id}.`);
+    : `Conta existente conferida: ${result.id}. O estado de ativação foi preservado.`);
 }
 
 // A plain `file://${process.argv[1]}` string breaks for any path containing

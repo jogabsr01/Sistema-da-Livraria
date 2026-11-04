@@ -40,7 +40,7 @@ export function createCatalogHandler(dependencies = {}) {
         const principal=validateSessionPrincipal(data.principal,Date.now(),settings.config.adminPinLogin===true);requirePermission(principal,query.get('create')==='true'?'products.write':'products.read');
         const csrfToken=createHmac('sha256',settings.tokenKey).update(JSON.stringify(['csrf.v1',settings.config.environment,settings.config.installationId,rawToken])).digest('base64url');
         const {principal:_,...catalog}=data;
-        return json({data:{...catalog,niches:catalog.niches.map(n=>({...n,imageUrl:settings.nichesEnabled&&n.hasImage?'/api/v1/niches/image?id='+n.id+'&v='+n.version:''})),user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken,lookupEnabled:settings.lookupEnabled===true,photosEnabled:settings.photosEnabled===true,nichesEnabled:settings.nichesEnabled===true,checkoutEnabled:settings.checkoutEnabled===true,customersEnabled:settings.customersEnabled===true},requestId});
+        return json({data:{...catalog,niches:catalog.niches.map(n=>({...n,imageUrl:settings.nichesEnabled&&n.hasImage?'/api/v1/niches/image?id='+n.id+'&v='+n.version:''})),user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken,extendedProducts:settings.config.storageMode==='firestore',lookupEnabled:settings.lookupEnabled===true,photosEnabled:settings.photosEnabled===true,nichesEnabled:settings.nichesEnabled===true,checkoutEnabled:settings.checkoutEnabled===true,customersEnabled:settings.customersEnabled===true},requestId});
       }
       const sessions = createSessionService(settings, { client });
       if (method === 'POST') requireSameOriginMutation(request, ORIGIN);
@@ -88,9 +88,12 @@ export function createCatalogHandler(dependencies = {}) {
           return json({data:await lookupService.lookup(isbn),requestId});
         }
         if (size > 40000 && (!input || typeof input !== 'object' || !Object.hasOwn(input,'photo'))) throw new ApiError(413,'INVALID_PRODUCT');
-        if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(Object.keys(input).filter(key => key !== 'photo').sort()) !== JSON.stringify(['commandId', 'expectedVersion', 'id', 'record']) ||
+        if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(Object.keys(input).filter(key => !['photo','initialStock'].includes(key)).sort()) !== JSON.stringify(['commandId', 'expectedVersion', 'id', 'record']) ||
             !catalogUuid(input.commandId) || !catalogUuid(input.id) || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 || input.expectedVersion > 1_000_000_000) throw new ApiError(400, 'INVALID_PRODUCT');
+        if ((Object.hasOwn(input, 'initialStock') || ['subtitle','sku','costCents'].some(k => Object.hasOwn(input.record || {}, k))) && settings.config.storageMode !== 'firestore') throw new ApiError(503, 'FIRESTORE_OPERATION_NOT_READY');
+        if (Object.hasOwn(input, 'initialStock') && (input.expectedVersion !== 0 || !Number.isSafeInteger(input.initialStock) || input.initialStock < 0 || input.initialStock > 1000000)) throw new ApiError(400, 'INVALID_PRODUCT');
         payload = { commandId: input.commandId, id: input.id, expectedVersion: input.expectedVersion, record: normalizeProduct(input.record, input.id) };
+        if (Object.hasOwn(input, 'initialStock')) payload.initialStock = input.initialStock;
         if (Object.hasOwn(input,'photo')) {
           if (!settings.photosEnabled) throw new ApiError(503, 'COVER_PHOTOS_NOT_ACTIVATED');
           if (input.photo !== null && payload.record.coverUrl) throw new ApiError(400, 'INVALID_COVER_PHOTO');

@@ -76,7 +76,7 @@
       if(!response.ok)throw Error('UNAVAILABLE');
       const {data}=await response.json();
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role))throw Error('INVALID_SESSION');
-      authenticated=true;document.body.dataset.sessionRole=data.user.role;$('welcome').hidden=true;$('member-intro').hidden=false;$('account-navigation').hidden=false;document.body.classList.add('is-member');$('home').hidden=false;$('status').textContent='O que você quer fazer agora?';memberAssets();
+      authenticated=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));$('welcome').hidden=true;$('member-intro').hidden=false;$('account-navigation').hidden=false;document.body.classList.add('is-member');$('home').hidden=false;$('status').textContent='O que você quer fazer agora?';memberAssets();
       document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role));
     }catch{if(recentEntry)failedEntry(http,'SESSION_UNAVAILABLE',Math.round(performance.now()-started));else{$('status').textContent='Não foi possível conferir seu acesso. Tente novamente.';$('retry').hidden=false;}}
     finally{clearTimeout(timer);checking=false;}

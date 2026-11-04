@@ -70,14 +70,14 @@ export function createFirestoreScheduleService({ db, identityService, config, no
       const principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
       const admin = ['ADMIN', 'SUPER_ADMIN'].includes(principal.role);
       if (operation === 'people') {
-        requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'schedule.write', { now: currentTime });
+        requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'schedule.write', { now: currentTime });
         const peopleSnapshot = await transaction.get(db.collection('users'));
         if (!peopleSnapshot || !Array.isArray(peopleSnapshot.docs) || peopleSnapshot.docs.length > MAX_PEOPLE) unavailable();
         const people = peopleSnapshot.docs.map(snapshot => peopleDto(snapshot)).filter(Boolean).filter(person => person.active);
         return { people };
       }
       const permission = admin ? 'schedule.all.read' : 'schedule.self.read';
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permission, { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permission, { now: currentTime });
       if (operation === 'get') {
         if (!catalogUuid(payload?.id)) invalid();
         const snapshot = await repositories.transaction.get(transaction, 'schedules', payload.id);
@@ -88,7 +88,7 @@ export function createFirestoreScheduleService({ db, identityService, config, no
         const people = peopleSnapshot.docs.map(item => peopleDto(item, allowed)).filter(Boolean);
         return { items: [value], people };
       }
-      if (!payload || typeof payload.from !== 'string' || typeof payload.to !== 'string' || !Number.isSafeInteger(payload.offset) || payload.offset < 0) invalid();
+      if (!payload || typeof payload.from !== 'string' || typeof payload.to !== 'string' || (payload.offset !== undefined && (!Number.isSafeInteger(payload.offset) || payload.offset < 0))) invalid();
       try { scheduleDate(payload.from); scheduleDate(payload.to); } catch { invalid(); }
       if (payload.to < payload.from || (Date.parse(payload.to + 'T12:00Z') - Date.parse(payload.from + 'T12:00Z')) / 86400000 > 41 || payload.employeeId !== '' && !catalogUuid(payload.employeeId)) invalid();
       const schedulesSnapshot = await transaction.get(db.collection('schedules'));
@@ -109,7 +109,7 @@ export function createFirestoreScheduleService({ db, identityService, config, no
         typeof payload.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(payload.fingerprint)) invalid();
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'schedule.write', { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'schedule.write', { now: currentTime });
       const metadata = createCommandMetadata({ domain: 'schedules', commandId: payload.commandId, operation, actor: principal.id,
         payloadHash: payload.fingerprint, now: new Date(currentTime), retentionMs: commandRetention(90) });
       const commandRef = repositories.ref('commands', commandDocumentId('schedules', payload.commandId));

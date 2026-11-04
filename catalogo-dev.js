@@ -5,7 +5,8 @@
   $('query').value = (entryParams.get('q') || '').slice(0,100);
   let csrf = '', niches = [], offset = 0, nextOffset = null, editing = null, command = null, draftId = '', busy = false, lookupGeneration = 0, lookupController = null, photosEnabled = false, pendingPhoto, photoPreview = '', cameraStream = null, cameraGeneration = 0;
   const pendingImages = new Set();
-  let canDelete = false, stockTarget = null, pendingStock = null, stockStorageKey = '', archiveCommand = null;
+  let scannerStream = null, scannerReader = null, scannerGeneration = 0, lookupTimer;
+  let canDelete = false, stockTarget = null, pendingStock = null, stockStorageKey = '', archiveCommand = null, extendedProducts = false, lookupEnabled = false;
   let userId = '', ready = false, checkedAt = 0, connectionVersion = 0, reconnectQueued = false, reconciling = false, freshnessTimer, dirty = false, initialized = false, archiveUncertain = false;
   const online = () => navigator.onLine !== false;
   const fresh = () => ready && online() && performance.now() - checkedAt < 90000;
@@ -24,7 +25,7 @@
     document.querySelectorAll('[data-catalog-refresh],#search-form button').forEach(button => { button.disabled = busy || !online(); });
     $('resume-archive').hidden = !archiveCommand;
     $('save').disabled = busy || !online() || !uncertain && !fresh() || !!archiveCommand || !!pendingStock;
-    $('save').textContent = uncertain ? 'Verificar cadastro / tentar novamente' : 'Salvar livro';
+    $('save').textContent = uncertain ? 'Verificar cadastro / tentar novamente' : 'Salvar produto';
     $('close').disabled = busy || uncertain;
     $('reload-book').disabled = busy || uncertain || !fresh();
     document.querySelectorAll('#book-form input,#book-form select,#book-form textarea').forEach(input => { input.disabled = busy && !reconciling || uncertain; });
@@ -49,7 +50,7 @@
   async function sameAccount() {
     const data = await requestData('/api/v1/session');
     if (data.user.id !== userId) { invalidate(); throw Object.assign(Error('ACCOUNT_CHANGED'),{status:401,code:'UNAUTHENTICATED'}); }
-    csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); $('niche-admin-link').hidden = !canDelete;
+    csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role);
   }
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   function explain(error) { if(error.code==='CATALOG_NOT_ACTIVATED')return 'O cadastro de produtos ainda não foi ativado. Peça à administração para liberar o catálogo.';
@@ -123,10 +124,11 @@
   }
   async function openBook(id) {
     if (!fresh() || command?.pending || pendingStock || archiveCommand) return;
-    cancelLookup(); cleanupPhoto();
+    cancelLookup(); cleanupPhoto(); stopScanner();
     editing = id ? (await api('get', null, '?id=' + encodeURIComponent(id))).product : null; command = null;
     draftId = editing?.id || crypto.randomUUID();
-    $('book-form').reset(); $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar livro'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = 'A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.';
+    $('book-form').reset(); $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar produto'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = 'A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.';
+    $('product-details').hidden = !editing; $('identifier-confirm').hidden = !!editing; $('manual-product').hidden = !!editing; $('isbn-tools').hidden = !editing || !lookupEnabled;
     const mappings = { isbn:'isbn',title:'title',author:'author',publisher:'publisher',edition:'edition',supplier:'supplier',category:'category',cover:'coverUrl',synopsis:'synopsis' };
     Object.entries(mappings).forEach(([input,key]) => { $(input).value = editing?.[key] || ''; });
     // A barcode scanned on the Home screen (or typed there) arrives here only
@@ -135,9 +137,12 @@
     // "Consultar ISBN" can fetch metadata and a cover without retyping/rescanning.
     if (!editing) { const scanned = $('query').value.trim(); if (/^[0-9]{6,32}$/.test(scanned)) $('isbn').value = scanned; }
     $('price').value = editing ? (editing.priceCents / 100).toFixed(2).replace('.',',') : '';
+    $('subtitle').value = editing?.subtitle || ''; $('sku').value = editing?.sku || '';
+    $('cost').value = editing?.costCents !== undefined ? (editing.costCents / 100).toFixed(2).replace('.',',') : '';
+    $('initial-stock').value = '0'; $('initial-stock-label').hidden = !!editing; $('extended-product').hidden = !extendedProducts;
     $('minimum-stock').value = editing?.minimumStock ?? 0; $('year').value = editing?.year || ''; $('pages').value = editing?.pages || ''; $('active').checked = editing?.active ?? true;
     $('active').disabled = !canDelete;
-    $('stock-info').textContent = editing ? `Estoque atual: ${editing.stock}. ${editing.stock === 0 ? 'Sem estoque: o livro continua editável. ' : ''}Para repor, use Adicionar unidades no catálogo.` : 'Estoque inicial: 0. Após salvar, use Adicionar unidades para registrar uma entrada.';
+    $('stock-info').textContent = editing ? `Estoque atual: ${editing.stock}. Para repor, use Adicionar unidades no catálogo.` : extendedProducts ? 'O estoque inicial será registrado junto ao produto.' : 'Estoque inicial: 0. Após salvar, use Adicionar unidades para registrar uma entrada.';
     choices(editing?.nicheIds || (niches.filter(n => n.active).length === 1 ? [niches.find(n => n.active).id] : [])); cover(editing?.photoUrl || $('cover').value, $('cover-preview'), true);
     if (!$('editor').open) $('editor').showModal();
     dirty = false;
@@ -157,7 +162,7 @@
   $('resume-archive').addEventListener('click',() => run(finishArchive));
   $('book-form').addEventListener('submit', event => { event.preventDefault(); run(async () => {
     if (!online() || !command?.pending && !fresh() || pendingStock || archiveCommand) return;
-    cancelLookup(); stopCamera();
+    cancelLookup(); stopCamera(); stopScanner();
     if (!command?.pending) {
     const price = $('price').value.trim(); if (!/^\d{1,7}(?:[,.]\d{1,2})?$/.test(price)) { $('form-status').textContent = 'Informe o preço como 12,90, sem separador de milhares.'; return; }
     const [units, fractional = ''] = price.split(/[,.]/), priceCents = Number(units) * 100 + Number(fractional.padEnd(2,'0'));
@@ -165,8 +170,17 @@
       publisher:$('publisher').value,edition:$('edition').value,supplier:$('supplier').value,priceCents,minimumStock:Number($('minimum-stock').value),category:$('category').value,
       coverUrl:$('cover').value,year:Number($('year').value),pages:Number($('pages').value),synopsis:$('synopsis').value,
       nicheIds:[...document.querySelectorAll('#niche-choices input:checked')].map(input => input.value),active:$('active').checked };
-    const signature = JSON.stringify({fields,photo:pendingPhoto}); if (!command || command.signature !== signature) command = { signature, id:crypto.randomUUID() };
-    command.payload = { commandId:command.id,id:draftId,expectedVersion:editing?.version || 0,record:fields,...(pendingPhoto === undefined ? {}:{photo:pendingPhoto}) };
+    let initialStock;
+    if (extendedProducts) {
+      const cost = $('cost').value.trim(), sku = $('sku').value.trim();
+      if (cost && !/^\d{1,7}(?:[,.]\d{1,2})?$/.test(cost)) { $('form-status').textContent = 'Informe o custo como 12,90, sem separador de milhares.'; return; }
+      if (sku && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(sku)) { $('form-status').textContent = 'Confira o código de barras ou SKU.'; return; }
+      const [whole, fraction = ''] = (cost || '0').split(/[,.]/);
+      Object.assign(fields, { subtitle:$('subtitle').value, sku, costCents:Number(whole)*100+Number(fraction.padEnd(2,'0')) });
+      if (!editing) { initialStock=Number($('initial-stock').value); if (!Number.isSafeInteger(initialStock) || initialStock<0 || initialStock>1000000) { $('form-status').textContent='Informe um estoque inicial inteiro entre 0 e 1.000.000.'; return; } }
+    }
+    const signature = JSON.stringify({fields,initialStock,photo:pendingPhoto}); if (!command || command.signature !== signature) command = { signature, id:crypto.randomUUID() };
+    command.payload = { commandId:command.id,id:draftId,expectedVersion:editing?.version || 0,record:fields,...(initialStock === undefined ? {}:{initialStock}),...(pendingPhoto === undefined ? {}:{photo:pendingPhoto}) };
     command.pending = true;
     }
     $('form-status').textContent = 'Salvando e aguardando a confirmação…';
@@ -226,12 +240,30 @@
   }); });
   $('reload-book').addEventListener('click', () => run(() => openBook(editing.id), true));
   $('editor').addEventListener('cancel', event => { if (busy || command?.pending) event.preventDefault(); });
-  $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();dirty=false;if(deferredCatalogRead&&!busy){$('count').textContent='Carregando produtos…';run(()=>list());}});
+  $('editor').addEventListener('close',()=>{cancelLookup();cleanupPhoto();stopScanner();dirty=false;if(deferredCatalogRead&&!busy){$('count').textContent='Carregando produtos…';run(()=>list());}});
   $('book-form').addEventListener('input',()=>{dirty=true;});
   window.addEventListener('beforeunload',event=>{if(dirty || command?.pending || pendingStock || archiveCommand || busy){event.preventDefault();event.returnValue='';}});
-  window.addEventListener('pagehide',()=>{cancelLookup();cleanupPhoto();});
-  $('isbn').addEventListener('input',() => { cancelLookup(); $('isbn-status').textContent = 'ISBN alterado. Consulte novamente ou preencha manualmente.'; });
-  $('isbn').addEventListener('keydown',event => { if (event.key === 'Enter' && !$('isbn-tools').hidden) { event.preventDefault(); $('isbn-lookup').click(); } });
+  window.addEventListener('pagehide',()=>{cancelLookup();cleanupPhoto();stopScanner();});
+  function scheduleLookup() {
+    clearTimeout(lookupTimer);
+    const value = $('isbn').value.replace(/[\s-]/g, '');
+    if (!$('product-details').hidden && (/^(?:978|979)\d{10}$/.test(value) || /^\d{9}[\dXx]$/.test(value))) lookupTimer = setTimeout(() => { if (!$('isbn-tools').hidden && fresh() && $('editor').open) $('isbn-lookup').click(); }, 650);
+  }
+  $('isbn').addEventListener('input',() => { cancelLookup(); $('isbn-status').textContent = 'ISBN alterado. Consulte novamente ou preencha manualmente.'; scheduleLookup(); });
+  $('isbn').addEventListener('keydown',event => { if (event.key === 'Enter') { event.preventDefault(); if ($('product-details').hidden) $('identifier-confirm').click(); else if (!$('isbn-tools').hidden) $('isbn-lookup').click(); } });
+  function showProductDetails(code = '', manual = false) {
+    const value = code.trim(), compact = value.replace(/[\s-]/g, '');
+    if (!manual && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(compact)) { $('barcode-status').dataset.state = 'error'; $('barcode-status').textContent = 'Informe um código válido ou escolha o cadastro manual.'; return; }
+    const isbn = /^(?:978|979)\d{10}$/.test(compact) && [...compact].reduce((sum,digit,index)=>sum+Number(digit)*(index%2?3:1),0)%10===0 || /^\d{9}[\dXx]$/.test(compact);
+    if (!manual && !isbn && !extendedProducts) { $('barcode-status').textContent = 'Este modo aceita somente ISBN. Use o cadastro manual.'; return; }
+    if (!manual && isbn) { $('isbn').value = compact; if (extendedProducts && !$('sku').value.trim()) $('sku').value = compact; }
+    else if (!manual) { $('isbn').value = ''; if (!$('sku').value.trim()) $('sku').value = compact; }
+    $('product-details').hidden = false; $('identifier-confirm').hidden = true; $('manual-product').hidden = true; $('isbn-tools').hidden = !lookupEnabled;
+    if (!manual && isbn) scheduleLookup();
+    if (manual) $('title').focus();
+  }
+  $('identifier-confirm').addEventListener('click', () => showProductDetails($('isbn').value));
+  $('manual-product').addEventListener('click', () => { $('isbn').value = ''; showProductDetails('', true); });
   $('cover').addEventListener('change', () => { let url; try { url = new URL($('cover').value); } catch { url = null; }
     const valid = url?.protocol === 'https:' && !url.username && !url.password && !url.port && !url.hash && url.hostname.includes('.') && !url.hostname.endsWith('.') &&
       !/^(?:[\d.]+|\[.*\])$/.test(url.hostname) && !/(?:^|\.)(?:localhost|local|internal|invalid|test)$/.test(url.hostname);
@@ -241,6 +273,36 @@
     cameraGeneration++; cameraStream?.getTracks().forEach(track => track.stop()); cameraStream = null;
     $('camera-video').srcObject = null; $('camera-panel').hidden = true;
   }
+  function stopScanner() {
+    scannerGeneration++; scannerReader?.reset(); scannerReader = null;
+    scannerStream?.getTracks().forEach(track => track.stop()); scannerStream = null;
+    $('barcode-video').srcObject = null; $('barcode-panel').hidden = true; $('barcode-stop').hidden = true; $('barcode-open').disabled = false;
+  }
+  function beep() {
+    try { const Audio = window.AudioContext || window.webkitAudioContext; if (!Audio) return; const audio = new Audio(), oscillator = audio.createOscillator(), gain = audio.createGain(); oscillator.frequency.value = 880; gain.gain.value = 0.04; oscillator.connect(gain); gain.connect(audio.destination); oscillator.start(); oscillator.stop(audio.currentTime + 0.1); oscillator.onended = () => audio.close(); } catch {}
+  }
+  $('barcode-stop').addEventListener('click', () => { stopScanner(); $('barcode-status').textContent = 'Scanner desligado.'; });
+  $('barcode-open').addEventListener('click', async () => {
+    stopScanner(); stopCamera(); const ticket = scannerGeneration;
+    $('barcode-status').dataset.state = 'checking';
+    if (!navigator.mediaDevices?.getUserMedia || !globalThis.ZXing) { $('barcode-status').textContent = 'Scanner indisponível. Digite o código manualmente.'; return; }
+    $('barcode-open').disabled = true; $('barcode-status').textContent = 'Autorize a câmera e aponte para o código de barras.';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} } });
+      if (ticket !== scannerGeneration || !$('editor').open || document.hidden) { stream.getTracks().forEach(track => track.stop()); return; }
+      scannerStream = stream; $('barcode-panel').hidden = false; $('barcode-stop').hidden = false;
+      const formats = ['EAN_13','EAN_8','UPC_A','UPC_E','CODE_128','CODE_39','ITF'].map(name => ZXing.BarcodeFormat[name]);
+      scannerReader = new ZXing.BrowserMultiFormatReader(new Map([[ZXing.DecodeHintType.POSSIBLE_FORMATS, formats]]), 250);
+      await scannerReader.decodeFromStream(stream, $('barcode-video'), result => {
+        if (ticket !== scannerGeneration || !$('editor').open || !result) return;
+        const value = String(result.getText()).trim();
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(value)) return;
+        stopScanner(); beep(); dirty = true;
+        showProductDetails(value);
+        $('barcode-status').dataset.state = 'success'; $('barcode-status').textContent = 'Código lido: ' + value;
+      });
+    } catch { if (ticket === scannerGeneration) { stopScanner(); $('barcode-status').dataset.state = 'error'; $('barcode-status').textContent = 'Não foi possível abrir a câmera. Verifique a permissão ou digite o código.'; } }
+  });
   function releasePreview() { if (photoPreview) URL.revokeObjectURL(photoPreview); photoPreview = ''; }
   function cleanupPhoto() { stopCamera(); releasePreview(); pendingPhoto = undefined; $('photo-file').value = ''; $('photo-status').textContent = 'Use a câmera do celular ou a webcam do computador, ou escolha uma imagem.'; }
   async function acceptPhoto(source) {
@@ -294,6 +356,7 @@
   },true));
   $('photo-remove').addEventListener('click', () => { cancelLookup(); stopCamera(); releasePreview(); dirty = true; pendingPhoto = null; $('cover').value = ''; cover('',$('cover-preview'),true); $('photo-status').textContent = 'Capa removida deste cadastro. Salve para confirmar.'; });
   function cancelLookup() {
+    clearTimeout(lookupTimer);
     lookupGeneration++; lookupController?.abort(); lookupController = null;
     [...pendingImages].forEach(cancel => cancel()); $('isbn-cancel').hidden = true;
     $('isbn-lookup').disabled = busy || !!command?.pending || !fresh();
@@ -312,7 +375,7 @@
     if (busy || command?.pending || !fresh()) return; cancelLookup(); const generation = lookupGeneration, raw = $('isbn').value;
     if (!raw.trim()) { $('isbn-status').textContent = 'Informe um ISBN para consultar, ou continue o cadastro sem código.'; return; }
     const controller = new AbortController(); lookupController = controller; $('isbn-lookup').disabled = true; $('isbn-cancel').hidden = false;
-    const mappings = {title:'title',author:'author',publisher:'publisher',edition:'edition',year:'year',pages:'pages',synopsis:'synopsis'};
+    const mappings = {title:'title',...(extendedProducts?{subtitle:'subtitle'}:{}),author:'author',publisher:'publisher',edition:'edition',year:'year',pages:'pages',synopsis:'synopsis'};
     const before = Object.fromEntries([...Object.keys(mappings),'cover'].map(id => [id,$(id).value]));
     const current = () => generation === lookupGeneration && $('editor').open && $('isbn').value === raw;
     $('isbn-status').textContent = 'Consultando as fontes bibliográficas… Você pode continuar preenchendo o cadastro.';
@@ -325,6 +388,7 @@
         $('isbn-status').textContent = code === 'INVALID_ISBN' ? 'ISBN inválido. Confira os dígitos na contracapa.' : code === 'ISBN_RATE_LIMITED' ? `Limite de consultas atingido. Aguarde ${result.error.retryAfterSeconds || 60} segundos ou preencha manualmente.` : code === 'ISBN_LOOKUP_NOT_ACTIVATED' ? 'A consulta por ISBN ainda não foi habilitada nesta instalação. Continue manualmente.' : 'A consulta está indisponível. Seus campos foram preservados; continue manualmente.'; return;
       }
       const data = result.data;
+      if (extendedProducts && !$('sku').value.trim()) { $('sku').value = data.isbn || raw.replace(/[\s-]/g, ''); dirty = true; }
       if (data.metadata) Object.entries(mappings).forEach(([id,key]) => {
         if (!before[id].trim() && $(id).value === before[id] && data.metadata[key]) { $(id).value = String(data.metadata[key]); dirty = true; }
       });
@@ -354,13 +418,13 @@
   window.addEventListener('online',()=>{invalidate();reconnect();});
   window.addEventListener('focus',reconnect);
   window.addEventListener('pageshow',event=>{if(event.persisted){invalidate();reconnect();}});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidate();else reconnect();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){stopScanner();invalidate();}else reconnect();});
   setInterval(reconnect,30000);
   async function initialize() {
     const params=new URLSearchParams({q:$('query').value,offset:String(offset),niche:$('niche-filter').value,inactive:String($('inactive').checked),create:String(!initialized&&entryParams.get('novo')==='1')});
     const data=await requestData('/api/v1/catalog/bootstrap?'+params);deferredCatalogRead=params.get('create')==='true';
     if (userId && userId !== data.user.id) throw Object.assign(Error('ACCOUNT_CHANGED'),{code:'UNAUTHENTICATED',status:401});
-    userId = data.user.id; csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role);$('niche-admin-link').hidden=!canDelete; stockStorageKey = 'catalog.stock.pending.' + data.user.id;
+    userId = data.user.id; csrf = data.csrfToken; canDelete = ['ADMIN','SUPER_ADMIN'].includes(data.user.role); stockStorageKey = 'catalog.stock.pending.' + data.user.id;
     const stored = sessionStorage.getItem(stockStorageKey);
     if (stored) {
       const value = JSON.parse(stored), uuid = id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id);
@@ -368,7 +432,7 @@
           !Number.isSafeInteger(value.expectedVersion) || value.expectedVersion < 1 || value.expectedVersion >= 1000000000 || !Number.isSafeInteger(value.quantity) || value.quantity < 1 || value.quantity > 1000000 || !['REPOSICAO','ESTOQUE_INICIAL','RECEBIMENTO'].includes(value.reason)) throw Error('INVALID_RECOVERY');
       pendingStock = value; $('resume-stock').hidden = false;
     }
-    document.body.dataset.sessionRole=data.user.role;if($('module-account'))$('module-account').hidden=false;window.dispatchEvent(new Event('livraria:session-ready'));const capabilities = data; $('isbn-tools').hidden = capabilities.lookupEnabled !== true; photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;return data;
+    document.body.dataset.sessionRole=data.user.role;if($('module-account'))$('module-account').hidden=false;window.dispatchEvent(new Event('livraria:session-ready'));const capabilities = data; extendedProducts = capabilities.extendedProducts === true; lookupEnabled = capabilities.lookupEnabled === true; $('isbn-tools').hidden = !lookupEnabled || $('product-details').hidden; photosEnabled = capabilities.photosEnabled === true; $('photo-controls').hidden = !photosEnabled;return data;
   }
   async function reconnect() {
     if (!online() || document.hidden) { controls(); if (!initialized && !online()) message('Sem conexão. Mantenha esta aba aberta; o acesso será conferido ao reconectar.'); return; }
@@ -393,7 +457,7 @@
       } finally { reconciling = false; }
     });
   }
-  if(entryParams.get('novo')==='1'){$('catalog-title').textContent='Novo produto';$('catalog-intro').textContent='Cadastre os dados do livro e organize seu catálogo.';}
+  if(entryParams.get('novo')==='1'){$('catalog-title').textContent='Novo produto';$('catalog-intro').textContent='Cadastre os dados do produto e organize seu catálogo.';}
   $('catalog-retry').addEventListener('click',reconnect);
   reconnect();
 })();

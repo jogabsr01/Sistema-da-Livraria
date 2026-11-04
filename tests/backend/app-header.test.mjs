@@ -8,3 +8,11 @@ test('all internal pages build the same header above the main content, preservin
  for(const page of pages){const file=page+'-dev.html',source=await readFile(new URL('../../'+file,import.meta.url),'utf8'),out=renderAppHeader(source,file),header=out.match(/<header class="app-topbar"[\s\S]*?<\/header>/)[0];assert.equal(out.match(/<header\b/g).length,1,file);assert.ok(out.indexOf(header)<out.indexOf('<main'),file);const canonical=header.replace(/id="(?:account-navigation|module-account|app-navigation)"/,'id="navigation"');if(expected)assert.equal(canonical,expected,file);else expected=canonical;const ids=[...source.matchAll(/<h1[^>]*id="([^"]+)"/g)].map(m=>m[1]);for(const id of ids)assert.ok(out.includes('id="'+id+'"'));assert.ok(out.includes('src="/account-menu.js"')||page==='home');}
 });
 test('access and original prototype do not acquire internal navigation',()=>{for(const page of ['index.html','acesso-dev.html'])assert.equal(renderAppHeader('unchanged',page),'unchanged');});
+test('rotation menu contains its destinations and restricts niche administration',async()=>{
+ const source=await readFile(new URL('../../home-dev.html',import.meta.url),'utf8'),html=renderAppHeader(source,'home-dev.html');
+ const menus=[...html.matchAll(/<details class="module-menu"><summary>(.*?)<\/summary><div class="account-options">([\s\S]*?)<\/div><\/details>/g)];
+ const catalog=menus.find(m=>m[1]==='Catálogo')[2],routine=menus.find(m=>m[1]==='Rotina')[2];
+ assert.doesNotMatch(catalog,/nichos-dev/);
+ for(const path of ['caixa-dev.html','operacoes-dev.html','notificacoes-dev.html','escalas-dev.html','nichos-dev.html'])assert.ok(routine.includes('/'+path));
+ assert.match(routine,/<a href="\/nichos-dev.html" data-navigation-admin hidden>/);
+});

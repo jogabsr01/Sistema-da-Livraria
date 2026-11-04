@@ -8,7 +8,7 @@ import { normalizedIsbn, normalizedCover } from './catalog-model.mjs';
 const EDITORIAL_COVERS = Object.freeze({
   '9788543303932':Object.freeze({url:'https://www.mundocristao.com.br/wp-content/uploads/2021/12/Examinando-as-escrituras.png',source:'Referência editorial (Mundo Cristão)',referenceUrl:'https://www.mundocristao.com.br/produto/examinando-as-escrituras/'}),
 });
-const MAX_BYTES=196608, FIELDS=['title','author','publisher','edition','year','pages','synopsis'];
+const MAX_BYTES=196608, FIELDS=['title','subtitle','author','publisher','edition','year','pages','synopsis'];
 function sameIsbn(value,isbn) { try { return normalizedIsbn(value) === isbn; } catch { return false; } }
 function text(value,max) {
   if(typeof value!=='string')return '';
@@ -22,7 +22,7 @@ function coverUrl(value) {
 }
 function metadata(value) {
   const year=String(value.year||'').match(/\b(\d{4})\b/), number=Number(year?.[1]);
-  return {title:text(value.title,300),author:names(value.author,300),publisher:names(value.publisher,160),edition:text(value.edition,80),
+  return {title:text(value.title,300),subtitle:text(value.subtitle,300),author:names(value.author,300),publisher:names(value.publisher,160),edition:text(value.edition,80),
     year:number>=1000&&number<=3000?number:0,pages:Number.isSafeInteger(value.pages)&&value.pages>0&&value.pages<=100000?value.pages:0,synopsis:text(value.synopsis,5000)};
 }
 function brasil(value,isbn) {
@@ -32,7 +32,7 @@ function brasil(value,isbn) {
 function google(value,isbn) {
   const info=(Array.isArray(value?.items)?value.items.slice(0,5):[]).find(item=>Array.isArray(item?.volumeInfo?.industryIdentifiers)&&item.volumeInfo.industryIdentifiers.some(id=>sameIsbn(id?.identifier,isbn)))?.volumeInfo;
   if(!info)return null;
-  return {record:metadata({title:info.title,author:info.authors,publisher:info.publisher,year:info.publishedDate,pages:info.pageCount,synopsis:info.description}),covers:['large','medium','thumbnail','smallThumbnail'].map(key=>info.imageLinks?.[key])};
+  return {record:metadata({title:info.title,subtitle:info.subtitle,author:info.authors,publisher:info.publisher,year:info.publishedDate,pages:info.pageCount,synopsis:info.description}),covers:['large','medium','thumbnail','smallThumbnail'].map(key=>info.imageLinks?.[key])};
 }
 function openCatalog(value,isbn) {
   const book=value?.['ISBN:'+isbn];if(!book || typeof book!=='object')return null;

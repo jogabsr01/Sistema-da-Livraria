@@ -1,5 +1,35 @@
 'use strict';
 (() => {
+  if (typeof document === 'undefined') return;
+  const ids = ['owner-cpf-input','staff-cpf','customer-cpf','customer-search-cpf','cpf'];
+  const mixed = ['login-email','activation-email','recovery-email'];
+  const valid = value => {
+    const cpf = value.replace(/\D/g, '');
+    if (!/^\d{11}$/.test(cpf) || /^(\d)\1+$/.test(cpf)) return false;
+    for (let n=9;n<11;n++) { let sum=0; for(let i=0;i<n;i++)sum+=Number(cpf[i])*(n+1-i); if(Number(cpf[n])!==((sum*10)%11)%10)return false; }
+    return true;
+  };
+  function wire() {
+    for (const id of [...ids,...mixed]) {
+      const input=document.getElementById(id); if(!input || input.dataset.cpfWired)continue;
+      input.dataset.cpfWired='true';
+      const isMixed=mixed.includes(id);
+      const isCpf=()=>!isMixed || /^[\d.\-\s]*$/.test(input.value);
+      function validate(){ input.setCustomValidity(!input.disabled && !input.readOnly && input.value && isCpf() && !valid(input.value) ? 'CPF inválido. Confira os 11 dígitos.' : ''); }
+      input.addEventListener('input',()=>{
+        if(input.readOnly)return;
+        if(!isMixed || isCpf()) {
+          const digits=input.value.replace(/\D/g,'').slice(0,11);
+          input.value=digits.replace(/^(\d{3})(\d)/,'$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/,'$1.$2.$3').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
+        }
+        validate();
+      });
+      input.form?.addEventListener('submit',validate,true);input.form?.addEventListener('reset',()=>input.setCustomValidity(''));
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wire,{once:true});else wire();
+})();
+(() => {
   if (globalThis.LivrariaMessages) return;
   const codes = Object.freeze({
     INVALID_CPF:'CPF inválido. Confira os 11 números digitados.',
@@ -23,6 +53,7 @@
     ACCESS_ALREADY_ACTIVATED:'Este cadastro já tem acesso ativo. Use “Entrar na minha conta”.',
     ACCESS_CPF_NOT_AVAILABLE:'O acesso por CPF está indisponível. Use seu e-mail cadastrado.',
     ACCESS_EMAIL_DELIVERY_UNAVAILABLE:'Não conseguimos confirmar o envio do código. Aguarde alguns instantes e solicite novamente.',
+    LOCAL_FIRESTORE_EMULATOR_UNAVAILABLE:'O emulador Firestore local está indisponível. Inicie o emulador e tente novamente.',
     AUTH_DELIVERY_RATE_LIMITED:'Um código foi solicitado há pouco. Confira o e-mail mais recente ou aguarde um minuto antes de solicitar outro.',
     STAFF_CPF_DUPLICATE:'CPF já cadastrado. Localize o cadastro existente antes de continuar.',
     STAFF_EMAIL_DUPLICATE:'E-mail já cadastrado. Use outro endereço ou localize o cadastro existente.',

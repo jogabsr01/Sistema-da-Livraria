@@ -3,19 +3,23 @@
  if(location.origin!=='https://dev--merry-chimera-49a1f3.netlify.app'||window.livrariaNavigationMounted)return;
  const header=document.querySelector('[data-app-header]');if(!header)return;window.livrariaNavigationMounted=true;
  const nav=header.querySelector('nav'),account=header.querySelector('.account-menu'),avatar=header.querySelector('[data-account-avatar]'),status=header.querySelector('[data-account-status]');
- let identity='',role='',loggingOut=false;
+ let identity='',role='',loggingOut=false,profileRequest=0,profileLoaded=false;
  const administrative=()=>['ADMIN','SUPER_ADMIN'].includes(role);
  function synchronize(){role=document.body.dataset.sessionRole||'';header.querySelectorAll('[data-navigation-admin]').forEach(a=>a.hidden=!administrative());if(document.body.classList.contains('page-home'))nav.hidden=!['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(role);else nav.hidden=false;}
- function clearPersonal(){identity='';avatar.replaceChildren(document.createTextNode('Conta'));account.querySelector('summary').setAttribute('aria-label','Abrir menu da conta');}
+ function clearPersonal(){profileRequest++;profileLoaded=false;identity='';avatar.replaceChildren(document.createTextNode('Conta'));account.querySelector('summary').setAttribute('aria-label','Abrir menu da conta');}
+ function showProfile(p){if(!p||typeof p.id!=='string'||typeof p.name!=='string'||p.name.length>160||!['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(p.role))return;profileLoaded=true;identity=p.id;document.body.dataset.sessionRole=p.role;synchronize();account.querySelector('summary').setAttribute('aria-label','Abrir menu de '+p.name);avatar.replaceChildren(document.createTextNode(p.name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase()));if(p.photoUrl&&/^\/api\/v1\/profile\/photo\?v=\d+$/.test(p.photoUrl)){const photo=document.createElement('img');photo.alt='';photo.src=p.photoUrl;avatar.replaceChildren(photo);}}
+ async function refreshProfile(){if(document.hidden||navigator.onLine===false||document.body.classList.contains('page-meu-perfil'))return;const ticket=++profileRequest;try{const response=await fetch('/api/v1/profile/get',{credentials:'same-origin',cache:'no-store'});if(!response.ok)return;const {data}=await response.json();if(ticket===profileRequest&&!document.hidden)showProfile(data);}catch{}}
  function closeMenus(except=null){header.querySelectorAll('details[open]').forEach(menu=>{if(menu!==except)menu.open=false;});}
  header.querySelectorAll('details').forEach(menu=>menu.addEventListener('toggle',()=>{if(menu.open){closeMenus(menu);menu.style.setProperty('--module-menu-top',Math.min(menu.querySelector('summary').getBoundingClientRect().bottom+8,innerHeight-90)+'px');}}));
  // Menu opening is local and immediate. Page bootstraps own the only data reads.
- window.addEventListener('livraria:session-ready',synchronize);
- window.addEventListener('livraria:profile-loaded',event=>{const p=event.detail?.profile;if(!p||typeof p.id!=='string'||typeof p.name!=='string'||p.name.length>160||!['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(p.role))return;identity=p.id;document.body.dataset.sessionRole=p.role;synchronize();account.querySelector('summary').setAttribute('aria-label','Abrir menu de '+p.name);avatar.replaceChildren(document.createTextNode(p.name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase()));if(p.photoUrl&&/^\/api\/v1\/profile\/photo\?v=\d+$/.test(p.photoUrl)){const photo=document.createElement('img');photo.alt='';photo.src=p.photoUrl;avatar.replaceChildren(photo);}});
- window.addEventListener('livraria:profile-invalidated',()=>{clearPersonal();delete document.body.dataset.sessionRole;synchronize();});
+ window.addEventListener('livraria:session-ready',()=>{synchronize();if(!profileLoaded)refreshProfile();});
+ window.addEventListener('livraria:profile-loaded',event=>{profileRequest++;showProfile(event.detail?.profile);});
+ window.addEventListener('livraria:profile-changed',()=>{profileLoaded=false;refreshProfile();});
+ window.addEventListener('livraria:profile-invalidated',()=>{clearPersonal();});
  window.addEventListener('offline',()=>{clearPersonal();closeMenus();});
  window.addEventListener('pagehide',()=>{clearPersonal();closeMenus();});
- document.addEventListener('visibilitychange',()=>{if(document.hidden){clearPersonal();closeMenus();}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearPersonal();closeMenus();}else if(document.body.dataset.sessionRole)refreshProfile();});
+ window.addEventListener('pageshow',e=>{if(e.persisted&&document.body.dataset.sessionRole)refreshProfile();});
  document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenus();});
  document.addEventListener('click',event=>{if(!header.contains(event.target))closeMenus();});
  const logoutButton=header.querySelector('[data-account-logout]'),retryLogoutButton=header.querySelector('[data-account-logout-retry]');
@@ -27,5 +31,5 @@
  }
  logoutButton.addEventListener('click',attemptLogout);
  retryLogoutButton.addEventListener('click',attemptLogout);
- synchronize();
+ synchronize();if(document.body.dataset.sessionRole)refreshProfile();
 })();

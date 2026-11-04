@@ -34,12 +34,25 @@ test('local HTTPS preview serves only permitted static files and refuses API and
 test('laboratory routes real functions over HTTPS and rejects hostile hosts', async t => {
   const env = { WORKSPACE_LOCAL_LAB: 'YES', APP_ENV: 'dev', WORKSPACE_STORAGE_MODE: 'firestore', FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080', WORKSPACE_FIRESTORE_PROJECT_ID: 'demo-livraria', WORKSPACE_FIRESTORE_LOCATION: 'us-central1', WORKSPACE_BACKEND_ENABLED: 'true', WORKSPACE_IDENTITY_ACCESS_ENABLED: 'true', WORKSPACE_IDENTITY_SESSIONS_ENABLED: 'true', WORKSPACE_IDENTITY_GUARDS_ENABLED: 'true', WORKSPACE_IDENTITY_PASSKEYS_ENABLED: 'true', WORKSPACE_INSTALLATION_ID: randomUUID(), WORKSPACE_DRIVE_ROOT_ID: 'r'.repeat(30), WORKSPACE_HMAC_SECRET: randomBytes(32).toString('hex'), WORKSPACE_SESSION_TOKEN_KEY: randomBytes(32).toString('hex'), WORKSPACE_AUTH_GUARD_KEY: randomBytes(32).toString('hex'), WORKSPACE_PIN_PEPPER: randomBytes(32).toString('hex') };
   const old = {}; for (const [key, value] of Object.entries(env)) { old[key] = process.env[key]; process.env[key] = value; }
+  const oldCatalog = process.env.WORKSPACE_CATALOG_ENABLED;
+  const oldProfile = process.env.WORKSPACE_PROFILE_ENABLED;
+  const oldStaff = process.env.WORKSPACE_STAFF_ENABLED;
+  const oldDataKey = process.env.WORKSPACE_PERSONAL_DATA_KEY, oldIndexKey = process.env.WORKSPACE_PERSONAL_INDEX_KEY;
+  process.env.WORKSPACE_PERSONAL_DATA_KEY = randomBytes(32).toString('hex');
+  process.env.WORKSPACE_PERSONAL_INDEX_KEY = randomBytes(32).toString('hex');
+  delete process.env.WORKSPACE_STAFF_ENABLED;
+  delete process.env.WORKSPACE_CATALOG_ENABLED;
+  delete process.env.WORKSPACE_PROFILE_ENABLED;
+  t.after(() => { if (oldCatalog === undefined) delete process.env.WORKSPACE_CATALOG_ENABLED; else process.env.WORKSPACE_CATALOG_ENABLED = oldCatalog; });
+  t.after(() => { if (oldProfile === undefined) delete process.env.WORKSPACE_PROFILE_ENABLED; else process.env.WORKSPACE_PROFILE_ENABLED = oldProfile; });
+  t.after(() => { for (const [key, value] of Object.entries({ WORKSPACE_STAFF_ENABLED: oldStaff, WORKSPACE_PERSONAL_DATA_KEY: oldDataKey, WORKSPACE_PERSONAL_INDEX_KEY: oldIndexKey })) value === undefined ? delete process.env[key] : process.env[key] = value; });
   t.after(() => { for (const key of Object.keys(env)) old[key] === undefined ? delete process.env[key] : process.env[key] = old[key]; });
   const dir = await mkdtemp(join(tmpdir(), 'lab-https-')); t.after(() => rm(dir, { recursive: true, force: true }));
   const cert = join(dir, 'cert.pem'), key = join(dir, 'key.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost'], { stdio: 'ignore' });
   await writeFile(join(dir, 'index.html'), 'lab');
-  const server = await createLocalPreview({ certPath: cert, keyPath: key, directory: dir, localLab: true, functionOverrides: {
+  let emulatorAvailable = true;
+  const server = await createLocalPreview({ certPath: cert, keyPath: key, directory: dir, localLab: true, emulatorProbe: async () => emulatorAvailable, functionOverrides: {
     '/api/v1/health': async req => {
       if (req.method !== 'GET') return new Response('', { status: 405 });
       const headers = new Headers();
@@ -48,6 +61,8 @@ test('laboratory routes real functions over HTTPS and rejects hostile hosts', as
       return new Response('ok', { headers });
     },
   } });
+  assert.equal(process.env.WORKSPACE_CATALOG_ENABLED, 'true');
+  assert.equal(process.env.WORKSPACE_PROFILE_ENABLED, 'true');
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => server.close(resolve)));
   const call = (path, method = 'GET', host = 'localhost:8443', headers = {}, body = '') => new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port: server.address().port, path, method, headers: { host, ...headers }, ca: execFileSync('cat', [cert]), servername: 'localhost' }, res => {
@@ -73,6 +88,11 @@ test('laboratory routes real functions over HTTPS and rejects hostile hosts', as
   const unexpectedField = await call('/api/v1/access/start', 'POST', 'localhost:8443', headers, JSON.stringify({ email: 'test@example.invalid', unexpected: true }));
   assert.equal(unexpectedField.status, 400); assert.equal(JSON.parse(unexpectedField.body).error.code, 'INVALID_AUTH_REQUEST');
   assert.equal((await call('/api/v1/access/start', 'PUT', 'localhost:8443', headers, '{}')).status, 405);
+  emulatorAvailable = false;
+  const offline = await call('/api/v1/access/state');
+  assert.equal(offline.status, 503);
+  assert.equal(JSON.parse(offline.body).error.code, 'LOCAL_FIRESTORE_EMULATOR_UNAVAILABLE');
+  assert.equal((await call('/api/v1/health')).status, 200);
   process.env.NETLIFY = 'true';
   assert.equal((await call('/api/v1/health')).status, 500);
   delete process.env.NETLIFY;

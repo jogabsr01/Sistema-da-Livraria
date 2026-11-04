@@ -93,6 +93,21 @@ test('Firestore catalog bootstrap supports creation mode and returns principal/n
   assert.equal(result.nextOffset, null);
 });
 
+test('extended product and initial stock persist atomically and replay safely', async () => {
+  const { service, db } = makeService();
+  const id = randomUUID(), commandId = randomUUID();
+  const record = { title: 'Caderno', subtitle: 'Pautado', sku: 'SKU-123', costCents: 575, priceCents: 1200, nicheIds: [nicheId], active: true };
+  const payload = { commandId, id, expectedVersion: 0, record, initialStock: 7 };
+  const result = await service.execute('save', { sessionTokenHash: tokenHash }, payload);
+  assert.deepEqual(await service.execute('save', { sessionTokenHash: tokenHash }, payload), result);
+  const saved = (await service.execute('get', { sessionTokenHash: tokenHash }, { id })).product;
+  assert.equal(saved.subtitle, 'Pautado'); assert.equal(saved.sku, 'SKU-123'); assert.equal(saved.costCents, 575); assert.equal(saved.stock, 7);
+  assert.equal(db.values.get(`stockMovements/${commandId}:${id}`).quantity, 7);
+  const id2 = randomUUID();
+  await assert.rejects(service.execute('save', { sessionTokenHash: tokenHash }, { commandId: randomUUID(), id: id2, expectedVersion: 0, record: { ...record, sku: 'sku-123' }, initialStock: 1 }), { code: 'CATALOG_DUPLICATE' });
+  await assert.rejects(service.execute('save', { sessionTokenHash: tokenHash }, { commandId: randomUUID(), id, expectedVersion: 1, record, initialStock: 4 }), { code: 'INVALID_PRODUCT' });
+});
+
 test('Firestore catalog refuses malformed stored data and applies atomic save, receipt and removal commands', async () => {
   const malformed = product(productA, 'A Bíblia de Estudo'); malformed.stock = -1;
   const malformedService = makeService({ [`products/${productA}`]: malformed });

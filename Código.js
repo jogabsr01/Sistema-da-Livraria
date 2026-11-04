@@ -4758,7 +4758,9 @@ function staffAdmin_(principal) {
 function staffOperation_(request,c) {
   recoverStaff_(c);var ss=storage_(c,false).spreadsheet,p=request.payload;
   if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');
-  var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;staffAdmin_(principal);
+  var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;
+  if(['staff.bootstrap','staff.list'].includes(request.action)){if(!['ADMIN','SUPER_ADMIN'].includes(principal.role)||!businessAssurance_(principal))failure_('FORBIDDEN');}
+  else staffAdmin_(principal);
   var users=staffUsers_(ss);
   if(request.action==='staff.bootstrap'||request.action==='staff.list'||request.action==='staff.get'){
     if(request.action==='staff.list'||request.action==='staff.bootstrap'){authControlExact_(p,['offset']);if(!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000)staffFail_();}

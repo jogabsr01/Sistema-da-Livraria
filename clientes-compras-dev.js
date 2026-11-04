@@ -1,4 +1,5 @@
-(()=>{'use strict';const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';const $=id=>document.getElementById(id),money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),date=s=>s?new Date(s).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}):'Sem compras confirmadas';let csrf='',userId='',data=null,busy=false,page=0,pending=null,prepared=null,epoch=0;
+(()=>{
+ 'use strict';const connectionNode=document.createElement('span'),reconnectNode=document.createElement('button');const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';const $=id=>document.getElementById(id),money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),date=s=>s?new Date(s).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}):'Sem compras confirmadas';let csrf='',userId='',data=null,busy=false,page=0,pending=null,prepared=null,epoch=0;
  const selected=()=>[...document.querySelectorAll('.book-choice:checked')].map(el=>el.value);
  let access=false,previewTimer;
  const online=()=>navigator.onLine!==false;
@@ -12,13 +13,13 @@
  function invalidate(){clear(true);controls();}
  function armExpiry(expiresAt){clearTimeout(previewTimer);const delay=Math.max(0,Math.min(300000,expiresAt-Date.now()));previewTimer=setTimeout(()=>{clear();controls();$('status').textContent='A consulta venceu. Os dados e a referência local foram removidos. Confira o acesso e consulte novamente.';},Number.isFinite(delay)?delay:0);}
  function controls(){
-  const state=!online()?'offline':access?'ready':'stale';$('insight-connection').dataset.state=state;
-  $('insight-connection').textContent=!online()?'Sem conexão. Histórico e texto foram ocultados. Mantenha a aba aberta se houver preparação pendente.':pending?'Há uma preparação aguardando conferência. Reconectar não prepara, copia ou envia texto automaticamente.':access?'Acesso conferido. Consulte o cliente para revisar o histórico e as sugestões atuais.':'Confira a mesma conta administrativa para continuar.';
+  const state=!online()?'offline':access?'ready':'stale';connectionNode.dataset.state=state;
+  connectionNode.textContent=!online()?'Sem conexão. Histórico e texto foram ocultados. Mantenha a aba aberta se houver preparação pendente.':pending?'Há uma preparação aguardando conferência. Reconectar não prepara, copia ou envia texto automaticamente.':access?'Acesso conferido. Consulte o cliente para revisar o histórico e as sugestões atuais.':'Confira a mesma conta administrativa para continuar.';
   for(const el of document.querySelectorAll('#search input,#search button,.book-choice,#previous,#next'))el.disabled=busy||!!pending||!online()||!access;
   const choices=selected();$('prepare').disabled=busy||!!pending||!online()||!access||!data?.messageEligible||choices.length<1||choices.length>3;
   $('copy').disabled=busy||!!pending||!online()||!access||!prepared||!$('draft').value;
   $('retry').disabled=busy||!pending||!online();$('pending-panel').hidden=!pending;
-  $('discard-preparation').disabled=busy||!pending;$('reconnect-insight').disabled=busy||!online();
+  $('discard-preparation').disabled=busy||!pending;reconnectNode.disabled=busy||!online();
  }
  async function request(path,p){
   if(!online())throw {code:'OFFLINE'};if(location.origin!==ORIGIN)throw {status:403};
@@ -77,7 +78,7 @@
  }
  $('search').addEventListener('submit',query);$('clear').addEventListener('click',()=>{if(busy||pending)return;wipeResult();$('cpf').value='';$('status').textContent='Consulte outro cliente.';controls();});$('cpf').addEventListener('input',()=>{if(pending){invalidate();return;}wipeResult();controls();});$('prepare').addEventListener('click',()=>message());$('copy').addEventListener('click',()=>message(true));$('retry').addEventListener('click',()=>message());$('previous').addEventListener('click',()=>{if(data&&!busy&&!pending&&page){page--;history();}});$('next').addEventListener('click',()=>{if(data&&!busy&&!pending){page++;history();}});
  $('discard-preparation').addEventListener('click',()=>{if(busy||!pending)return;clear();controls();$('status').textContent='Referência descartada nesta página. Preparações anteriores permanecem na auditoria. Confira o acesso e consulte novamente.';refresh(false);});
- $('reconnect-insight').addEventListener('click',()=>refresh());
+ reconnectNode.addEventListener('click',()=>refresh());
  async function refresh(announce=true){
   if(busy||document.hidden||!online()){controls();return;}const recovering=!access;
   try{await session();if(announce&&recovering&&!data&&!prepared)$('status').textContent=pending?'Acesso conferido. Confira a preparação pendente.':'Informe o CPF para consultar o perfil de compra.';}

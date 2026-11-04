@@ -18,13 +18,13 @@ export function createStaffHandler(dependencies={}){
   const settings=(dependencies.loadSettings||loadStaffSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),vault=createPersonalDataVault(settings),sessions=createSessionService(settings,{client});
   if(op==='bootstrap'){
    if([...url.searchParams.keys()].some(k=>k!=='offset'||url.searchParams.getAll(k).length!==1)||!/^\d{1,4}$/.test(url.searchParams.get('offset')||'0')||Number(url.searchParams.get('offset')||0)>5000)staffInvalid();
-   const context=sessionTransportContext(request,settings),data=await client.staff('bootstrap',context.actor,{offset:Number(url.searchParams.get('offset')||0)}),principal=validateSessionPrincipal(data?.principal,Date.now(),settings.config.adminPinLogin===true);requirePermission(principal,'users.attendant.manage',{targetRole:'ATENDENTE'});
+   const context=sessionTransportContext(request,settings),data=await client.staff('bootstrap',context.actor,{offset:Number(url.searchParams.get('offset')||0)}),principal=validateSessionPrincipal(data?.principal,Date.now(),settings.config.adminPasswordLogin===true);requirePermission(principal,'users.attendant.read',{targetRole:'ATENDENTE'});
    if(!Array.isArray(data.users)||data.users.length>25||!Number.isSafeInteger(data.total)||data.total<0||data.total>5000||data.nextOffset!==null&&(!Number.isSafeInteger(data.nextOffset)||data.nextOffset!==Number(url.searchParams.get('offset')||0)+data.users.length||data.nextOffset>=data.total))throw new ApiError(502,'UPSTREAM_UNTRUSTED');
    return json({data:{total:data.total,nextOffset:data.nextOffset,users:data.users.map(row=>staffDto(row,vault)),user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken:context.csrfToken},requestId});
   }
   if(method==='POST')requireSameOriginMutation(request,STAFF_ORIGIN);const principal=await sessions.authenticate(request);
   // Current target role is resolved AGAIN in GAS; here only the broad admin gate.
-  requirePermission(principal,'users.attendant.manage',{targetRole:'ATENDENTE'});
+  requirePermission(principal,method==='POST'?'users.attendant.manage':'users.attendant.read',{targetRole:'ATENDENTE',localStaffWrite:settings.config.localLab===true});
   const actor={sessionTokenHash:principal.sessionTokenHash};
   if(op==='list'){
    if([...url.searchParams.keys()].some(key=>key!=='offset'||url.searchParams.getAll(key).length!==1)||!/^\d{1,4}$/.test(url.searchParams.get('offset')||'0'))staffInvalid();
@@ -41,11 +41,11 @@ export function createStaffHandler(dependencies={}){
    input.contact.cpf=vault.open('users',input.id,existing.user.contact).cpf;
   }
   const command=normalizeStaffCommand(input);
-  if(command.role==='ADMIN')requirePermission(principal,'users.admin.manage',{targetRole:'ADMIN'});
+  if(command.role==='ADMIN')requirePermission(principal,'users.admin.manage',{targetRole:'ADMIN',localStaffWrite:settings.config.localLab===true});
   const {contact,...rest}=command;
   // Stable private command digest tolerates fresh encryption IVs on safe retry.
   const fingerprint=vault.fingerprint({...rest,contact});
-  const data=await client.staff('save',actor,{...rest,reason:vault.seal('users',command.id,{reason:command.reason}),fingerprint,emailCheck:createHash('sha256').update(contact.email).digest('hex'),contact:vault.seal('users',command.id,contact),emailIndex:vault.index('email',contact.email),cpfIndex:vault.index('cpf',contact.cpf)});
+  const data=await client.staff('save',actor,{...rest,reason:vault.seal('users',command.id,{reason:command.reason}),fingerprint,emailCheck:createHash('sha256').update(contact.email).digest('hex'),contact:vault.seal('users',command.id,contact),emailIndex:vault.index('email',contact.email),cpfIndex:vault.index('cpf',contact.cpf),...(settings.config.storageMode==='firestore'?{delivery:contact.email}:{})});
   if(data?.id!==command.id||data.revision!==command.expectedRevision+1||typeof data.reenrollmentRequired!=='boolean')throw new ApiError(502,'UPSTREAM_UNTRUSTED');
   return json({data,requestId});
  }catch(error){return safeFailure(error,requestId);}};

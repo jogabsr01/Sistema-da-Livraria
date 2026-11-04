@@ -4672,7 +4672,7 @@ function identitySessionOperation_(request, c) {
 ;
 // END SessionStore.gs
 
-// BEGIN Staff.gs sha256=e9bf67b09b641cf848eaa135444b28918c40c4d2917d393924ec633a76de4075
+// BEGIN Staff.gs sha256=e69d8c1508978fc71668fa23f14200169383bdb5b3fb952f810f192f9126c3ed
 /* DEV staff management. Dispatcher owns ScriptLock. Contact data is AEAD-sealed
  * in Node; no plaintext personal fields, PINs or bearer tokens in this journal. */
 function staffEnabled_() { return scriptFlag_('STAFF_ENABLED') === 'true'; }
@@ -4751,7 +4751,9 @@ function staffAdmin_(principal) {
 function staffOperation_(request,c) {
   recoverStaff_(c);var ss=storage_(c,false).spreadsheet,p=request.payload;
   if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');
-  var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;staffAdmin_(principal);
+  var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;
+  if(['staff.bootstrap','staff.list'].includes(request.action)){if(!['ADMIN','SUPER_ADMIN'].includes(principal.role)||!businessAssurance_(principal))failure_('FORBIDDEN');}
+  else staffAdmin_(principal);
   var users=staffUsers_(ss);
   if(request.action==='staff.bootstrap'||request.action==='staff.list'||request.action==='staff.get'){
     if(request.action==='staff.list'||request.action==='staff.bootstrap'){authControlExact_(p,['offset']);if(!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000)staffFail_();}

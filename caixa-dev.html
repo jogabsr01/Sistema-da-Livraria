@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/account-menu.css"><script src="/account-menu.js" defer></script><link rel="stylesheet" href="/app-theme.css">
 </head>
 <body class="app-shell page-caixa"><main>
-  <header class="module-header"><div class="module-brand-row"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><img class="church-brand-logo" src="/brand/ipb-jardim-bonfiglioli.png" width="252" height="81" alt="Igreja Presbiteriana JD Bonfiglioli"></a><nav id="module-account" aria-label="Sua conta" hidden></nav></div><div class="module-heading"><div><p class="badge">NOVA COMPRA · DEV</p><h1>Nova compra</h1><p>Encontre os livros e monte a compra com facilidade.</p></div><a class="home-link" href="/home-dev.html">Início</a><a href="/catalogo-dev.html">Catálogo</a></div></header>
+  <header class="module-header"><div class="module-brand-row"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><img class="church-brand-logo" src="/brand/ipb-jardim-bonfiglioli.png" width="252" height="81" alt="Igreja Presbiteriana JD Bonfiglioli"></a><nav id="module-account" aria-label="Sua conta" hidden></nav></div><div class="module-heading"><div><p class="badge">NOVA COMPRA</p><h1>Nova compra</h1><p>Encontre os livros e monte a compra com facilidade.</p></div><a class="home-link" href="/home-dev.html">Início</a><a href="/catalogo-dev.html">Catálogo</a></div></header>
   <p id="status" role="status" aria-live="polite">Conferindo acesso…</p>
   <section id="checkout" hidden>
     <aside id="connection" class="connection" role="status" aria-live="polite" aria-atomic="true" data-state="checking"><strong id="connection-title">Conferindo conexão e estoque</strong><p id="connection-detail">Aguarde a consulta antes de confirmar uma venda.</p></aside>
@@ -40,7 +40,7 @@
 </main>
 <aside id="customer-pending" class="connection" hidden><p>Há um cadastro aguardando confirmação. Mantenha esta aba aberta; reconectar não o reenvia.</p><button id="customer-resume" type="button">Conferir cadastro pendente</button></aside>
 <dialog id="customer-editor" aria-labelledby="customer-editor-title"><form id="customer-form"><h2 id="customer-editor-title">Cadastrar cliente</h2><p>Identificação para esta compra. Contatos e endereço são opcionais.</p>
-<p id="customer-connection" class="connection" role="status" aria-live="polite"></p><button id="customer-refresh" type="button" class="secondary">Conferir conexão sem fechar</button><fieldset id="customer-fields"><legend class="sr-only">Dados do cliente</legend>
+<p id="customer-connection" class="connection" role="status" aria-live="polite"></p><button id="customer-refresh" type="button" class="secondary">Atualizar dados</button><fieldset id="customer-fields"><legend class="sr-only">Dados do cliente</legend>
 <label for="customer-name">Nome completo</label><input id="customer-name" maxlength="160" autocomplete="off" required>
 <label for="customer-cpf">CPF</label><input id="customer-cpf" inputmode="numeric" maxlength="20" autocomplete="off" required><small id="customer-cpf-hint"></small>
 <div class="customer-fields"><div><label for="customer-email">E-mail (opcional)</label><input id="customer-email" type="email" maxlength="254" autocomplete="off"></div><div><label for="customer-phone">Celular / WhatsApp (opcional)</label><input id="customer-phone" type="tel" maxlength="20" autocomplete="off"></div></div>

@@ -44,15 +44,17 @@ export function createFirestoreCredentialStore({ db, transactionOptions, config 
       const value = snapshotValue(snapshot), subjectId = value.id || snapshot.id;
       if (!catalogUuid(subjectId)) unavailable();
       if (staffLookup ? value.owner === true : value.owner !== true) return null;
-      const credential = await getPrimary(transaction, subjectId);
+      const credential = staffLookup && value.activated !== true ? null : await getPrimary(transaction, subjectId);
       return { subjectId, authorizationVersion: value.authorizationVersion, record: credential,
         ...(staffLookup ? { activated: value.activated === true, contact: value.contact || '' } : {}) };
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
   }
   async function loginLookup(payload) {
     const staff = payload?.staffLookup === true;
-    const account = await lookup({ email: payload?.email || '', emailIndex: payload?.emailIndex || '', cpfIndex: payload?.cpfIndex || '', staffLookup: staff });
-    return { allowed: true, kind: staff ? 'STAFF' : 'OWNER', account: account && (!staff || account.activated ? account : null) };
+    let account = staff ? await lookup({ emailIndex: payload?.emailIndex || '', cpfIndex: payload?.cpfIndex || '', staffLookup: true }) : null;
+    if (account) return { allowed: true, kind: 'STAFF', account: account.activated ? account : null };
+    account = await lookup({ email: payload?.email || '', cpfIndex: payload?.cpfIndex || '', staffLookup: false });
+    return { allowed: true, kind: 'OWNER', account };
   }
   return Object.freeze({ getPrimary, lookup, loginLookup });
 }

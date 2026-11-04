@@ -4,6 +4,8 @@ import { catalogUuid } from './catalog-model.mjs';
 import { createFirestoreRepositories } from './firestore-repositories.mjs';
 import { commandDocumentId, commandRetention, commitCommand, createCommandMetadata, createPendingCommand, inspectCommand } from './firestore-commands.mjs';
 import { runFirestoreTransaction } from './firestore-transactions.mjs';
+import { enqueueEmailDelivery } from './firestore-outbox.mjs';
+import { devOrigin } from './local-lab-policy.mjs';
 
 const MAX_USERS = 5000;
 const PAGE_SIZE = 25;
@@ -42,21 +44,28 @@ export function createFirestoreStaffService({ db, identityService, config, now =
   if (!db || typeof db.runTransaction !== 'function' || !identityService?.readSessionInTransaction) throw new ApiError(503, 'FIRESTORE_UNAVAILABLE');
   const repositories = createFirestoreRepositories(db);
   async function execute(operation, actor, payload = {}) {
-    if (!['bootstrap', 'list', 'save'].includes(operation)) throw new ApiError(400, 'INVALID_STAFF');
+    if (!['bootstrap', 'list', 'get', 'save'].includes(operation)) throw new ApiError(400, 'INVALID_STAFF');
     if (operation === 'save') return save(actor, payload);
     return read(operation, actor, payload);
   }
   async function read(operation, actor, payload) {
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'users.attendant.manage', { targetRole: 'ATENDENTE', now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'users.attendant.read', { targetRole: 'ATENDENTE', now: currentTime });
+      if (operation === 'get') {
+        if (!catalogUuid(payload.id)) invalid();
+        const target = user(await repositories.transaction.get(transaction, 'users', payload.id));
+        if (!target || target.owner) throw new ApiError(404, 'STAFF_NOT_FOUND');
+        if (target.role === 'ADMIN') requirePermission(principal, 'users.admin.manage', { targetRole: 'ADMIN', now: currentTime, localStaffWrite: config?.localLab === true });
+        return { user: dto(target) };
+      }
       if (!Number.isSafeInteger(payload.offset) || payload.offset < 0 || payload.offset > 5000) invalid();
       const snapshot = await transaction.get(db.collection('users'));
       if (!snapshot || !Array.isArray(snapshot.docs) || snapshot.docs.length > MAX_USERS) unavailable();
       const users = snapshot.docs.map(snapshot => {
         const raw = snapshot.data?.();
         return raw?.owner === true ? null : user(snapshot);
-      }).filter(value => value && ['ATENDENTE', 'ADMIN'].includes(value.role)).sort((a, b) => a.id.localeCompare(b.id));
+      }).filter(value => value && ['ATENDENTE', 'ADMIN'].includes(value.role)).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
       const page = users.slice(payload.offset, payload.offset + PAGE_SIZE).map(dto);
       const result = { total: users.length, nextOffset: payload.offset + page.length < users.length ? payload.offset + page.length : null, users: page };
       if (operation === 'bootstrap') result.principal = principal;
@@ -69,7 +78,7 @@ export function createFirestoreStaffService({ db, identityService, config, now =
         !HASH.test(payload.emailIndex || '') || !HASH.test(payload.cpfIndex || '') || !HASH.test(payload.fingerprint || '') || typeof payload.reason !== 'string') invalid();
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, payload.role === 'ADMIN' ? 'users.admin.manage' : 'users.attendant.manage', { targetRole: payload.role, now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, payload.role === 'ADMIN' ? 'users.admin.manage' : 'users.attendant.manage', { targetRole: payload.role, now: currentTime, localStaffWrite: config?.localLab === true });
       const command = createCommandMetadata({ domain: 'staff', commandId: payload.commandId, operation: 'save', actor: principal.id,
         payloadHash: payload.fingerprint, now: new Date(currentTime), retentionMs: commandRetention(90) });
       const commandRef = repositories.ref('commands', commandDocumentId('staff', payload.commandId));
@@ -77,6 +86,7 @@ export function createFirestoreStaffService({ db, identityService, config, now =
       if (state.status === 'COMMITTED') return state.result;
       const stored = state.status === 'NEW' ? command : state.metadata, at = date(stored.createdAt);
       const targetRef = repositories.ref('users', payload.id), targetSnapshot = await transaction.get(targetRef), current = user(targetSnapshot);
+      if (current?.role === 'ADMIN') requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}) }, 'users.admin.manage', { targetRole: 'ADMIN', now: currentTime, localStaffWrite: config?.localLab === true });
       if (current ? current.revision !== payload.expectedRevision : payload.expectedRevision !== 0) throw new ApiError(409, 'STAFF_CONFLICT');
       if (current?.owner || current?.id === principal.id && (!current || current.role !== payload.role || current.status !== payload.status)) throw new ApiError(403, 'FORBIDDEN');
       const emailRef = repositories.ref('uniqueness', `staff-email:${payload.emailIndex}`), cpfRef = repositories.ref('uniqueness', `staff-cpf:${payload.cpfIndex}`);
@@ -90,17 +100,19 @@ export function createFirestoreStaffService({ db, identityService, config, now =
       const eventRef = repositories.ref('domainEvents', `staff:${payload.commandId}`), auditRef = repositories.ref('auditEvents', `staff:${payload.commandId}`);
       const eventSnapshot = await transaction.get(eventRef), auditSnapshot = await transaction.get(auditRef);
       if (snapshotValue(eventSnapshot) || snapshotValue(auditSnapshot)) unavailable();
-      const revision = payload.expectedRevision + 1, changedAuthorization = !current || current.role !== payload.role || current.status !== payload.status;
+      const revision = payload.expectedRevision + 1, changedAuthorization = !current || current.role !== payload.role || current.status !== payload.status || current.emailIndex !== payload.emailIndex || current.cpfIndex !== payload.cpfIndex;
       const result = { id: payload.id, revision, reenrollmentRequired: changedAuthorization || !current?.activated };
-      const next = { id: payload.id, role: payload.role, status: payload.status, revision, activated: current?.activated === true && !changedAuthorization,
+      const next = { ...(current || {}), id: payload.id, role: payload.role, status: payload.status, revision, activated: current?.activated === true && !changedAuthorization,
         createdAt: current?.createdAt || at.toISOString(), lastAccess: current?.lastAccess || '', contact: payload.contact, emailIndex: payload.emailIndex,
         cpfIndex: payload.cpfIndex, owner: false, authorizationVersion: changedAuthorization ? (current?.authorizationVersion || 1) + 1 : current?.authorizationVersion || 1,
+        firstAccessCompleted: changedAuthorization ? false : current?.firstAccessCompleted === true, hasPhoto: current?.hasPhoto === true,
         updatedAt: at, updatedBy: principal.id, reason: payload.reason };
       const event = { schemaVersion: 1, type: current ? 'STAFF_UPDATED' : 'STAFF_CREATED', commandId: payload.commandId, commandHash: command.payloadHash,
         actorId: principal.id, actorRole: principal.role, createdAt: at.toISOString(), entityId: payload.id, before: current ? { revision: current.revision, role: current.role, status: current.status } : null,
         after: { revision, role: payload.role, status: payload.status } };
       if (state.status === 'NEW') createPendingCommand(transaction, commandRef, command);
       repositories.transaction.set(transaction, 'users', payload.id, next);
+      if (payload.delivery && result.reenrollmentRequired && payload.status === 'ATIVO') enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `staff-invite:${payload.commandId}`, to: payload.delivery, subject: 'Convite para a Livraria IPB DEV', text: `Você foi convidado para acessar a Livraria IPB. Abra ${devOrigin()}/acesso-dev.html e escolha primeiro acesso para confirmar seu e-mail, criar sua senha e cadastrar sua passkey.`, now: at });
       transaction.set(emailRef, { ownerId: payload.id, kind: 'STAFF_EMAIL', value: payload.emailIndex, active: true, version: revision });
       transaction.set(cpfRef, { ownerId: payload.id, kind: 'STAFF_CPF', value: payload.cpfIndex, active: true, version: revision });
       if (oldEmailRef && oldEmailSnapshot?.exists) transaction.delete(oldEmailRef);

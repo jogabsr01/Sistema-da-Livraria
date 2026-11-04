@@ -62,6 +62,8 @@ test('Firestore schedules saves, lists, reads and projects publication notificat
   const result = await service.execute('save', { sessionTokenHash: tokenHash }, savePayload());
   assert.deepEqual(result, { id: scheduleId, version: 1, status: 'PUBLICADA' });
   const list = await service.execute('list', { sessionTokenHash: tokenHash }, { from: '2026-01-01', to: '2026-01-31', employeeId: '', offset: 0 });
+  const withoutOffset = await service.execute('list', { sessionTokenHash: tokenHash }, { from: '2026-01-01', to: '2026-01-31', employeeId: '' });
+  assert.deepEqual(withoutOffset, list);
   assert.equal(list.items[0].id, scheduleId);
   assert.equal(list.people.length, 2);
   const detail = await service.execute('get', { sessionTokenHash: tokenHash }, { id: scheduleId });

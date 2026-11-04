@@ -12,7 +12,7 @@ const attendant = new Set([
 ]);
 const admin = new Set([
   ...attendant, 'reports.read', 'audit.read', 'niches.write', 'schedule.write',
-  'stock.adjust', 'sales.reverse', 'users.attendant.manage', 'products.delete', 'notifications.manage', 'schedule.all.read',
+  'stock.adjust', 'sales.reverse', 'users.attendant.read', 'users.attendant.manage', 'products.delete', 'notifications.manage', 'schedule.all.read',
 ]);
 const superAdmin = new Set([...admin, 'users.admin.manage', 'config.manage']);
 const recent = new Set([
@@ -29,7 +29,7 @@ function isUuid(value) { return typeof value === 'string' && UUID.test(value); }
 
 // Only call after the session was resolved from the authoritative server store.
 // This policy never authenticates caller-provided role/user fields or creates users.
-export function requirePermission(principal, operation, { targetUserId, targetRole, now = Date.now() } = {}) {
+export function requirePermission(principal, operation, { targetUserId, targetRole, now = Date.now(), localProfileWrite = false, localStaffWrite = false } = {}) {
   if (!Number.isSafeInteger(now) || now < 0 || !principal ||
       !isUuid(principal.id) || !isUuid(principal.sessionId) ||
       !Number.isSafeInteger(principal.authenticatedAt) || principal.authenticatedAt < 0 ||
@@ -43,15 +43,17 @@ export function requirePermission(principal, operation, { targetUserId, targetRo
       typeof operation !== 'string' || !permissions[principal.role].has(operation)) denied();
   const businessPassword=principal.assurance==='password'&&principal.adminPasswordLogin===true;
   const businessPin=principal.assurance==='pin'&&principal.adminPinLogin===true;
-  if (principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPassword&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
-  if (recent.has(operation) && ((!strong.has(principal.assurance)&&!((businessPassword||businessPin)&&operation!=='credentials.self.manage')) || now - principal.authenticatedAt > 300_000)) {
+  const localSelfProfile = localProfileWrite === true && operation === 'profile.self.write';
+  const localStaff = localStaffWrite === true && ['users.attendant.manage', 'users.admin.manage'].includes(operation);
+  if (!localSelfProfile && !localStaff && principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPassword&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
+  if (!localSelfProfile && !localStaff && recent.has(operation) && ((!strong.has(principal.assurance)&&!((businessPassword||businessPin)&&operation!=='credentials.self.manage')) || now - principal.authenticatedAt > 300_000)) {
     denied(401, 'REAUTHENTICATION_REQUIRED');
   }
   if (selfOperations.has(operation) && targetUserId !== undefined &&
       (!isUuid(targetUserId) || targetUserId.toLowerCase() !== principal.id.toLowerCase())) denied();
   // Managing an attendant and managing an administrator are different capabilities.
   // Callers must resolve the current target role from trusted storage first.
-  if (operation === 'users.attendant.manage' && targetRole !== 'ATENDENTE') denied();
+  if (['users.attendant.read', 'users.attendant.manage'].includes(operation) && targetRole !== 'ATENDENTE') denied();
   if (operation === 'users.admin.manage' && !['ADMIN', 'SUPER_ADMIN'].includes(targetRole)) denied();
   return principal;
 }

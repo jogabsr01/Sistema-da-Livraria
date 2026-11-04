@@ -109,7 +109,9 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
   }
   async function start(payload, purpose = 'ACTIVATE') {
     const token = tokenHash(payload?.tokenHash); id(payload?.flowId);
-    if (!['ACTIVATE', 'RECOVER'].includes(purpose) || typeof payload.email !== 'string' || payload.email.length > 254 ||
+    const staff = payload.staff === true;
+    const delivery = staff ? payload.delivery : payload.email;
+    if (!['ACTIVATE', 'RECOVER'].includes(purpose) || typeof delivery !== 'string' || delivery.length > 254 ||
         typeof payload.code !== 'string' || !payload.code || !HASH.test(payload.codeHash || '')) invalid();
     return runFirestoreTransaction(db, async transaction => {
       const reference = flowRef(token), prior = snapshotValue(await transaction.get(reference));
@@ -117,7 +119,8 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
         if (prior.flowId !== payload.flowId || prior.purpose !== purpose || prior.tokenHash !== token) rejected();
         return { accepted: true, outcome: 'SENT' };
       }
-      const subject = await findUser(transaction, payload.email);
+      const subject = staff ? await readUser(transaction, id(payload.subjectId)) : await findUser(transaction, delivery);
+      if (staff && (subject.owner !== false || typeof subject.contact !== 'string' || createHash('sha256').update(subject.contact).digest('hex') !== payload.contactHash)) rejected();
       if (!subject) return { accepted: true, outcome: purpose === 'ACTIVATE' ? 'NOT_FOUND' : undefined };
       if (purpose === 'ACTIVATE' && (subject.activated === true || subject.firstAccessCompleted === true)) return { accepted: true, outcome: 'ALREADY_ACTIVE' };
       if (purpose === 'RECOVER' && subject.firstAccessCompleted === false) return { accepted: true };
@@ -126,7 +129,7 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
         codeExpiresAt: times.codeExpiresAt, flowExpiresAt: times.flowExpiresAt, expiresAt: times.expiresAt, ceremonyId: '',
         sessionTokenHash: '', passwordRecord: null, proofReady: false, replacementAllowed: false, createdAt: times.createdAt };
       transaction.create(reference, flow);
-      enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `auth:${token}`, to: payload.email,
+      enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `auth:${token}`, to: delivery,
         subject: purpose === 'RECOVER' ? 'Livraria IPB DEV — recuperar acesso' : 'Livraria IPB DEV — criar senha',
         text: `${purpose === 'RECOVER' ? 'Foi solicitada a recuperação do acesso.' : 'Foi solicitado o primeiro acesso.'}\n\nCódigo de uso único (válido por 15 minutos):\n${payload.code}\n\nNão compartilhe o código.`, now: times.createdAt });
       return { accepted: true, outcome: 'SENT' };
@@ -346,9 +349,14 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
         const verifiedKey = snapshotValue(await transaction.get(passkeyRef(subject.id, ceremony.credentialId)));
         if (!verifiedKey || verifiedKey.id !== ceremony.credentialId || verifiedKey.revokedAt || verifiedKey.authorizationVersion !== subject.authorizationVersion) rejected();
       }
+      const currentTime = new Date(now()), targetVersion = flow.purpose === 'RECOVER' ? flow.authorizationVersion + 1 : subject.authorizationVersion;
+      const sessionId = flow.flowId, expiresAt = new Date(now() + 86400000), indexRef = repositories.ref('sessionTokenIndex', sessionHash), sessionRef = repositories.ref('sessions', sessionId);
+      const existing = await transaction.get(indexRef);
+      const auditRef = repositories.ref('auditEvents', `identity:${flow.flowId}`), audit = await transaction.get(auditRef);
+      const keys = flow.purpose === 'RECOVER' ? await transaction.get(db.collection('users').doc(subject.id).collection('passkeys')) : null;
+      const sessions = flow.purpose === 'RECOVER' ? await transaction.get(db.collection('sessions').where('userId', '==', subject.id)) : null;
       if (!direct && !flow.proofReady) transaction.update(reference, { proofReady: true, state: 'COMMITTING' });
       if (!flow.sessionTokenHash) transaction.update(reference, { sessionTokenHash: sessionHash });
-      const currentTime = new Date(now()), targetVersion = flow.purpose === 'RECOVER' ? flow.authorizationVersion + 1 : subject.authorizationVersion;
       if (flow.purpose === 'ACTIVATE') {
         if (!credential || credential.credentialType !== 'PASSWORD_V1') rejected();
         transaction.set(credentialRef(subject.id), { ...credential, updatedAt: currentTime });
@@ -357,7 +365,6 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
         if (!credential || credential.credentialType !== 'PASSWORD_V1') rejected();
         transaction.set(credentialRef(subject.id), { ...credential, updatedAt: currentTime });
         transaction.update(repositories.ref('users', subject.id), { authorizationVersion: targetVersion, updatedAt: currentTime });
-        const keys = await transaction.get(db.collection('users').doc(subject.id).collection('passkeys'));
         if (flow.replacementKey) {
           for (const snapshot of keys.docs || []) { const key = snapshotValue(snapshot); if (key && !key.revokedAt) transaction.update(snapshot.ref, { revokedAt: currentTime, updatedAt: currentTime }); }
           transaction.create(passkeyRef(subject.id, flow.replacementKey.id), { id: flow.replacementKey.id, publicKey: flow.replacementKey.publicKey, counter: flow.replacementKey.counter,
@@ -365,11 +372,8 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
         } else {
           for (const snapshot of keys.docs || []) { const key = snapshotValue(snapshot); if (key && !key.revokedAt) transaction.update(snapshot.ref, { authorizationVersion: targetVersion, updatedAt: currentTime }); }
         }
-        const sessions = await transaction.get(db.collection('sessions').where('userId', '==', subject.id));
         for (const snapshot of sessions.docs || []) { const session = snapshotValue(snapshot); if (session && !session.revokedAt) transaction.update(snapshot.ref, { revokedAt: currentTime }); }
       }
-      const sessionId = flow.flowId, expiresAt = new Date(now() + 86400000), indexRef = repositories.ref('sessionTokenIndex', sessionHash), sessionRef = repositories.ref('sessions', sessionId);
-      const existing = await transaction.get(indexRef);
       if (existing.exists) {
         const index = snapshotValue(existing); if (index.sessionId !== sessionId || index.userId !== subject.id) conflict();
       } else {
@@ -378,7 +382,6 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
           assurance: direct ? 'password' : 'passkey', authorizationVersion: targetVersion });
       }
       const principal = { id: subject.id, sessionId, role: subject.role, assurance: direct ? 'password' : 'passkey', authenticatedAt: currentTime.getTime(), expiresAt: expiresAt.getTime(), authorizationVersion: targetVersion };
-      const auditRef = repositories.ref('auditEvents', `identity:${flow.flowId}`), audit = await transaction.get(auditRef);
       if (!audit.exists) transaction.create(auditRef, { id: `identity:${flow.flowId}`, at: currentTime, actorId: subject.id, role: subject.role,
         operation: flow.purpose === 'RECOVER' ? 'IDENTITY_PASSWORD_RECOVER' : flow.purpose === 'ACTIVATE' ? 'IDENTITY_ACTIVATE' : 'IDENTITY_LOGIN', entity: 'users', entityId: subject.id,
         result: 'SUCESSO', requestId: flow.flowId, before: null, after: { authorizationVersion: targetVersion }, detailsOmitted: true });
@@ -386,7 +389,7 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
       return principal;
     }, authOptions);
   }
-  return Object.freeze({ start: payload => start(payload, 'ACTIVATE'), recover: payload => start(payload, 'RECOVER'), login, passwordLogin,
+  return Object.freeze({ start: payload => start(payload, 'ACTIVATE'), recover: payload => start(payload, 'RECOVER'), staffStart: payload => start({ ...payload, staff: true }, 'ACTIVATE'), staffRecover: payload => start({ ...payload, staff: true }, 'RECOVER'), login, passwordLogin,
     read, email: verifyEmail, password: savePassword, rescue, rescueBegin, rescueKey, prepareOptions, prepareCompletion, saveProof, commit,
     prepareBiometricOptions: payload => prepareLoginPasskey(payload, false), prepareDeviceAccess: payload => prepareLoginPasskey(payload, true) });
 }

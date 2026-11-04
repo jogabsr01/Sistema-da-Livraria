@@ -6,6 +6,14 @@ import { createLoginGuard } from '../../backend/login-guard.mjs';
 import { catalogFixture,CATALOG_ORIGIN } from '../helpers/catalog-fixture.mjs';
 import { isbnProviderFixture } from '../helpers/isbn-provider-fixtures.mjs';
 const ISBN='9786589806691';
+test('Google subtitle is sanitized and exposed only for a matching ISBN', async () => {
+  const service = createIsbnLookupService({ fetchImpl: async input => {
+    const url = new URL(input);
+    if (url.hostname !== 'www.googleapis.com') return new Response('{}', { headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ items: [{ volumeInfo: { title: 'Livro', subtitle: '<b>Subtítulo</b>', industryIdentifiers: [{ identifier: ISBN }] } }] }), { headers: { 'content-type': 'application/json' } });
+  } });
+  assert.equal((await service.lookup(ISBN)).metadata.subtitle, 'Subtítulo');
+});
 test('lookup queries fixed providers by exact ISBN and merges only bibliographic fields and safe candidates',async()=>{
   const calls=[],data=await createIsbnLookupService({fetchImpl:isbnProviderFixture('normal',calls)}).lookup(ISBN);
   assert.equal(calls.length,5);assert.equal(data.metadata.title,'Livro cristão fictício para QA');assert.equal(data.metadata.edition,'2ª edição');assert.equal(data.metadata.synopsis,'Sinopse de teste');assert.equal(data.fieldSources.title,'BrasilAPI (CBL)');

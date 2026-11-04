@@ -27,6 +27,10 @@ function fakeDb(initial = {}) {
           if (values.has(target.path)) throw Object.assign(new Error('exists'), { code: 6 });
           values.set(target.path, structuredClone(value));
         },
+        update(target, value) {
+          if (!values.has(target.path)) throw new Error('missing');
+          values.set(target.path, { ...values.get(target.path), ...structuredClone(value) });
+        },
       };
       return work(tx);
     },
@@ -51,6 +55,10 @@ test('creates the first SUPER_ADMIN placeholder and is idempotent for the same e
   assert.equal(stored.firstAccessCompleted, false);
   assert.equal(stored.authorizationVersion, 1);
   assert.equal(stored.emailIndex, ownerEmailIndex(identity, 'owner@example.invalid'));
+  assert.equal(stored.email, 'owner@example.invalid');
+  assert.equal(stored.revision, 0);
+  assert.equal(stored.contact, '');
+  assert.equal(stored.hasPhoto, false);
 
   const second = await bootstrapOwner({ db, email: 'owner@example.invalid', ...identity });
   assert.deepEqual(second, { id: first.id, created: false });
@@ -63,11 +71,21 @@ test('refuses to create a second SUPER_ADMIN under a different e-mail', async ()
   await assert.rejects(bootstrapOwner({ db, email: 'other@example.invalid', ...identity }), /já existe um SUPER_ADMIN/);
 });
 
-test('refuses to touch an account that already completed activation', async () => {
+test('repairs missing profile fields without changing an activated account', async () => {
   const email = 'owner@example.invalid';
   const index = ownerEmailIndex(identity, email);
-  const db = fakeDb({ 'users/11111111-1111-4111-8111-111111111111': { role: 'SUPER_ADMIN', status: 'ATIVO', activated: true, firstAccessCompleted: true, emailIndex: index } });
-  await assert.rejects(bootstrapOwner({ db, email, ...identity }), /placeholder seguro/);
+  const path = 'users/11111111-1111-4111-8111-111111111111';
+  const db = fakeDb({ [path]: { role: 'SUPER_ADMIN', owner: true, status: 'ATIVO', activated: true, firstAccessCompleted: true, emailIndex: index, authorizationVersion: 4 } });
+  await bootstrapOwner({ db, email, ...identity });
+  assert.deepEqual(db.values.get(path), { role: 'SUPER_ADMIN', owner: true, status: 'ATIVO', activated: true, firstAccessCompleted: true, emailIndex: index, authorizationVersion: 4, email, revision: 0, contact: '', hasPhoto: false });
+  await bootstrapOwner({ db, email, ...identity });
+  assert.equal(db.values.get(path).authorizationVersion, 4);
+});
+
+test('refuses to overwrite a conflicting stored email', async () => {
+  const email = 'owner@example.invalid';
+  const db = fakeDb({ 'users/11111111-1111-4111-8111-111111111111': { role: 'SUPER_ADMIN', owner: true, status: 'ATIVO', emailIndex: ownerEmailIndex(identity, email), email: 'other@example.invalid' } });
+  await assert.rejects(bootstrapOwner({ db, email, ...identity }), /não corresponde/);
 });
 
 test('rejects a malformed e-mail before touching the database', async () => {
