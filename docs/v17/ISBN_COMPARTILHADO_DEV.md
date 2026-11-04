@@ -16,7 +16,7 @@ Cada URL recebida é apenas candidata. O navegador testa Image.complete e dimens
 
 Para 9788543303932, o módulo preserva uma referência editorial já existente no protótipo. A página da Mundo Cristão foi reconferida nesta entrega e informa **978-8543303932**; a imagem é uma candidata identificada como **Referência editorial (Mundo Cristão)**, nunca como resposta das APIs. Não substitui metadados de API e continua sujeita à verificação de imagem no navegador.
 
-Este incremento persiste **link externo**, não bytes no Drive. Armazenamento privado por câmera/galeria pertence ao PR #15. Sua integração futura precisa combinar os controles e repetir testes de preservação de foto; não se afirma que esses PRs já estejam homologados juntos. Caixa/Estoque compartilhados continuam na sequência do V17.
+A consulta bibliográfica pode fornecer **link externo**, distinto da foto privada. No modelo Firestore atual, fotos privadas ficam em `products/{id}/media/cover`; consulte [FOTOS_CAPAS_DEV.md](FOTOS_CAPAS_DEV.md). Resultados históricos deste guia não comprovam homologação da migração de dados no destino.
 
 ## Controles e ativação posterior à aprovação
 

@@ -1,0 +1,26 @@
+# Contrato preliminar de validação operacional em memória
+
+`backend/import-plan.mjs` permanece inalterado e valida apenas produtos/nichos no seu formato próprio. `backend/import-operational-plan.mjs` exporta `validateOperationalImport`, função síncrona e pura, independente do Firestore e de rede. Não é importador. Retorna contagens e `writePerformed: false` somente após validação completa; em falha lança código fixo sem dados de entrada. A execução com dados reais exige autorização, acesso e tratamento de PII específicos.
+
+## Adaptador para fixtures sintéticas
+
+`node scripts/inventory-dry-run.mjs --fixture /caminho/absoluto/fixture.json --operational` executa catálogo e contrato operacional em memória. O modo operacional é explícito; sem ele o comportamento anterior permanece. O relatório não inclui o candidato, células, identificadores ou CPF. Isso é **omissão da saída**, não anonimização dos dados em memória: a fixture e o processo contêm dados pessoais e devem ser sintéticos e protegidos.
+
+Além das sete abas, a fixture deve conter `operationalOpeningStocks: { completeHistory: true, products: [{ id: 'p1', stock: 5 }] }`, com exatamente um saldo inicial por produto. Trata-se de afirmação do autor da fixture, não de evidência independente de histórico completo; não se infere saldo inicial a partir da primeira movimentação nem do saldo atual. O fechamento vem de `Estoque_Atual` e a cadeia é verificada pelo validador.
+
+O adaptador vincula itens por `ID_Venda`, conserva `Idempotency_Key` separadamente, exige venda `CONFIRMADA` e rejeita chaves ausentes. Movimentos são ordenados por `Data_Hora` UTC canônico; empate para o mesmo produto é bloqueado, sem desempate arbitrário. IDs legados de movimentação, que podem conter `:`, são convertidos em SHA-256 internamente para satisfazer o contrato; duplicatas da origem são rejeitadas. Referências, totais, consentimento e cadeia de estoque são verificados pelo validador. A validação operacional retorna o primeiro erro; o relatório relacional do inventário continua agregado.
+
+O armazenamento GAS atual pode manter contato cifrado em `Nome` e CPF vazio; o adaptador **não descriptografa** nem interpreta ciphertext como CPF. Esse tipo de origem falha fechado e requer processo autorizado separado. Também não há tratamento de estornos, comprovação de origem nem autorização para importação. A aceitação de ambos os validadores não implica prontidão completa para Firestore.
+
+## Contrato de entrada v1
+
+Objeto com chaves exatas `environment: 'dev'`, `schemaVersion: 1`, `products`, `customers`, `sales`, `movements`; arrays têm até 10.000 elementos cada. É um formato intermediário proposto, não o schema Sheets ou Firestore. Identificadores são strings de 1 a 128 caracteres alfanuméricos, `_` ou `-`; a compatibilidade com UUID e idempotência Firestore deve ser validada em etapa posterior.
+
+- `products`: `{ id, openingStock, closingStock }`, saldos inteiros não negativos. O saldo inicial é anterior a todas as movimentações do snapshot e o final é posterior a todas elas.
+- `customers`: `{ id, record, consentAt }`. `record` usa o contrato de `normalizeCustomer` da aplicação, incluindo CPF, nome, contato, preferência e consentimento. CPF é normalizado/validado em memória e comparado para unicidade, sem ser retornado, mascarado ou transformado em hash público. `consentAt` é `null` ou timestamp UTC ISO canônico; consentimento ativo exige data. Consentimento desativado pode preservar data histórica. Índice HMAC de destino e criptografia permanecem tarefas posteriores com chaves próprias do ambiente.
+- `sales`: `{ id, idempotencyKey, customerId, totalCents, items }`, cliente opcional representado por `null`; cada item tem `{ productId, quantity, unitPriceCents, subtotalCents }`. IDs de venda e chaves de idempotência devem ser únicos; itens por produto são únicos, quantidades positivas e totais em centavos inteiros seguros. O contrato assume que todas as vendas fornecidas são confirmadas; cancelamentos e estornos não estão modelados.
+- `movements`: `{ id, productId, type, quantity, stockBefore, stockAfter, saleId }`, com tipo `ENTRADA` ou `SAIDA`, `saleId` nulo para outras movimentações. A lista deve estar na ordem cronológica já resolvida da origem. Cada venda/item exige exatamente uma saída correspondente por produto e quantidade; saídas sem venda são permitidas como outras operações. Encadeamento e saldo final devem corresponder. Duplicar saída vinculada à mesma venda falha; o validador **não** executa baixa adicional.
+
+## Limites e integrações pendentes
+
+É obrigatório fornecer histórico completo e ordenado entre os saldos declarados; não supor que a planilha real tenha essa propriedade. Duplicações não vinculadas a uma venda não podem ser detectadas como reprocessamento semanticamente equivalente. Vendas, produtos, clientes e movimentações reais exigem regras aprovadas, incluindo históricos incompletos e estornos. O resultado não prova privacidade do processo chamador, autenticidade dos dados, correspondência com Firestore, nem segurança de uma futura escrita. Não registrar o objeto de entrada ou erros originais externos.

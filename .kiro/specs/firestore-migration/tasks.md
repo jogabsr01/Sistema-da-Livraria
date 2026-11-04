@@ -6,6 +6,10 @@ gravações ou alteração de produção sem confirmação operacional do respon
 
 ## Regras de execução
 
+O estado de evidências por ambiente é resumido em `docs/v17/MATRIZ_STATUS_MIGRACAO.md`. Os marcos sintéticos recentes não substituem os critérios ou checkboxes deste plano formal; importação real, reconciliação e cutover permanecem pendentes até evidência específica.
+
+Os três testes de concorrência existentes foram executados no emulador oficial local; essa execução não constitui teste do importador, ainda não implementado, nem encerra a tarefa 31 como um todo.
+
 - manter o modo `gas` funcionando até o cutover aprovado;
 - não relaxar testes de regra de negócio ou segurança;
 - adaptar somente testes que verificam a infraestrutura GAS/Sheets;
