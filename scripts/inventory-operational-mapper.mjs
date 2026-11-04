@@ -77,6 +77,7 @@ export function projectOperationalFixture(bytes, schema, { syntheticActorId, all
   const metadata = (actor, version, newDocument) => resolveImportMetadata({ sourceActorId: actor, sourceVersion: version,
     syntheticActorId, allowSyntheticActor, isNewDocument: newDocument });
   const products = rows.Produtos.map(product => ({ source: product, id: requireUuid(product.ID_Produto), openingStock: opening.get(product.ID_Produto),
+    nicheIds: rows.Produto_Nichos.filter(link => link.ID_Produto === product.ID_Produto).map(link => requireUuid(link.ID_Nicho)),
     metadata: metadata(product.Criado_Por, product.Versao_Registro, true) }));
   const niches = rows.Nichos.map(niche => ({ source: niche, id: requireUuid(niche.ID_Nicho), metadata: metadata(niche.Criado_Por, null, true) }));
   const customers = rows.Clientes.map(customer => ({ id: requireUuid(customer.ID_Cliente), source: customer }));

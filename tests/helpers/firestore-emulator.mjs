@@ -18,7 +18,7 @@ export function firestoreEmulatorAvailable(env = process.env) {
   return emulatorHost(env) !== null;
 }
 
-export function createFirestoreEmulatorDb({ env = process.env, namespace = 'test' } = {}) {
+export function createFirestoreEmulatorDb({ env = process.env, namespace = 'test', demo = false } = {}) {
   const host = emulatorHost(env);
   if (!host) throw new Error('FIRESTORE_LOOPBACK_EMULATOR_REQUIRED');
   if (typeof namespace !== 'string' || !NAMESPACE.test(namespace)) throw new Error('INVALID_FIRESTORE_TEST_NAMESPACE');
@@ -27,7 +27,8 @@ export function createFirestoreEmulatorDb({ env = process.env, namespace = 'test
   // emulator keeps documents in memory after a client terminates, so sharing a
   // fixed project ID would make collection counts and retries order-dependent.
   const suffix = randomUUID().replaceAll('-', '').slice(0, 8);
-  const projectId = `livraria-${namespace}-${suffix}`;
+  if (typeof demo !== 'boolean' || (demo && !/^127\.0\.0\.1:/.test(host))) throw new Error('FIRESTORE_LOOPBACK_EMULATOR_REQUIRED');
+  const projectId = `${demo ? 'demo' : 'livraria'}-${namespace}-${suffix}`;
   if (!PROJECT_ID.test(projectId)) throw new Error('INVALID_FIRESTORE_TEST_PROJECT');
 
   // The SDK otherwise probes the link-local GCP metadata service while
