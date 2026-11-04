@@ -15,3 +15,7 @@ __pycache__/
 .venv/
 # Local QA run artifacts (screenshots, logs) from scripts/test-*.py
 /work/
+
+# Firebase emulator local logs
+/firebase-debug.log
+/firestore-debug.log
