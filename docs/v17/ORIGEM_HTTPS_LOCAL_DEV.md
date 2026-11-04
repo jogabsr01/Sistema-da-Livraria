@@ -2,6 +2,8 @@
 
 O ambiente integrado de navegação local **ainda não está disponível**. Servir `dist` com `python3 -m http.server` permite apenas visualizar o protótipo; não fornece Functions e não satisfaz as verificações de origem da interface ou da API.
 
+Existe também uma prévia HTTPS exclusivamente visual em loopback. Com `mkcert` instalado e sua CA local instalada segundo o procedimento da ferramenta, gere um certificado para `localhost` e `127.0.0.1` fora do repositório, e então execute `node scripts/local-https-preview.mjs /caminho/cert.pem /caminho/key.pem`. Acesse `https://localhost:8443/`. A prévia recusa `/api/*` e não permite login nem comunicação com o Firestore; não é o servidor integrado. Não adicione a chave ou certificados privados ao Git.
+
 O código atual fixa a origem `https://dev--merry-chimera-49a1f3.netlify.app` no navegador e nos handlers e utiliza esse mesmo hostname como RP ID WebAuthn. `netlify dev` ou um proxy em `localhost` não mudam essas verificações automaticamente. Não remapear o domínio DEV real no arquivo hosts, não usar certificados ignorados pelo navegador e não reescrever `Origin` em um proxy para aparentar que a requisição veio do domínio publicado: essas medidas podem misturar credenciais e passkeys locais com o ambiente remoto ou produzir uma evidência de segurança falsa.
 
 ## Estrutura necessária antes do comando definitivo
