@@ -5,6 +5,7 @@ import { createFirestoreRepositories } from './firestore-repositories.mjs';
 import { createFirestorePasskeyService } from './firestore-passkeys.mjs';
 import { enqueueEmailDelivery } from './firestore-outbox.mjs';
 import { runFirestoreTransaction } from './firestore-transactions.mjs';
+import { createFirestoreRateLimitService } from './firestore-rate-limits.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -80,6 +81,7 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
   if (!db || typeof db.runTransaction !== 'function') throw new ApiError(503, 'FIRESTORE_UNAVAILABLE');
   const repositories = createFirestoreRepositories(db);
   const passkeys = createFirestorePasskeyService({ db, now, transactionOptions });
+  const limits = createFirestoreRateLimitService({ db, now, transactionOptions });
   const flowRef = token => repositories.ref('authFlows', token);
   const credentialRef = subjectId => repositories.subref('users', subjectId, 'credentials', 'primary');
   const passkeyRef = (subjectId, credentialId) => repositories.subref('users', subjectId, 'passkeys', createHash('sha256').update(credentialId).digest('hex'));
@@ -213,6 +215,39 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
       return { subjectId: subject.id, authorizationVersion: subject.authorizationVersion, kind, credentials, ceremonyId: payload.ceremonyId, challenge: payload.challenge, replacementAllowed: flow.replacementAllowed === true };
     }, authOptions);
   }
+  async function prepareLoginPasskey(payload, device) {
+    const token = tokenHash(payload?.tokenHash); id(payload?.flowId); id(payload?.subjectId); id(payload?.ceremonyId);
+    if (typeof payload.challenge !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(payload.challenge) ||
+        device && (typeof payload.staffAllowed !== 'boolean' || typeof payload.credentialId !== 'string' ||
+          !/^[A-Za-z0-9_-]{2,1400}$/.test(payload.credentialId) || Buffer.from(payload.credentialId, 'base64url').toString('base64url') !== payload.credentialId) ||
+        !device && (!Number.isSafeInteger(payload.authorizationVersion) || payload.authorizationVersion < 1)) invalid();
+    // Reserve separately so failed identity checks cannot roll back the guess budget.
+    const attempt = await limits.reserve({ accountKey: payload.accountKey, originKey: payload.originKey });
+    if (!attempt.allowed) { const error = new ApiError(429, 'AUTH_RATE_LIMITED'); error.retryAfterSeconds = attempt.retryAfterSeconds; throw error; }
+    return runFirestoreTransaction(db, async transaction => {
+      const subject = await readUser(transaction, payload.subjectId);
+      if (subject.activated !== true || subject.firstAccessCompleted !== true || device && subject.owner !== true && !payload.staffAllowed ||
+          !device && subject.authorizationVersion !== payload.authorizationVersion) rejected();
+      const reference = flowRef(token), prior = snapshotValue(await transaction.get(reference));
+      const ceremony = ceremonyRef(payload.ceremonyId), existingCeremony = await transaction.get(ceremony);
+      const keys = await transaction.get(db.collection('users').doc(subject.id).collection('passkeys'));
+      if (prior || existingCeremony.exists || !keys || !Array.isArray(keys.docs) || keys.docs.length > 5) rejected();
+      const active = keys.docs.map(snapshotValue).filter(key => key && !key.revokedAt && key.authorizationVersion === subject.authorizationVersion);
+      if (!active.length) rejected();
+      const key = device ? active.find(item => item.id === payload.credentialId) : null;
+      if (device && !key) rejected();
+      const times = flowTimes(now()), flow = { flowId: payload.flowId, tokenHash: token, subjectId: subject.id, purpose: 'LOGIN', state: 'PASSKEY',
+        authorizationVersion: subject.authorizationVersion, ceremonyId: payload.ceremonyId, sessionTokenHash: '', passwordRecord: null, proofReady: false,
+        replacementAllowed: false, codeHash: null, attempts: 0, codeExpiresAt: null, flowExpiresAt: times.flowExpiresAt, expiresAt: times.expiresAt, createdAt: times.createdAt };
+      transaction.create(reference, flow);
+      transaction.create(ceremony, { id: payload.ceremonyId, subjectId: subject.id, authorizationVersion: subject.authorizationVersion,
+        purpose: 'AUTHENTICATE', challenge: payload.challenge, createdAt: new Date(now()), expiresAt: new Date(now() + 300000), consumedAt: null, completedAt: null });
+      if (device) return { allowed: true, done: false, flow: flowPublic(flow), ceremony: { challenge: payload.challenge, purpose: 'AUTHENTICATE',
+        credential: { id: key.id, publicKey: key.publicKey, counter: key.counter, transports: key.transports || [] } } };
+      return { allowed: true, subjectId: subject.id, authorizationVersion: subject.authorizationVersion, kind: 'get',
+        credentials: active.map(key => ({ id: key.id, transports: key.transports || [] })), ceremonyId: payload.ceremonyId, challenge: payload.challenge, replacementAllowed: false };
+    }, authOptions);
+  }
   async function prepareCompletion(payload) {
     const token = tokenHash(payload?.tokenHash), sessionHash = tokenHash(payload?.sessionTokenHash);
     const result = await runFirestoreTransaction(db, async transaction => {
@@ -300,11 +335,17 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
       if (flow.sessionTokenHash && flow.sessionTokenHash !== sessionHash) rejected();
       if (flow.state === 'COMPLETE') return flow.principal;
       const subject = await readUser(transaction, flow.subjectId), credential = flow.passwordRecord ? credentialRecord(flow.passwordRecord) : null;
+      if (flow.authorizationVersion !== subject.authorizationVersion) rejected();
       const direct = flow.purpose === 'PASSWORD_LOGIN';
       if (direct && (!flow.proofReady || flow.authorizationVersion !== subject.authorizationVersion)) rejected();
       if (!direct && (!flow.ceremonyId || !['ACTIVATE', 'RECOVER', 'LOGIN'].includes(flow.purpose))) rejected();
       const ceremony = !direct ? snapshotValue(await transaction.get(ceremonyRef(flow.ceremonyId))) : null;
-      if (!direct && !flow.proofReady && (!ceremony || !ceremony.consumedAt || !ceremony.completedAt)) rejected();
+      if (!direct && (!ceremony || !ceremony.consumedAt || !ceremony.completedAt || ceremony.subjectId !== subject.id || ceremony.authorizationVersion !== flow.authorizationVersion)) rejected();
+      if (flow.purpose === 'LOGIN' || flow.purpose === 'RECOVER' && !flow.replacementAllowed) {
+        if (typeof ceremony.credentialId !== 'string') rejected();
+        const verifiedKey = snapshotValue(await transaction.get(passkeyRef(subject.id, ceremony.credentialId)));
+        if (!verifiedKey || verifiedKey.id !== ceremony.credentialId || verifiedKey.revokedAt || verifiedKey.authorizationVersion !== subject.authorizationVersion) rejected();
+      }
       if (!direct && !flow.proofReady) transaction.update(reference, { proofReady: true, state: 'COMMITTING' });
       if (!flow.sessionTokenHash) transaction.update(reference, { sessionTokenHash: sessionHash });
       const currentTime = new Date(now()), targetVersion = flow.purpose === 'RECOVER' ? flow.authorizationVersion + 1 : subject.authorizationVersion;
@@ -346,5 +387,6 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
     }, authOptions);
   }
   return Object.freeze({ start: payload => start(payload, 'ACTIVATE'), recover: payload => start(payload, 'RECOVER'), login, passwordLogin,
-    read, email: verifyEmail, password: savePassword, rescue, rescueBegin, rescueKey, prepareOptions, prepareCompletion, saveProof, commit });
+    read, email: verifyEmail, password: savePassword, rescue, rescueBegin, rescueKey, prepareOptions, prepareCompletion, saveProof, commit,
+    prepareBiometricOptions: payload => prepareLoginPasskey(payload, false), prepareDeviceAccess: payload => prepareLoginPasskey(payload, true) });
 }

@@ -9,7 +9,7 @@ const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.json': 'application/json' };
 
 // The optional laboratory dispatches local functions without impersonating DEV.
-export async function createLocalPreview({ certPath, keyPath, directory = root, localLab = false } = {}) {
+export async function createLocalPreview({ certPath, keyPath, directory = root, localLab = false, functionOverrides = {} } = {}) {
   if (!certPath || !keyPath) throw Error('LOCAL_HTTPS_CERT_REQUIRED');
   if (localLab) loadLocalLabPolicy();
   const routes = [];
@@ -22,7 +22,7 @@ export async function createLocalPreview({ certPath, keyPath, directory = root, 
       const pattern = module.config?.path;
       if (typeof pattern !== 'string' || !pattern.startsWith('/api/v1/')) continue;
       const parts = pattern.split('/');
-      routes.push({ parts, handler: module.default });
+      routes.push({ parts, handler: functionOverrides[pattern] || module.default });
     }
     routes.sort((a, b) => a.parts.filter(p => !p.startsWith(':') && p !== '*').length < b.parts.filter(p => !p.startsWith(':') && p !== '*').length ? 1 : -1);
   }

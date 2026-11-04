@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash, randomUUID, randomBytes } from 'node:crypto';
+import { createFirestoreEmulatorDb } from '../helpers/firestore-emulator.mjs';
+import { createFirestoreAccessService } from '../../backend/firestore-access.mjs';
+import { createFirestorePasskeyService } from '../../backend/firestore-passkeys.mjs';
+
+const enabled = process.env.FIRESTORE_EMULATOR_HOST === '127.0.0.1:8080';
+const hash = () => randomBytes(32).toString('hex');
+test('Firestore login preparations bind active key and epoch and reject replay', { skip: !enabled }, async t => {
+  const db = createFirestoreEmulatorDb({ namespace: 'passkey', demo: true });
+  t.after(() => db.terminate());
+  const subjectId = randomUUID(), credentialId = randomBytes(32).toString('base64url');
+  const keyRef = db.collection('users').doc(subjectId).collection('passkeys').doc(createHash('sha256').update(credentialId).digest('hex'));
+  await db.collection('users').doc(subjectId).set({ id: subjectId, role: 'SUPER_ADMIN', owner: true, status: 'ATIVO', activated: true, firstAccessCompleted: true, authorizationVersion: 1 });
+  await keyRef.set({ id: credentialId, publicKey: randomBytes(65).toString('base64url'), counter: 0, transports: ['internal'], revokedAt: null, authorizationVersion: 1 });
+  const service = createFirestoreAccessService({ db, config: { environment: 'dev', installationId: randomUUID(), secret: hash() } });
+  const payload = () => ({ tokenHash: hash(), flowId: randomUUID(), subjectId, ceremonyId: randomUUID(), challenge: randomBytes(32).toString('base64url'), accountKey: hash(), originKey: hash() });
+  const biometric = { ...payload(), authorizationVersion: 1 };
+  const options = await service.prepareBiometricOptions(biometric);
+  assert.equal(options.kind, 'get'); assert.equal(options.credentials[0].id, credentialId);
+  assert.equal((await db.collection('authChallenges').doc('passkey:' + biometric.ceremonyId).get()).data().consumedAt, null);
+  await assert.rejects(service.prepareBiometricOptions(biometric));
+  const device = { ...payload(), credentialId, staffAllowed: false };
+  const result = await service.prepareDeviceAccess(device);
+  assert.equal(result.ceremony.credential.id, credentialId); assert.equal(result.flow.proofReady, false);
+  await assert.rejects(service.prepareDeviceAccess(device));
+  await keyRef.update({ revokedAt: new Date() });
+  await assert.rejects(service.prepareDeviceAccess({ ...payload(), credentialId, staffAllowed: false }));
+  await assert.rejects(service.prepareBiometricOptions({ ...payload(), authorizationVersion: 2 }));
+  assert.equal((await db.collection('sessions').get()).size, 0);
+});
+
+test('concurrent proof consumption is one-use and revoked or epoch-changed keys cannot issue sessions', { skip: !enabled }, async t => {
+  const db = createFirestoreEmulatorDb({ namespace: 'racekey', demo: true }); t.after(() => db.terminate());
+  const subjectId = randomUUID(), credentialId = randomBytes(32).toString('base64url');
+  const userRef = db.collection('users').doc(subjectId);
+  const keyRef = userRef.collection('passkeys').doc(createHash('sha256').update(credentialId).digest('hex'));
+  await userRef.set({ id: subjectId, role: 'SUPER_ADMIN', owner: true, status: 'ATIVO', activated: true, firstAccessCompleted: true, authorizationVersion: 1 });
+  await keyRef.set({ id: credentialId, publicKey: randomBytes(65).toString('base64url'), counter: 0, transports: ['internal'], revokedAt: null, authorizationVersion: 1 });
+  const access = createFirestoreAccessService({ db, config: { environment: 'dev', installationId: randomUUID(), secret: hash() } });
+  const keys = createFirestorePasskeyService({ db });
+  const create = () => ({ tokenHash: hash(), flowId: randomUUID(), subjectId, ceremonyId: randomUUID(), challenge: randomBytes(32).toString('base64url'), accountKey: hash(), originKey: hash(), authorizationVersion: 1 });
+  const first = create(); await access.prepareBiometricOptions(first);
+  const proof = { subjectId, authorizationVersion: 1, ceremonyId: first.ceremonyId, credentialId, expectedCounter: 0, newCounter: 1 };
+  const results = await Promise.allSettled([keys.advanceCounter(proof), keys.advanceCounter(proof)]);
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(r => r.status === 'rejected').length, 1);
+  assert.equal(results.find(r => r.status === 'rejected').reason.code, 'PASSKEY_REJECTED');
+  await keyRef.update({ revokedAt: new Date() });
+  await assert.rejects(access.commit({ tokenHash: first.tokenHash, sessionTokenHash: hash() }));
+  await keyRef.update({ revokedAt: null });
+  const second = create(); await access.prepareBiometricOptions(second);
+  await keys.advanceCounter({ ...proof, ceremonyId: second.ceremonyId, expectedCounter: 1, newCounter: 2 });
+  await userRef.update({ authorizationVersion: 2 });
+  await assert.rejects(access.commit({ tokenHash: second.tokenHash, sessionTokenHash: hash() }));
+  assert.equal((await db.collection('sessions').get()).size, 0);
+});

@@ -79,7 +79,7 @@ export function createFirestorePasskeyService({ db, now = () => Date.now(), tran
       if (!ceremony || ceremony.subjectId !== input.subjectId || ceremony.authorizationVersion !== input.authorizationVersion || ceremony.consumedAt || date(ceremony.expiresAt).getTime() <= now()) rejected();
       if (input.credentialId === '') return { challenge: ceremony.challenge, purpose: ceremony.purpose, credential: null };
       const keyId = credential(input.credentialId), key = snapshotValue(await transaction.get(passkeyRef(input.subjectId, keyId)));
-      if (!key || key.id !== keyId || key.revokedAt) rejected();
+      if (!key || key.id !== keyId || key.revokedAt || key.authorizationVersion !== input.authorizationVersion) rejected();
       return { challenge: ceremony.challenge, purpose: ceremony.purpose, credential: { id: key.id, publicKey: key.publicKey, counter: key.counter, transports: key.transports } };
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
   }
@@ -107,9 +107,9 @@ export function createFirestorePasskeyService({ db, now = () => Date.now(), tran
       const ceremonyRefValue = ceremonyRef(input.ceremonyId), ceremony = snapshotValue(await transaction.get(ceremonyRefValue));
       const keyRef = passkeyRef(input.subjectId, keyId), key = snapshotValue(await transaction.get(keyRef));
       if (!ceremony || ceremony.subjectId !== input.subjectId || ceremony.authorizationVersion !== input.authorizationVersion || ceremony.purpose !== 'AUTHENTICATE' || ceremony.consumedAt || date(ceremony.expiresAt).getTime() <= now() ||
-          !key || key.id !== keyId || key.revokedAt || key.counter !== input.expectedCounter) rejected();
+          !key || key.id !== keyId || key.revokedAt || key.authorizationVersion !== input.authorizationVersion || key.counter !== input.expectedCounter) rejected();
       transaction.update(keyRef, { counter: input.newCounter, updatedAt: new Date(now()) });
-      transaction.update(ceremonyRefValue, { consumedAt: new Date(now()), completedAt: new Date(now()) });
+      transaction.update(ceremonyRefValue, { consumedAt: new Date(now()), completedAt: new Date(now()), credentialId: keyId });
       return { stored: true };
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
   }
