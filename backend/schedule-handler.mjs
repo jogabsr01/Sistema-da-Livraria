@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { randomUUID } from 'node:crypto';
 import { ApiError,json,safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
@@ -8,7 +9,7 @@ import { requirePermission,requireSameOriginMutation,requireCsrfToken } from './
 import { catalogUuid } from './catalog-model.mjs';
 import { staffText } from './staff-model.mjs';
 import { scheduleDate,scheduleTime,scheduleNotes,scheduleRange,scheduleRecord,scheduleInvalid,scheduleContentHash } from './schedule-model.mjs';
-const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN=devOrigin();
 export function loadScheduleSettings(env=process.env){if(['WORKSPACE_SCHEDULES_ENABLED','WORKSPACE_CATALOG_ENABLED','WORKSPACE_NOTIFICATIONS_ENABLED'].some(k=>env[k]!=='true'))throw new ApiError(503,'SCHEDULE_NOT_ACTIVATED');return {...loadSessionSettings(env),...loadPersonalDataSettings(env)};}
 const untrusted=()=>{throw new ApiError(502,'UPSTREAM_UNTRUSTED');};
 function peopleDto(list,vault,allowed,max=2000){if(!Array.isArray(list)||list.length>max||new Set(list.map(p=>p?.id)).size!==list.length)untrusted();return list.map(p=>{if(!catalogUuid(p?.id)||!['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(p.role)||typeof p.owner!=='boolean'||typeof p.active!=='boolean'||allowed&&!allowed.has(p.id)||p.owner&&p.role!=='SUPER_ADMIN')untrusted();const record=p.contact?vault.open('users',p.id,p.contact):null;if(!record&&!p.owner)untrusted();return {id:p.id,name:record?staffText(record.name,160,true):'Conta proprietária',role:p.role,active:p.active};});}

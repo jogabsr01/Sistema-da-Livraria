@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { accessReceipts } from './access-receipt.mjs';
 import { identityConfigurationIssues } from './identity-configuration.mjs';
 import { emergencyCodeHash } from './emergency-codes.mjs';
@@ -13,7 +14,7 @@ import { createPinHasher, createPasswordHasher, createSessionTokens } from './cr
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
 import { sessionCookie, validateSessionPrincipal, readSessionToken } from './session-service.mjs';
-export const ACCESS_ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
+export const ACCESS_ORIGIN = devOrigin();
 export const ACCESS_COOKIE = '__Host-livraria_access';
 const rejected = () => { throw new ApiError(401, 'ACCESS_REJECTED'); };
 const canonical = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value) && Buffer.from(value, 'base64url').toString('base64url') === value;

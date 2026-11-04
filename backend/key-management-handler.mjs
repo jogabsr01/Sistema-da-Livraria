@@ -1,3 +1,4 @@
+import { devOrigin, devRpId } from './local-lab-policy.mjs';
 import { emergencyCodeBatch } from './emergency-codes.mjs';
 import { randomBytes,randomUUID } from 'node:crypto';
 import { generateAuthenticationOptions,generateRegistrationOptions } from '@simplewebauthn/server';
@@ -8,7 +9,7 @@ import { createSessionService } from './session-service.mjs';
 import { createWorkspaceClient } from './workspace-client.mjs';
 import { requirePermission,requireSameOriginMutation,requireCsrfToken } from './authorization.mjs';
 import { catalogUuid } from './catalog-model.mjs';
-const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app',RP='dev--merry-chimera-49a1f3.netlify.app',hash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+const ORIGIN=devOrigin(),RP=devRpId(),hash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 const invalid=()=>{throw new ApiError(400,'INVALID_KEY_MANAGEMENT');},bad=()=>{throw new ApiError(502,'UPSTREAM_UNTRUSTED');};
 export function loadKeyManagementSettings(env=process.env){if(env.WORKSPACE_KEY_MANAGEMENT_ENABLED!=='true')throw new ApiError(503,'KEY_MANAGEMENT_NOT_ACTIVATED');loadPasskeySettings(env);return {...loadSessionSettings(env),emergencyRecoveryEnabled:env.WORKSPACE_EMERGENCY_RECOVERY_ENABLED==='true'&&env.WORKSPACE_RECOVERY_ENABLED==='true'};}
 function flow(d){if(!d||!['IDLE','AUTH','REGISTER','COMPLETE','CANCELLED'].includes(d.stage)||d.stage!=='IDLE'&&(!catalogUuid(d.commandId)||!['ADD','REMOVE','CODES'].includes(d.mode)||!catalogUuid(d.authId)||!catalogUuid(d.regId)||![d.authChallenge,d.regChallenge].every(s=>typeof s==='string'&&/^[A-Za-z0-9_-]{43}$/.test(s))||['ADD','CODES'].includes(d.mode)&&d.target!==''||d.mode==='REMOVE'&&(!hash(d.target)||typeof d.targetCredentialId!=='string'||!/^[A-Za-z0-9_-]{2,1400}$/.test(d.targetCredentialId))||!Number.isSafeInteger(d.count)||d.count<0||d.count>(d.mode==='CODES'?6:5)||d.stage==='COMPLETE'&&d.count<1||typeof d.expiresAt!=='string'||!Number.isFinite(Date.parse(d.expiresAt))))bad();return d;}

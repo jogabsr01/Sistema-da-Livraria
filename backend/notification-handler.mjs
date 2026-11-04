@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { randomUUID } from 'node:crypto';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
@@ -6,7 +7,7 @@ import { createWorkspaceClient } from './workspace-client.mjs';
 import { requirePermission, requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
 import { catalogUuid } from './catalog-model.mjs';
 
-const ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN = devOrigin();
 export function loadNotificationSettings(env = process.env) {
   if (env.WORKSPACE_NOTIFICATIONS_ENABLED !== 'true' || env.WORKSPACE_CATALOG_ENABLED !== 'true') throw new ApiError(503, 'NOTIFICATIONS_NOT_ACTIVATED');
   return loadSessionSettings(env);

@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { createHmac,createHash,randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { ApiError,json,safeFailure } from './errors.mjs';
@@ -8,7 +9,7 @@ import { requirePermission,requireSameOriginMutation,requireCsrfToken } from './
 import { normalizeNiche,nicheDto,nicheInvalid } from './niche-model.mjs';
 import { catalogUuid } from './catalog-model.mjs';
 import { prepareCoverPhoto } from './cover-photo.mjs';
-const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN=devOrigin();
 export function loadNicheSettings(env=process.env){if(env.WORKSPACE_NICHES_ENABLED!=='true')throw new ApiError(503,'NICHES_NOT_ACTIVATED');return loadCatalogSettings(env);}
 export function createNicheHandler(deps={}){return async request=>{const requestId=randomUUID();try{
  const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['list','save','image'].includes(op))throw new ApiError(404,'NOT_FOUND');const method=op==='save'?'POST':'GET';if(request.method!==method){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow',method);return r;}

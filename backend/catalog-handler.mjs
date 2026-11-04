@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { createHmac, randomUUID } from 'node:crypto';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
@@ -10,7 +11,7 @@ import { prepareCoverPhoto } from './cover-photo.mjs';
 import { createIsbnLookupService } from './isbn-lookup.mjs';
 import { loadLoginGuardSettings } from './login-guard.mjs';
 import { normalizeStockReceipt } from './stock-command.mjs';
-const ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN = devOrigin();
 export function loadCatalogSettings(env = process.env) {
   if (env.WORKSPACE_CATALOG_ENABLED !== 'true') throw new ApiError(503, 'CATALOG_NOT_ACTIVATED');
   return {...loadSessionSettings(env),lookupEnabled:env.WORKSPACE_ISBN_LOOKUP_ENABLED === 'true',photosEnabled:env.WORKSPACE_COVER_PHOTOS_ENABLED === 'true',checkoutEnabled:env.WORKSPACE_CHECKOUT_ENABLED === 'true',customersEnabled:env.WORKSPACE_CUSTOMERS_ENABLED === 'true',nichesEnabled:env.WORKSPACE_NICHES_ENABLED==='true'}; // DEV-only, full bindings; independently gated.

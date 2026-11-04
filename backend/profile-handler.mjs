@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { createHash,randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { ApiError,json,safeFailure } from './errors.mjs';
@@ -9,7 +10,7 @@ import { requirePermission,requireSameOriginMutation,requireCsrfToken } from './
 import { normalizeStaffContact,normalizeCpf,staffText } from './staff-model.mjs';
 import { catalogUuid } from './catalog-model.mjs';
 import { prepareCoverPhoto } from './cover-photo.mjs';
-const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN=devOrigin();
 export function loadProfileSettings(env=process.env){if(env.WORKSPACE_PROFILE_ENABLED!=='true')throw new ApiError(503,'PROFILE_NOT_ACTIVATED');return {...loadSessionSettings(env),...loadPersonalDataSettings(env),recoveryEnabled:env.WORKSPACE_RECOVERY_ENABLED==='true',emailChangeEnabled:env.WORKSPACE_EMAIL_CHANGE_ENABLED==='true',schedulesEnabled:env.WORKSPACE_SCHEDULES_ENABLED==='true'};}
 function invalid(field){const e=new ApiError(400,'INVALID_PROFILE');if(['phone','name'].includes(field))e.field=field;throw e;}
 export function unpackProfile(data,vault,id){

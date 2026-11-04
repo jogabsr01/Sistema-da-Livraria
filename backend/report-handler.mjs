@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { randomUUID,timingSafeEqual,createHmac } from 'node:crypto';
 import { ApiError,json,safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
@@ -8,7 +9,7 @@ import { requirePermission,requireSameOriginMutation,requireCsrfToken } from './
 import { catalogUuid } from './catalog-model.mjs';
 import { normalizeReportFilters,reportSourceFilters,buildCommercialReport,reportInvalid } from './report-model.mjs';
 import { createReportWorkbook } from './report-xlsx.mjs';
-const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app',hash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+const ORIGIN=devOrigin(),hash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 export function loadReportSettings(env=process.env){if(env.WORKSPACE_REPORTS_ENABLED!=='true'||env.WORKSPACE_CATALOG_ENABLED!=='true')throw new ApiError(503,'REPORT_NOT_ACTIVATED');return {...loadSessionSettings(env),...loadPersonalDataSettings(env)};}
 export function createReportHandler(deps={}){return async request=>{const requestId=randomUUID();try{
  const url=new URL(request.url),op=url.pathname.split('/').at(-1),exporting=op==='export';if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['query','export'].includes(op))throw new ApiError(404,'NOT_FOUND');if(request.method!=='POST'){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow','POST');return r;}if(url.search)reportInvalid();

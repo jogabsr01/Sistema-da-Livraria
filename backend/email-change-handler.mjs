@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { createHash,createHmac,randomBytes,randomUUID } from 'node:crypto';
 import { ApiError,json,safeFailure } from './errors.mjs';
 import { loadProfileSettings,unpackProfile } from './profile-handler.mjs';
@@ -7,7 +8,7 @@ import { createSessionService } from './session-service.mjs';
 import { requirePermission,requireSameOriginMutation,requireCsrfToken } from './authorization.mjs';
 import { staffText } from './staff-model.mjs';
 import { catalogUuid } from './catalog-model.mjs';
-const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN=devOrigin();
 export function loadEmailChangeSettings(env=process.env){if(env.WORKSPACE_EMAIL_CHANGE_ENABLED!=='true')throw new ApiError(503,'EMAIL_CHANGE_NOT_ACTIVATED');return loadProfileSettings(env);}
 const invalid=()=>{throw new ApiError(400,'INVALID_EMAIL_CHANGE');};
 function address(value){const email=staffText(value,254,true).toLowerCase(),parts=email.split('@');if(parts.length!==2||parts[0].length>64||!/^[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+$/i.test(parts[0])||parts[0][0]==='.'||parts[0].endsWith('.')||parts[0].includes('..')||!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(parts[1]))invalid();return email;}

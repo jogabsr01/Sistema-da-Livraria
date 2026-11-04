@@ -1,10 +1,10 @@
 # Origem HTTPS local para integração DEV — pendente
 
-O ambiente integrado de navegação local **ainda não está disponível**. Servir `dist` com `python3 -m http.server` permite apenas visualizar o protótipo; não fornece Functions e não satisfaz as verificações de origem da interface ou da API.
+O roteador HTTPS experimental está disponível sob opt-in local, mas o fluxo completo **ainda não está homologado**: operações Firestore de biometria e dispositivo continuam pendentes. Servir `dist` com `python3 -m http.server` permite apenas visualizar o protótipo.
 
-Existe também uma prévia HTTPS exclusivamente visual em loopback. Com `mkcert` instalado e sua CA local instalada segundo o procedimento da ferramenta, gere um certificado para `localhost` e `127.0.0.1` fora do repositório, e então execute `node scripts/local-https-preview.mjs /caminho/cert.pem /caminho/key.pem`. Acesse `https://localhost:8443/`. A prévia recusa `/api/*` e não permite login nem comunicação com o Firestore; não é o servidor integrado. Não adicione a chave ou certificados privados ao Git.
+Sem opt-in, existe uma prévia HTTPS exclusivamente visual em loopback. Com `mkcert` instalado e sua CA local instalada, gere um certificado fora do repositório e execute `node scripts/local-https-preview.mjs /caminho/cert.pem /caminho/key.pem`. Com `WORKSPACE_LOCAL_LAB=YES` e todas as demais travas da política satisfeitas, o mesmo servidor encaminha `/api/v1/*` às Functions locais. Não adicione chaves ou certificados privados ao Git.
 
-O código atual fixa a origem `https://dev--merry-chimera-49a1f3.netlify.app` no navegador e nos handlers e utiliza esse mesmo hostname como RP ID WebAuthn. `netlify dev` ou um proxy em `localhost` não mudam essas verificações automaticamente. Não remapear o domínio DEV real no arquivo hosts, não usar certificados ignorados pelo navegador e não reescrever `Origin` em um proxy para aparentar que a requisição veio do domínio publicado: essas medidas podem misturar credenciais e passkeys locais com o ambiente remoto ou produzir uma evidência de segurança falsa.
+O padrão publicado mantém a origem DEV e seu RP ID. No laboratório validado, os handlers usam `https://localhost:8443` e RP ID `localhost`; o servidor adapta os scripts apenas na resposta local, sem alterar o build publicado. Não remapear o domínio DEV real no arquivo hosts nem reescrever `Origin` para aparentar que a requisição veio do domínio publicado.
 
 ## Estrutura necessária antes do comando definitivo
 

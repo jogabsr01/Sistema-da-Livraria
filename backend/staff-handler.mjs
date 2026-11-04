@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
@@ -7,7 +8,7 @@ import { requirePermission, requireSameOriginMutation, requireCsrfToken } from '
 import { loadPersonalDataSettings, createPersonalDataVault } from './personal-data.mjs';
 import { catalogUuid } from './catalog-model.mjs';
 import { normalizeStaffCommand, staffDto, staffInvalid } from './staff-model.mjs';
-export const STAFF_ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
+export const STAFF_ORIGIN=devOrigin();
 export function loadStaffSettings(env=process.env){if(env.WORKSPACE_STAFF_ENABLED!=='true')throw new ApiError(503,'STAFF_NOT_ACTIVATED');return {...loadSessionSettings(env),...loadPersonalDataSettings(env)};}
 export function createStaffHandler(dependencies={}){
  return async request=>{const requestId=randomUUID();try{

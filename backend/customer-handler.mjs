@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { createPostalCodeLookup,normalizePostalCode } from './postal-code.mjs';
 import { randomUUID } from 'node:crypto';
 import { ApiError,json,safeFailure } from './errors.mjs';
@@ -9,7 +10,7 @@ import { loadPersonalDataSettings,createPersonalDataVault } from './personal-dat
 import { normalizeCpf } from './staff-model.mjs';
 import { catalogUuid } from './catalog-model.mjs';
 import { normalizeCustomerCommand,customerInvalid,customerDto } from './customer-model.mjs';
-const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN=devOrigin();
 export function loadCustomerSettings(env=process.env){if(env.WORKSPACE_CUSTOMERS_ENABLED!=='true')throw new ApiError(503,'CUSTOMERS_NOT_ACTIVATED');return {...loadSessionSettings(env),...loadPersonalDataSettings(env)};}
 export function createCustomerHandler(dependencies={}){return async request=>{const requestId=randomUUID();try{
  const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==ORIGIN)throw new ApiError(403,'FORBIDDEN');if(!['find','get','save','postal-code'].includes(op)||url.search)throw new ApiError(404,'NOT_FOUND');

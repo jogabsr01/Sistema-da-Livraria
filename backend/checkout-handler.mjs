@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { randomUUID } from 'node:crypto';
 import { ApiError, json, safeFailure } from './errors.mjs';
 import { loadSessionSettings } from './session-config.mjs';
@@ -6,7 +7,7 @@ import { createWorkspaceClient } from './workspace-client.mjs';
 import { requirePermission, requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
 import { normalizeCheckout } from './checkout-command.mjs';
 
-const ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
+const ORIGIN = devOrigin();
 export function loadCheckoutSettings(env = process.env) {
   if (env.WORKSPACE_CHECKOUT_ENABLED !== 'true' || env.WORKSPACE_CATALOG_ENABLED !== 'true') throw new ApiError(503, 'CHECKOUT_NOT_ACTIVATED');
   return {...loadSessionSettings(env),customersEnabled:env.WORKSPACE_CUSTOMERS_ENABLED==='true'};

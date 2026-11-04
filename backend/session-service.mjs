@@ -1,3 +1,4 @@
+import { devOrigin } from './local-lab-policy.mjs';
 import { createHmac } from 'node:crypto';
 import { ApiError } from './errors.mjs';
 import { createSessionTokens } from './credential-core.mjs';
@@ -46,7 +47,7 @@ export function createSessionService(settings, { client, now = () => Date.now() 
   // Only principals created by this service instance can derive CSRF without
   // repeating the same session RPC. No cache of authorization across requests.
   const authenticated = new WeakMap();
-  const origin = config.environment === 'dev' ? 'https://dev--merry-chimera-49a1f3.netlify.app' : 'https://merry-chimera-49a1f3.netlify.app';
+  const origin = config.environment === 'dev' ? devOrigin() : 'https://merry-chimera-49a1f3.netlify.app';
   if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   function csrf(rawToken) {
     return createHmac('sha256', csrfKey).update(JSON.stringify(['csrf.v1', config.environment, config.installationId, rawToken])).digest('base64url');
@@ -98,7 +99,7 @@ export function createSessionService(settings, { client, now = () => Date.now() 
 // Read-only bootstrap handlers MUST validate the fresh signed Google principal
 // and requirePermission before disclosing their data.
 export function sessionTransportContext(request,settings){
-  if(settings.config.environment!=='dev'||new URL(request.url).origin!=='https://dev--merry-chimera-49a1f3.netlify.app')denied();
+  if(settings.config.environment!=='dev'||new URL(request.url).origin!==devOrigin())denied();
   const rawToken=readSessionToken(request),tokens=createSessionTokens({...settings.config,tokenKey:settings.tokenKey});
   return {actor:{sessionTokenHash:tokens.hash(rawToken)},csrfToken:createHmac('sha256',settings.tokenKey).update(JSON.stringify(['csrf.v1',settings.config.environment,settings.config.installationId,rawToken])).digest('base64url')};
 }

@@ -1,7 +1,6 @@
-// This policy is not wired into published handlers. A local server must opt in
-// and validate the complete environment before using the returned fixed origin.
+// Explicit opt-in is always validated; invalid laboratory configurations fail closed.
 export function loadLocalLabPolicy(env = process.env) {
-  const forbidden = ['NETLIFY', 'NETLIFY_LOCAL', 'SITE_ID', 'CONTEXT', 'BRANCH', 'DEPLOY_ID', 'DEPLOY_PRIME_URL',
+  const forbidden = ['NETLIFY', 'NETLIFY_LOCAL', 'SITE_ID', 'SITE_NAME', 'CONTEXT', 'BRANCH', 'DEPLOY_ID', 'DEPLOY_URL', 'DEPLOY_PRIME_URL', 'URL',
     'GOOGLE_APPLICATION_CREDENTIALS', 'WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON', 'WORKSPACE_EMAIL_PROVIDER', 'WORKSPACE_EMAIL_PROVIDER_KEY'];
   const project = env.WORKSPACE_FIRESTORE_PROJECT_ID;
   if (env.WORKSPACE_LOCAL_LAB !== 'YES' || env.APP_ENV !== 'dev' || env.WORKSPACE_STORAGE_MODE !== 'firestore' ||
@@ -12,4 +11,13 @@ export function loadLocalLabPolicy(env = process.env) {
   }
   return Object.freeze({ origin: 'https://localhost:8443', rpId: 'localhost', projectId: project,
     emulatorHost: '127.0.0.1:8080' });
+}
+
+export function devOrigin(env = process.env) {
+  return env.WORKSPACE_LOCAL_LAB === undefined || env.WORKSPACE_LOCAL_LAB === ''
+    ? 'https://dev--merry-chimera-49a1f3.netlify.app' : loadLocalLabPolicy(env).origin;
+}
+
+export function devRpId(env = process.env) {
+  return new URL(devOrigin(env)).hostname;
 }
