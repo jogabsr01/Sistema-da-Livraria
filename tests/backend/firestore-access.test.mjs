@@ -52,6 +52,28 @@ test('Firestore access stores PASSWORD_V1 activation intent, encrypted delivery 
   assert.equal((await service.read({ tokenHash })).state, 'PASSKEY');
 });
 
+test('owner first access finds a verified owner address after a legacy email index change', async () => {
+  const db = baseDb();
+  db.values.set(`users/${userId}`, { ...db.values.get(`users/${userId}`), email, emailIndex: 'f'.repeat(64) });
+  const service = createFirestoreAccessService({ db, config });
+  assert.deepEqual(await service.start({ email, flowId, tokenHash, codeHash: 'c'.repeat(64), code: 'ABCDEFG' }), { accepted: true, outcome: 'SENT' });
+  assert.ok(db.values.get(`outbox/email:auth:${tokenHash}`));
+});
+
+test('owner address fallback never authorizes a non-owner or conflicting records', async () => {
+  const db = baseDb();
+  db.values.set(`users/${userId}`, { ...db.values.get(`users/${userId}`), email, emailIndex: 'f'.repeat(64), owner: false, role: 'ADMIN' });
+  const service = createFirestoreAccessService({ db, config });
+  await assert.rejects(service.start({ email, flowId, tokenHash, codeHash: 'c'.repeat(64), code: 'ABCDEFG' }), { code: 'IDENTITY_UNAVAILABLE' });
+  assert.equal(db.values.has(`outbox/email:auth:${tokenHash}`), false);
+});
+
+test('production first access refuses to queue undeliverable email when the provider is not configured', async () => {
+  const db = baseDb(), service = createFirestoreAccessService({ db, config: { ...config, environment: 'prod' } });
+  await assert.rejects(service.start({ email, flowId, tokenHash, codeHash: 'c'.repeat(64), code: 'ABCDEFG' }), { code: 'ACCESS_EMAIL_DELIVERY_UNAVAILABLE' });
+  assert.equal(db.values.has(`outbox/email:auth:${tokenHash}`), false);
+});
+
 test('Firestore access commits a passkey-backed activation exactly once with a 24-hour session', async () => {
   const db = baseDb(), service = createFirestoreAccessService({ db, config, now: () => Date.parse('2026-01-01T12:00:00.000Z') });
   const codeHash = 'd'.repeat(64);

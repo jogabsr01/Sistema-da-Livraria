@@ -84,6 +84,9 @@ body.page-access{min-height:100vh;min-height:100dvh;padding:16px;background:radi
 .page-access .first-access{margin-top:16px;padding-top:16px}
 .app-shell.page-access #first-access{background:transparent;border:1px solid #afc9b8;color:#205b43;box-shadow:none}
 .app-shell.page-access #first-access:hover{background:#f0f6f1}
+.app-shell.page-access .recovery-choice{text-align:center;margin:4px 0 12px}
+.app-shell.page-access button.recovery-link{display:inline;width:auto;min-height:0;margin:0;padding:2px;border:0;background:transparent;box-shadow:none;color:#526f5e;font-size:.83rem;font-weight:400;text-decoration:underline;text-underline-offset:3px}
+.app-shell.page-access button.recovery-link:hover{background:transparent;color:#205b43}
 .page-access .access-help{margin-top:24px;text-align:center;border-top:1px solid #e4ece5}
 .page-access .access-help summary{display:inline-block;padding:20px 0 4px;color:#526f5e;font-size:.83rem;text-decoration:underline;text-underline-offset:3px}
 .page-access .access-help p{text-align:left;color:#52685b;font-size:.85rem}

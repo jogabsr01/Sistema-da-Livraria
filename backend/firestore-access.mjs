@@ -94,9 +94,17 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
   async function findUser(transaction, email) {
     const index = ownerEmailIndex(config, email), result = await transaction.get(db.collection('users').where('emailIndex', '==', index));
     if (!result || !Array.isArray(result.docs) || result.docs.length > 1) unavailable();
-    const snapshot = result.docs[0];
+    // Owner e-mail changes may have written a personal-data index instead of
+    // the bootstrap index. Only the authoritative owner record may fall back
+    // to its stored normalized address; never grant ownership based on input.
+    const byEmail = await transaction.get(db.collection('users').where('email', '==', email.toLowerCase()));
+    if (!byEmail || !Array.isArray(byEmail.docs) || byEmail.docs.length > 1) unavailable();
+    if (result.docs[0] && byEmail.docs[0] && result.docs[0].id !== byEmail.docs[0].id) unavailable();
+    const snapshot = result.docs[0] || byEmail.docs[0];
     if (!snapshot) return null;
-    return userValue(snapshot, snapshot.id);
+    const user = userValue(snapshot, snapshot.id);
+    if (user.owner !== true || user.role !== 'SUPER_ADMIN' || (user.email !== undefined && user.email !== email.toLowerCase())) unavailable();
+    return user;
   }
   async function readFlow(transaction, hash) {
     const value = flowDocument(snapshotValue(await transaction.get(flowRef(hash))));
@@ -109,6 +117,9 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
   }
   async function start(payload, purpose = 'ACTIVATE') {
     const token = tokenHash(payload?.tokenHash); id(payload?.flowId);
+    if (config.environment === 'prod' && (config.firestore?.emailProvider !== 'resend' || !config.firestore?.emailProviderKey || !config.firestore?.emailFrom)) {
+      throw new ApiError(503, 'ACCESS_EMAIL_DELIVERY_UNAVAILABLE');
+    }
     const staff = payload.staff === true;
     const delivery = staff ? payload.delivery : payload.email;
     if (!['ACTIVATE', 'RECOVER'].includes(purpose) || typeof delivery !== 'string' || delivery.length > 254 ||
