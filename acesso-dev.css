@@ -70,9 +70,11 @@ body.page-access{min-height:100vh;min-height:100dvh;padding:16px;background:radi
 @media(prefers-reduced-motion:reduce){.page-access :is(#initial,#email-form,#password-form,#passkey,#retry,#complete):not([hidden]){animation:none}.page-access input:not([type=checkbox]){transition:none}.page-access button:not(:disabled):active{transform:none}}
 
 /* Login-specific hierarchy, including overrides for the shared app theme. */
-.app-shell.page-access main{border:1px solid #dce8df;border-radius:24px;box-shadow:0 20px 64px #173b3017}
-.page-access .access-heading{text-align:center;margin-bottom:28px}
-.app-shell.page-access .church-brand{display:inline-flex;justify-content:center;margin:0 auto 18px}
+.app-shell.page-access main{border:1px solid #dce8df;border-radius:24px;box-shadow:0 20px 64px #173b3017,0 1px 0 #fff inset}
+.page-access .access-heading{text-align:center;margin-bottom:30px}
+.app-shell.page-access .church-brand{position:relative;isolation:isolate;display:inline-flex;align-items:center;justify-content:center;margin:0 auto 20px;padding:8px 14px;border-radius:18px}
+.app-shell.page-access .church-brand::before{content:"";position:absolute;z-index:-1;inset:-10px -24px;background:radial-gradient(ellipse at center,#8bc7a82b 0%,#dcefe724 48%,transparent 75%);pointer-events:none}
+.app-shell.page-access .church-brand-logo{filter:drop-shadow(0 5px 12px #205b431c)}
 .app-shell.page-access .access-heading h1{font-size:clamp(1.6rem,5vw,2rem);margin:0 0 6px}
 .page-access .access-heading p{margin:0;color:#64786c;font-size:.9rem}
 .page-access .login-password-row{display:flex;align-items:stretch;gap:10px}
@@ -84,7 +86,7 @@ body.page-access{min-height:100vh;min-height:100dvh;padding:16px;background:radi
 .page-access .first-access{margin-top:16px;padding-top:16px}
 .app-shell.page-access #first-access{background:transparent;border:1px solid #afc9b8;color:#205b43;box-shadow:none}
 .app-shell.page-access #first-access:hover{background:#f0f6f1}
-.app-shell.page-access .recovery-choice{text-align:center;margin:8px 0 14px}
+.app-shell.page-access .recovery-choice{text-align:center;margin:4px 0 12px}
 .app-shell.page-access button.recovery-link,.app-shell.page-access button.recovery-link:not(:disabled):hover,.app-shell.page-access button.recovery-link:active{display:inline-flex;width:auto;min-height:44px;align-items:center;justify-content:center;margin:0;padding:0 4px;border:0;border-radius:0;background:transparent;box-shadow:none;color:#205b43;font-size:.83rem;font-weight:500;text-decoration:underline;text-decoration-color:#205b43;text-underline-offset:3px;filter:none;transform:none}
 .app-shell.page-access #login-form>label:not(.remember-choice){margin:18px 0 7px;font-size:.88rem;color:#294d3d}
 .app-shell.page-access #login-form>label:first-child{margin-top:0}
