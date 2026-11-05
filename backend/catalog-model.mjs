@@ -1,7 +1,7 @@
 import { invalidInput } from './errors.mjs';
 export const catalogUuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const fail = field => invalidInput('INVALID_PRODUCT',field);
-export const productFields = ['isbn', 'internalCode', 'title', 'author', 'publisher', 'edition', 'supplier', 'priceCents', 'minimumStock', 'category', 'coverUrl', 'year', 'pages', 'synopsis', 'nicheIds', 'active', 'subtitle', 'costCents', 'sku'];
+export const productFields = ['isbn', 'internalCode', 'title', 'author', 'publisher', 'edition', 'supplier', 'priceCents', 'minimumStock', 'category', 'coverUrl', 'year', 'pages', 'synopsis', 'nicheIds', 'active', 'subtitle', 'costCents', 'sku', 'productType'];
 export function normalizedIsbn(value) {
   if (typeof value !== 'string' || value.length > 30) fail('isbn');
   let isbn = value.replace(/[\s-]/g, '').toUpperCase();
@@ -30,6 +30,7 @@ export function normalizedCover(value) {
 }
 export function normalizeProduct(record, id) {
   if (!catalogUuid(id) || !record || typeof record !== 'object' || Array.isArray(record) || Object.keys(record).some(key => !productFields.includes(key))) fail();
+  if (record.productType !== undefined && !['LIVRO','PAPELARIA','ACESSORIO','OUTROS'].includes(record.productType)) fail('productType');
   const isbn = normalizedIsbn(record.isbn ?? '');
   if (!Number.isSafeInteger(record.priceCents)) fail('priceCents');
   let internalCode = text(record.internalCode, 31);
@@ -47,5 +48,6 @@ export function normalizeProduct(record, id) {
     category: text(record.category, 80), coverUrl: normalizedCover(record.coverUrl), year: record.year ?? 0, pages: record.pages ?? 0,
     synopsis: text(record.synopsis, 5000), nicheIds: record.nicheIds.slice().sort(), active: record.active,
     ...(record.subtitle !== undefined ? { subtitle: text(record.subtitle, 300, false, 'subtitle') } : {}),
-    ...(record.costCents !== undefined ? { costCents: record.costCents } : {}), ...(record.sku !== undefined ? { sku: sku.toUpperCase() } : {}) };
+    ...(record.costCents !== undefined ? { costCents: record.costCents } : {}), ...(record.sku !== undefined ? { sku: sku.toUpperCase() } : {}),
+    ...(record.productType !== undefined ? { productType: record.productType } : {}) };
 }

@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
- const $=id=>document.getElementById(id),origin='https://dev--merry-chimera-49a1f3.netlify.app';
+ const $=id=>document.getElementById(id),origin=(globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app');
  let csrf='',user='',role='',profile=null,photo=undefined,pending=null,busy=false,loading=false,access=false,ready=false,dirty=false,latest=null,epoch=0,checkedAt=0,timer,again=false;
  const online=()=>navigator.onLine!==false,fresh=()=>access&&ready&&online();
  function describe(e){ const common = globalThis.LivrariaMessages?.describe(e); if (common) return common;if(e.code==='OFFLINE')return 'Sem conexão. Mantenha esta aba aberta e confira o perfil ao reconectar.';if(e.code==='CONTEXT_CHANGED')return 'A conexão ou a conta mudou. Confira o pedido pendente ou atualize o perfil.';if(e.status===401||e.status===403)return 'Confirme novamente seu acesso com PIN e confirmação pelo aparelho antes de alterar o perfil.';if(e.code?.includes('CONFLICT'))return 'Seu perfil foi atualizado em outro atendimento. Atualize a consulta e confira seus dados.';if(e.code?.includes('NOT_ACTIVATED')||e.code?.includes('UNAVAILABLE'))return 'O perfil ainda não está disponível nesta instalação.';if(e.code?.includes('PHOTO')||e.code?.includes('INVALID_PROFILE')||e.code?.includes('CPF_')||e.code==='INVALID_STAFF')return 'Confira o contato e a foto escolhida. Use JPEG, PNG ou WebP.';return 'Não foi possível confirmar o resultado. Mantenha esta tela aberta e tente novamente.';}

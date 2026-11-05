@@ -3,6 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import {renderAppHeader} from './app-header.mjs';
+import { DEVELOPMENT_ORIGIN, PRODUCTION_ORIGIN } from '../backend/local-lab-policy.mjs';
+
+export const originBootstrap = `globalThis.LivrariaOrigin=Object.freeze({development:${JSON.stringify(DEVELOPMENT_ORIGIN)},production:${JSON.stringify(PRODUCTION_ORIGIN)},current(origin){return origin===this.development||origin===this.production?origin:null;}});\n`;
 
 export async function build(root = fileURLToPath(new URL('../', import.meta.url))) {
   const destination = resolve(root, 'dist');
@@ -57,9 +60,13 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
       const sharedPath = resolve(root,'ui-messages.js'), sharedInfo = await lstat(sharedPath);
       if (!sharedInfo.isFile() || sharedInfo.isSymbolicLink()) throw new Error('Invalid public message asset');
       const shared = await readFile(sharedPath,'utf8');
-      await writeFile(resolve(destination,file),shared + '\n' + await readFile(input,'utf8'));
+      await writeFile(resolve(destination,file),originBootstrap + shared + '\n' + await readFile(input,'utf8'));
     } else if(file.endsWith('-dev.html'))await writeFile(resolve(destination,file),renderAppHeader(await readFile(input,'utf8'),file));
+    else if(file === 'account-menu.js' || file === 'notification-badge.js') await writeFile(resolve(destination,file),originBootstrap + await readFile(input,'utf8'));
     else await copyFile(input, resolve(destination, file));
   }
+  // Preserve the standalone prototype while serving the access page natively at /.
+  await copyFile(resolve(destination,'index.html'),resolve(destination,'prototipo.html'));
+  await copyFile(resolve(destination,'acesso-dev.html'),resolve(destination,'index.html'));
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) await build();

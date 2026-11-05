@@ -8,6 +8,7 @@ import { createSessionTokens } from '../../backend/credential-core.mjs';
 import { createSessionService, sessionCookie } from '../../backend/session-service.mjs';
 import { createPersonalDataVault } from '../../backend/personal-data.mjs';
 import sharp from 'sharp';
+import { createCatalogHandler } from '../../backend/catalog-handler.mjs';
 
 const skip = process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8080';
 const origin = 'https://dev--merry-chimera-49a1f3.netlify.app';
@@ -29,6 +30,9 @@ test('local profile HTTP saves CPF with an older password session while retainin
   await db.collection('sessionTokenIndex').doc(tokenHash).set({ sessionId, userId });
   const cookie = sessionCookie(rawToken).split(';')[0];
   const current = await createSessionService(settings, { client }).current(new Request(`${origin}/api/v1/session`, { headers: { cookie } }));
+  const catalog = createCatalogHandler({ loadSettings: () => settings, createClient: () => client });
+  const catalogResponse = await catalog(new Request(`${origin}/api/v1/catalog/bootstrap?create=true`, { headers: { cookie } }));
+  assert.equal(catalogResponse.status, 200, await catalogResponse.clone().text());
   const photo = (await sharp({ create: { width: 32, height: 32, channels: 3, background: '#438063' } }).png().toBuffer()).toString('base64');
   const body = { commandId: randomUUID(), expectedRevision: 0, phone: '11988887777', displayName: 'Proprietário', cpf: '52998224725', photo };
   const call = (data, csrf = current.csrfToken) => handler(new Request(`${origin}/api/v1/profile/save`, { method: 'POST',

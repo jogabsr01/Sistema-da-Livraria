@@ -85,7 +85,7 @@ export function createFirestoreProfileService({ db, identityService, config, now
           contact: payload.contact, codeHash: payload.codeHash, codeExpiresAt: expiresAt, attempts: 0, state: 'EMAIL', createdAt, expiresAt, sendWindow: createdAt, sendCount: 1 };
         transaction.create(reference, next);
         enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `email-change:${payload.commandId}`, to: payload.delivery,
-          subject: 'Livraria IPB DEV — confirmar novo e-mail', text: `Código de uso único (válido por 15 minutos):\n${payload.code}\n\nNão compartilhe o código.`, now: createdAt });
+          subject: 'Livraria IPB — confirmar novo e-mail', text: `Código de uso único (válido por 15 minutos):\n${payload.code}\n\nNão compartilhe o código.`, now: createdAt });
         return emailDto({ commandId: payload.commandId, stage: 'EMAIL', revision: null, expiresAt: expiresAt.toISOString() });
       }
       if (operation === 'emailConfirm') {

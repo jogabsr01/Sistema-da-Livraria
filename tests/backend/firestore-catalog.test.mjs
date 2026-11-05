@@ -84,6 +84,18 @@ test('Firestore catalog lists and gets products with current filters and DTO sha
   assert.equal(detailed.product.synopsis, 'Sinopse');
 });
 
+test('Firestore catalog persists non-book product type and rejects unknown types', async () => {
+  const { db, service } = makeService();
+  const id = randomUUID();
+  const record = { isbn:'', internalCode:'', title:'Caderno', author:'', publisher:'', edition:'', supplier:'', priceCents:1500,
+    minimumStock:0, category:'Papelaria', coverUrl:'', year:0, pages:0, synopsis:'Caderno pautado', nicheIds:[nicheId], active:true, sku:'SKU-001', productType:'PAPELARIA' };
+  const payload = { commandId:randomUUID(), id, expectedVersion:0, record };
+  await service.execute('save', { sessionTokenHash:tokenHash }, payload);
+  assert.equal(db.values.get(`products/${id}`).productType,'PAPELARIA');
+  assert.equal((await service.execute('get', { sessionTokenHash:tokenHash }, { id })).product.productType,'PAPELARIA');
+  await assert.rejects(service.execute('save', { sessionTokenHash:tokenHash }, { ...payload, commandId:randomUUID(), id:randomUUID(), record:{...record,productType:'INVALIDO'} }), { status:400 });
+});
+
 test('Firestore catalog bootstrap supports creation mode and returns principal/niches', async () => {
   const { service } = makeService();
   const result = await service.execute('bootstrap', { sessionTokenHash: tokenHash }, { search: '', offset: 0, nicheId: '', includeInactive: false, create: true });

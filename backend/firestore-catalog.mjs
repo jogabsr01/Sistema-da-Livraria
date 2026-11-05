@@ -131,7 +131,7 @@ function productSummary(record, version, stock, hasPhoto) {
   return { version, stock, isbn: record.isbn, internalCode: record.internalCode, title: record.title,
     author: record.author, publisher: record.publisher, edition: record.edition, supplier: record.supplier,
     priceCents: record.priceCents, minimumStock: record.minimumStock, category: record.category,
-    ...(record.subtitle !== undefined ? { subtitle: record.subtitle } : {}), ...(record.costCents !== undefined ? { costCents: record.costCents } : {}), ...(record.sku !== undefined ? { sku: record.sku } : {}),
+    ...(record.productType !== undefined ? { productType: record.productType } : {}), ...(record.subtitle !== undefined ? { subtitle: record.subtitle } : {}), ...(record.costCents !== undefined ? { costCents: record.costCents } : {}), ...(record.sku !== undefined ? { sku: record.sku } : {}),
     year: record.year, pages: record.pages, active: record.active, nicheIds: record.nicheIds, hasPhoto };
 }
 
@@ -168,8 +168,8 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
   return runFirestoreTransaction(db, async transaction => {
     const currentTime = now();
     const principal = await identityService.readSessionInTransaction(transaction, tokenHash, currentTime);
-    requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permissionFor(operation, payload), { now: currentTime });
-    if (operation === 'save' && payload?.initialStock > 0) requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'stock.receive', { now: currentTime });
+    requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permissionFor(operation, payload), { now: currentTime });
+    if (operation === 'save' && payload?.initialStock > 0) requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'stock.receive', { now: currentTime });
     if (!payload || !catalogUuid(payload.commandId) || !catalogUuid(payload.id)) throw new ApiError(400, 'INVALID_PRODUCT');
     const photo = Object.hasOwn(payload, 'photo') && payload.photo !== null ? photoDescriptor(payload.photo) : null;
     const commandPayload = { ...payload, ...(Object.hasOwn(payload, 'photo') ? { photo: payload.photo === null ? null : { sha256: photo.sha256 } } : {}) };
@@ -307,7 +307,7 @@ export function createFirestoreCatalogService({ db, identityService, config, now
     return runFirestoreTransaction(db, async transaction => {
       const current = now();
       const principal = await identityService.readSessionInTransaction(transaction, tokenHash, current);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permissionFor(operation, payload), { now: current });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permissionFor(operation, payload), { now: current });
       if (operation === 'get') {
         const snapshot = await repositories.transaction.get(transaction, 'products', payload.id);
         return { product: product(snapshot, true) };

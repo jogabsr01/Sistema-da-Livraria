@@ -159,3 +159,11 @@ body.page-home{min-height:100dvh;padding:28px 32px 48px}
 .home-menu[open] summary{border-bottom:1px solid #e3e8df}.home-menu[open] summary svg{transform:rotate(180deg)}
 .home-menu>div{display:grid;padding:8px}.home-menu a{padding:12px;border-radius:8px;font-size:.85rem;text-decoration:none;min-height:44px;display:flex;align-items:center;gap:6px}.home-menu a:hover{background:#eff4e9}
 @media(max-width:700px){.page-home .main-actions .card-icon{width:60px;height:60px;flex-basis:60px;border-radius:15px}.page-home .main-actions .card-icon svg{width:42px;height:42px}.page-home .main-actions .action-card strong{font-size:1.15rem}.home-menu summary{padding:16px;font-size:.85rem}.page-home .main-actions .action-card{gap:12px}.page-home .main-actions .action-card small{font-size:.75rem}}
+
+/* Stack the dashboard actions across the available width on touch screens. */
+@media(max-width:768px){
+ .page-home .main-actions,.page-home .other-actions{grid-template-columns:minmax(0,1fr)}
+ .page-home .main-actions .action-card,.page-home .other-actions>.action-card{width:100%;min-width:0}
+ .page-home #home{padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px))}
+ .page-home #home .action-card{scroll-margin-top:120px;scroll-margin-bottom:24px}
+}

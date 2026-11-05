@@ -2,7 +2,7 @@
  * Server sessions/permissions/prices/stock are always authoritative. */
 (() => {
   'use strict';
-  const $ = id => document.getElementById(id), ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
+  const $ = id => document.getElementById(id), ORIGIN = (globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app');
   $('query').value = (new URL(location.href).searchParams.get('q') || '').slice(0,100);
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const methods = { PIX:'PIX', DINHEIRO:'Dinheiro', DEBITO:'Débito', CREDITO:'Crédito' };
@@ -66,7 +66,7 @@
   function message(error) {
     if (error.status === 401) return 'Entre na conta verificada para continuar. Se houver uma venda pendente, volte com a mesma conta para conferir o resultado.';
     if (error.status === 403) return 'Esta conta não pode concluir esta operação. Confira seu acesso.';
-    if (error.code === 'CHECKOUT_NOT_ACTIVATED' || error.code === 'WORKSPACE_CHECKOUT_UNAVAILABLE') return 'O Caixa compartilhado ainda não está disponível nesta instalação DEV.';
+    if (error.code === 'CHECKOUT_NOT_ACTIVATED' || error.code === 'WORKSPACE_CHECKOUT_UNAVAILABLE') return 'O Caixa compartilhado ainda não está disponível nesta instalação.';
     return 'Não foi possível atualizar. Confira sua conexão e tente novamente.';
   }
   function renderCart() {
@@ -215,7 +215,7 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) invalidateStock(); else refresh(); });
   window.addEventListener('pageshow', event => { if (event.persisted) { invalidateStock(); refresh(); } });
   async function start() {
-    if (location.origin !== ORIGIN) { $('status').textContent = 'Esta tela funciona exclusivamente no endereço DEV autorizado.'; return; }
+    if (location.origin !== ORIGIN) { $('status').textContent = 'Esta tela funciona exclusivamente no endereço autorizado.'; return; }
     if (starting || started) return;
     starting = true;
     const version = connectionVersion;
@@ -223,7 +223,7 @@
       const query=new URLSearchParams({q:$('query').value.trim(),offset:String(offset),niche:activeNiche});
       const bootstrap=await api('/api/v1/catalog/bootstrap?'+query),session=bootstrap;csrf=session.csrfToken;storageKey='checkout.pending.'+session.user.id;
       const capabilities=bootstrap;
-      if (capabilities.checkoutEnabled !== true) { $('status').textContent = 'O Caixa compartilhado ainda não está disponível nesta instalação DEV.'; return; }
+      if (capabilities.checkoutEnabled !== true) { $('status').textContent = 'O Caixa compartilhado ainda não está disponível nesta instalação.'; return; }
       customersEnabled=capabilities.customersEnabled===true;$('customer-options').hidden=!customersEnabled;
       let raw; try { raw = sessionStorage.getItem(storageKey); } catch { throw Error('STORAGE_UNAVAILABLE'); }
       if (raw) {

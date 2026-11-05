@@ -1,5 +1,5 @@
 (()=>{
- 'use strict';const connectionNode=document.createElement('span'),reconnectNode=document.createElement('button');const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';const $=id=>document.getElementById(id),money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),date=s=>s?new Date(s).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}):'Sem compras confirmadas';let csrf='',userId='',data=null,busy=false,page=0,pending=null,prepared=null,epoch=0;
+ 'use strict';const connectionNode=document.createElement('span'),reconnectNode=document.createElement('button');const ORIGIN=(globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app');const $=id=>document.getElementById(id),money=n=>(n/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),date=s=>s?new Date(s).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}):'Sem compras confirmadas';let csrf='',userId='',data=null,busy=false,page=0,pending=null,prepared=null,epoch=0;
  const selected=()=>[...document.querySelectorAll('.book-choice:checked')].map(el=>el.value);
  let access=false,previewTimer;
  const online=()=>navigator.onLine!==false;
@@ -87,5 +87,5 @@
  window.addEventListener('focus',()=>refresh());window.addEventListener('offline',invalidate);window.addEventListener('online',()=>{invalidate();refresh();});
  document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidate();else refresh();});window.addEventListener('pagehide',invalidate);window.addEventListener('pageshow',e=>{if(e.persisted){invalidate();refresh();}});
  window.addEventListener('beforeunload',e=>{if(pending){e.preventDefault();e.returnValue='';}});setInterval(()=>refresh(false),60000);
- if(location.origin===ORIGIN)refresh();else{$('status').textContent='Esta tela funciona exclusivamente no endereço DEV autorizado.';controls();}
+ if(location.origin===ORIGIN)refresh();else{$('status').textContent='Esta tela funciona exclusivamente no endereço autorizado.';controls();}
 })();

@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app';
+  const ORIGIN=(globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app');
   const $=id=>document.getElementById(id);
   const recentEntry=new URLSearchParams(location.search).get('entrada')==='confirmada';
   let entryDiagnostic=null;
@@ -65,7 +65,7 @@
   async function load(){
     if(checking)return;const started=performance.now();let http=0;checking=true;authenticated=false;$('entry-failure').hidden=true;$('sign-in').hidden=recentEntry;$('retry').textContent='Tentar novamente';$('home').hidden=true;$('welcome').hidden=recentEntry;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
     document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=true);
-    if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço DEV da livraria para continuar.';checking=false;return;}
+    if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço da livraria para continuar.';checking=false;return;}
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
     try{
       $('status').textContent=recentEntry?'Abrindo sua livraria…':'Conferindo seu acesso…';

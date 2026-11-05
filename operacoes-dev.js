@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const $ = id => document.getElementById(id), origin = 'https://dev--merry-chimera-49a1f3.netlify.app';
+  const $ = id => document.getElementById(id), origin = (globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app');
   const money = cents => (cents / 100).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});
   const date = value => new Date(value).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
   const el = (tag,value,cls) => { const node=document.createElement(tag); node.textContent=value; if(cls)node.className=cls; return node; };
@@ -98,7 +98,7 @@
     try{await action(version);}catch(error){$('status').textContent=describe(error);}finally{loading=false;lock();if(queued){queued=false;load();}}
   }
   async function load() {
-    if(location.origin!==origin){$('status').textContent='Abra esta tela no endereço DEV da livraria.';return;}
+    if(location.origin!==origin){$('status').textContent='Abra esta tela no endereço da livraria.';return;}
     if(!online()||document.hidden){lock();if(!initialized&&!online())$('status').textContent='Sem conexão. O acesso será conferido ao reconectar.';return;}
     if(loading||busy){queued=true;return;}
     loading=true;ready=false;clearTimeout(expiryTimer);lock();const version=generation;

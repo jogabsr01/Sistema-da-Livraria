@@ -130,7 +130,7 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
         sessionTokenHash: '', passwordRecord: null, proofReady: false, replacementAllowed: false, createdAt: times.createdAt };
       transaction.create(reference, flow);
       enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `auth:${token}`, to: delivery,
-        subject: purpose === 'RECOVER' ? 'Livraria IPB DEV — recuperar acesso' : 'Livraria IPB DEV — criar senha',
+        subject: purpose === 'RECOVER' ? 'Livraria IPB — recuperar acesso' : 'Livraria IPB — criar senha',
         text: `${purpose === 'RECOVER' ? 'Foi solicitada a recuperação do acesso.' : 'Foi solicitado o primeiro acesso.'}\n\nCódigo de uso único (válido por 15 minutos):\n${payload.code}\n\nNão compartilhe o código.`, now: times.createdAt });
       return { accepted: true, outcome: 'SENT' };
     }, authOptions);

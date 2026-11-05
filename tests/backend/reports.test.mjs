@@ -9,6 +9,12 @@ const data=async r=>{assert.equal(r.status,200,await r.clone().text());return (a
 const sale=(id,x={})=>({idempotencyKey:randomUUID(),customerId:null,items:[{productId:id,quantity:1}],paymentMethod:'PIX',expectedTotalCents:3290,...x});
 const preview=async(s,f=s.reportFilters())=>data(await s.reportHttp('query',{filters:f}));
 const exportBody=(f,d)=>({commandId:randomUUID(),filters:f,proof:d.proof,expiresAt:d.expiresAt,sourceSnapshot:d.sourceSnapshot});
+test('CSV export is audited, respects preview and cannot reuse a command for XLSX',async()=>{
+ const s=reportFixture(),id=await s.product(1);await s.saleHttp(sale(id));const f=s.reportFilters(),d=await preview(s,f),body={...exportBody(f,d),format:'csv'};
+ const res=await s.reportHttp('export',body);assert.equal(res.status,200);assert.match(res.headers.get('content-type'),/^text\/csv/);const csv=await res.text();assert.ok(csv.includes('ID da venda'));assert.ok(csv.includes(d.rows[0].id));
+ assert.equal((await s.reportHttp('export',body)).status,200);assert.equal((await s.reportHttp('export',{...body,format:'xlsx'})).status,409);assert.equal(s.main.getSheetByName('Logs_Auditoria').rows.filter(r=>r[0]===body.commandId).length,1);
+ assert.equal((await s.reportHttp('export',{...body,commandId:randomUUID(),proof:'0'.repeat(64)})).status,409);
+});
 test('sales totals use integer historical prices, subtract full reversals and keep anonymous sales, rankings and filtered line amounts coherent',async()=>{
  const s=reportFixture(),a=await s.product(4),b=await s.product(2),first=sale(a),cancelled=sale(a),multi=sale(a,{items:[{productId:a,quantity:1},{productId:b,quantity:1}],expectedTotalCents:6580,paymentMethod:'DINHEIRO'});for(const p of [first,cancelled,multi])assert.equal((await s.saleHttp(p)).status,200);await s.operationsHttp('reverse',{commandId:randomUUID(),saleId:cancelled.idempotencyKey,reason:'Cancelamento fictício'});
  const f=s.reportFilters(),d=await preview(s,f);assert.deepEqual(d.summary,{salesCount:3,confirmedCount:2,reversedCount:1,grossCents:13160,reversedCents:3290,netCents:9870,unitsNet:3,averageCents:4935});assert.equal(d.rows.find(r=>r.id===multi.idempotencyKey).saleTotalCents,6580);assert.equal(d.rows[0].customer,'Sem cadastro');assert.equal(d.operators[0].netCents,9870);const selected=await preview(s,{...f,productId:b});assert.equal(selected.summary.netCents,3290);assert.equal(selected.rows[0].saleTotalCents,6580);assert.equal(selected.rows[0].valueCents,3290);assert.equal(selected.rows[0].items.length,1);

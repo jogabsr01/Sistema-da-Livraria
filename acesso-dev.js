@@ -1,6 +1,8 @@
 'use strict';
 (() => {
   const DEV = 'dev--merry-chimera-49a1f3.netlify.app';
+  const production = location.origin === (globalThis.LivrariaOrigin?.production || 'https://merry-chimera-49a1f3.netlify.app');
+  const localLab = location.origin === 'https://localhost:8443';
   const $ = id => document.getElementById(id);
   let pendingMessage = null;
   const message = (text, tone = 'info') => { if (busy) { pendingMessage = { text, tone }; return; } $('status').textContent = text; $('status').dataset.tone = tone; $('status').hidden = false; };
@@ -44,8 +46,9 @@
   }
   const busyCodes=new Set(['WORKSPACE_BUSY']);
   const uncertainCodes = new Set(['ACCESS_SESSION_COOKIE_MISSING','WORKSPACE_BUSY','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
-  function describe(error) { if(error.code==='ACCESS_SESSION_COOKIE_MISSING')return 'A confirmação foi aceita, mas sua sessão não ficou salva no navegador. Clique em “Tentar concluir entrada” para conferir novamente.'; if(busyCodes.has(error.code))return pendingDeviceCommand||pendingReceipt?'O serviço está ocupado. Sua confirmação pelo aparelho foi preservada nesta aba. Clique em “Tentar concluir entrada” para continuar.':'O serviço está ocupado. Aguarde alguns instantes e tente entrar novamente.'; const common = globalThis.LivrariaMessages?.describe(error); if (common && !uncertainCodes.has(error.code)) return common;
+  function describe(error) { if(production&&error.transport?.operation==='state'&&error.code==='FORBIDDEN')return 'O acesso não está habilitado neste endereço. Procure a administração da livraria.'; if(error.code==='ACCESS_SESSION_COOKIE_MISSING')return 'A confirmação foi aceita, mas sua sessão não ficou salva no navegador. Clique em “Tentar concluir entrada” para conferir novamente.'; if(busyCodes.has(error.code))return pendingDeviceCommand||pendingReceipt?'O serviço está ocupado. Sua confirmação pelo aparelho foi preservada nesta aba. Clique em “Tentar concluir entrada” para continuar.':'O serviço está ocupado. Aguarde alguns instantes e tente entrar novamente.'; const common = globalThis.LivrariaMessages?.describe(error); if (common && !uncertainCodes.has(error.code) && !(localLab && (error.code==='LOCAL_FIRESTORE_EMULATOR_UNAVAILABLE'||error.code==='IDENTITY_NOT_ACTIVATED'||error.code?.includes('CONFIGURATION')||error.code?.includes('IDENTITY_UNAVAILABLE')||error.code==='SERVICE_NOT_ACTIVATED'))) return common;
     const code = error.code || '';
+    if (localLab && (code === 'LOCAL_FIRESTORE_EMULATOR_UNAVAILABLE' || code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED')) return 'Não foi possível conectar ao serviço do laboratório. Confira a configuração e o emulador e tente novamente.';
     if (uncertainCodes.has(code) && ['state','session'].includes(error.transport?.operation)) return 'Não conseguimos carregar seu acesso agora. Aguarde alguns instantes e clique em “Tentar carregar novamente”. Se continuar, peça ajuda à administração.';
     if (code === 'IDENTITY_NOT_ACTIVATED' || code.includes('CONFIGURATION') || code.includes('IDENTITY_UNAVAILABLE') || code === 'SERVICE_NOT_ACTIVATED') return 'O acesso está indisponível no momento. Entre em contato com a administração da livraria para verificar a disponibilidade.';
     if (code === 'HOST_ACCESS_REQUIRED') return 'O Netlify precisa autorizar o acesso a este ambiente de testes. Abra o ambiente pelo botão abaixo e depois tente carregar novamente.';
@@ -55,7 +58,7 @@
     if (uncertainCodes.has(code)) return 'Não conseguimos confirmar esta etapa agora. Seus dados podem ter sido salvos. Aguarde alguns instantes e clique em “Conferir etapa salva” para continuar.';
     if (code === 'INVALID_CPF') return 'CPF inválido. Confira os números digitados.';
     if (code === 'INVALID_AUTH_REQUEST') {
-      const field = {login:'login-email',start:'activation-email',recover:'recovery-email'}[error.transport?.operation];
+      const field = {login:'login-email',start:'login-email',recover:'recovery-email'}[error.transport?.operation];
       if (field && !$(field).value.includes('@')) return 'Não conseguimos iniciar o acesso com este CPF. Tente usar seu e-mail cadastrado. Se não conseguir, peça ajuda à administração.';
       return 'Não conseguimos iniciar o acesso agora. Tente novamente. Se continuar, peça ajuda à administração.';
     }
@@ -123,6 +126,10 @@
     }
   }
   async function api(operation, body, canRenew = true, openLogin = false, busyAttempt = 0) {
+    if((localLab||production) && operation!=='state' && !csrfToken){
+      const state=await api('state',undefined,false,true);
+      if(state.stage!=='INITIAL'||!csrfToken)throw unavailable('ACCESS_CONTEXT_CHANGED');
+    }
     if(busy)$('access-progress').querySelector('span:last-child').textContent=({'state':'Preparando acesso…','device-login':'Entrando na livraria…','complete':'Finalizando sua entrada…','cookie':'Conferindo sua sessão…','login':'Conferindo acesso…','continue-login':'Preparando confirmação…','options':'Preparando confirmação…'})[operation]||'Aguarde…';
     const {response, result, failure} = await requestJson(operation, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
       headers: body === undefined ? (openLogin?{'x-access-view':'login'}:{}) : { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(['complete','login'].includes(operation)?{'x-access-completion-version':'3'}:{}),...(['complete','continue-login'].includes(operation)?{'x-access-cookie-mode':'separate'}:{}),...(operation==='login'&&forceAuthentication?{'x-access-step-up':'passkey'}:{}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -161,7 +168,7 @@
     $('support-details').hidden = true; $('support-details').open = false; $('check-step').hidden = true; $('environment-access').hidden = true;
     pendingMessage = null; $('status').hidden = true; $('access-progress').hidden = false;
     document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'true'));
-    try { await action(); if (!$('passkey').hidden && !preparedDevice) await prepareDevice(); } catch (error) { diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = error.transport?.operation === 'options' ? 'Preparar confirmação novamente' : ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = !$('retry').hidden || error.transport?.operation === 'options' || !uncertainCodes.has(error.code); if(!$('retry').hidden){$('completion-help').textContent='Sua entrada ainda não foi confirmada. Tente continuar da etapa já realizada.';$('retry-button').hidden=!uncertainCodes.has(error.code);if($('retry-button').hidden)$('completion-help').textContent='Esta tentativa não pode ser concluída. Volte ao início para entrar novamente.';$('retry-button').textContent='Tentar concluir entrada';} $('environment-access').hidden = error.code !== 'HOST_ACCESS_REQUIRED'; if (error.transport?.operation === 'options') $('passkey-button').textContent = 'Tentar novamente'; }
+    try { await action(); if (!$('passkey').hidden && !preparedDevice) await prepareDevice(); } catch (error) { console.error('[Acesso]', {phase:accessPhase, operation:error?.transport?.operation || 'local', code:diagnosticCodes.has(error?.code)?error.code:'ACCESS_PAGE_UNAVAILABLE', status:error?.transport?.status || 0}); diagnostic(error); message(describe(error), 'error'); $('check-step').textContent = error.transport?.operation === 'options' ? 'Preparar confirmação novamente' : ['state','session'].includes(error.transport?.operation) ? 'Tentar carregar novamente' : 'Conferir etapa salva'; $('check-step').hidden = !$('retry').hidden || error.transport?.operation === 'options' || !uncertainCodes.has(error.code); if(!$('retry').hidden){$('completion-help').textContent='Sua entrada ainda não foi confirmada. Tente continuar da etapa já realizada.';$('retry-button').hidden=!uncertainCodes.has(error.code);if($('retry-button').hidden)$('completion-help').textContent='Esta tentativa não pode ser concluída. Volte ao início para entrar novamente.';$('retry-button').textContent='Tentar concluir entrada';} $('environment-access').hidden = error.code !== 'HOST_ACCESS_REQUIRED'; if (error.transport?.operation === 'options') $('passkey-button').textContent = 'Tentar novamente'; }
     finally { busy = false; $('access-progress').hidden = true; document.querySelectorAll('form').forEach(form => form.setAttribute('aria-busy', 'false')); document.querySelectorAll('button').forEach(button => { button.disabled = false; }); if (!$('passkey').hidden && !preparedDevice && $('passkey-button').textContent === 'Preparando confirmação…') $('passkey-button').textContent = 'Tentar novamente'; const result = pendingMessage; pendingMessage = null; if (result) message(result.text, result.tone); else $('status').hidden = false; }
   }
   function clearFieldError(field) {
@@ -171,7 +178,7 @@
   function identifierError(value) {
     const text = value.trim();
     if (!text) return 'Digite seu CPF ou e-mail.';
-    if (text.includes('@')) return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) && text.length <= 254 ? '' : 'E-mail inválido. Confira o endereço digitado.';
+    if (text.includes('@')) return text.length <= 254 && /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(text) ? '' : 'E-mail inválido. Confira o endereço digitado.';
     if (!/^[0-9.\-\s]+$/.test(text)) return 'Digite um CPF ou um endereço de e-mail completo.';
     const cpf = text.replace(/[.\-\s]/g, '');
     if (cpf.length !== 11) return 'Digite os 11 números do CPF.';
@@ -189,7 +196,7 @@
     return '';
   }
   function validateAccessForm(id) {
-    const field = {'login-form':'login-email','start-form':'activation-email','recovery-form':'recovery-email'}[id];
+    const field = {'login-form':'login-email','start-form':'login-email','recovery-form':'recovery-email'}[id];
     if (!field) return true;
     const fields = id === 'login-form' ? [field, 'login-password'] : [field]; fields.forEach(clearFieldError);
     let error = identifierError($(field).value), target = field;
@@ -200,13 +207,28 @@
     $('support-details').hidden = true; $('check-step').hidden = true;
     message(error, 'error'); return false;
   }
-  ['login-email','login-password','new-password','confirm-password','activation-email','recovery-email'].forEach(field => $(field).addEventListener('input', () => {
+  // This page owns the mixed CPF/email mask; the shared helper must not truncate
+  // a numeric email local-part before the user types its @.
+  $('login-email').dataset.cpfWired='true';
+  let maskedCpfValue='';
+  $('login-email').addEventListener('input', () => {
+    const input=$('login-email'), value=input.value;
+    if (maskedCpfValue && value.startsWith(maskedCpfValue) && (/[^\d.\-\s]/.test(value.slice(maskedCpfValue.length)) || maskedCpfValue.replace(/\D/g,'').length===11 && /\d/.test(value.slice(maskedCpfValue.length)))) {input.value=maskedCpfValue.replace(/\D/g,'')+value.slice(maskedCpfValue.length);maskedCpfValue='';return;}
+    if (!/^[\d.\-\s]+$/.test(value)) {maskedCpfValue='';return;}
+    const digits=value.replace(/\D/g,'');
+    if(digits.length>11)return;
+    const before=input.selectionStart, count=value.slice(0,before).replace(/\D/g,'').length;
+    input.value=digits.replace(/^(\d{3})(\d)/,'$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/,'$1.$2.$3').replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/,'$1-$2');
+    maskedCpfValue=input.value;
+    let position=0,seen=0;while(position<input.value.length&&seen<count){if(/\d/.test(input.value[position]))seen++;position++;}input.setSelectionRange(position,position);
+  });
+  ['login-email','login-password','new-password','confirm-password','recovery-email'].forEach(field => $(field).addEventListener('input', () => {
     if ($(field).getAttribute('aria-invalid') === 'true') {
       clearFieldError(field); if (!busy) { $('status').hidden = true; $('status').textContent = ''; }
     }
   }));
   function submit(id, action) { $(id).addEventListener('submit', event => { event.preventDefault(); if (busy) return; feedbackIn(id); if (validateAccessForm(id)) run(action, id); }); }
-  function clearSecrets() { ['login-email','login-password','activation-email','recovery-email'].forEach(clearFieldError); maskPasswords(); ['login-password', 'new-password', 'confirm-password', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
+  function clearSecrets() { ['login-email','login-password','recovery-email'].forEach(clearFieldError); maskPasswords(); ['login-password', 'new-password', 'confirm-password', 'email-code','rescue-code'].forEach(id => { $(id).value = ''; }); }
   function maskPasswords() {
     document.querySelectorAll('[data-password-target]').forEach(button => {
       $(button.dataset.passwordTarget).type = 'password'; button.setAttribute('aria-pressed', 'false');
@@ -282,13 +304,14 @@
     if (!['INITIAL','EMAIL','PASSWORD','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage)) throw unavailable('ACCESS_RESPONSE_INVALID');
     show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage);
     if (state.stage === 'COMPLETE' && await current()) return;
-    message({ INITIAL: 'Escolha como deseja acessar sua conta.', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PASSWORD: 'E-mail confirmado. Crie sua senha para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Clique em “Confirmar no meu aparelho” para continuar.' }[state.stage] || 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
+    message({ INITIAL: '', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PASSWORD: 'E-mail confirmado. Crie sua senha para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Clique em “Confirmar no meu aparelho” para continuar.' }[state.stage] ?? 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
   }));
   $('recovery-open').addEventListener('click',()=>{if(busy)return;$('recovery-form').hidden=!$('recovery-form').hidden;if(!$('recovery-form').hidden){feedbackIn('recovery-form');$('status').hidden=true;}});
-  $('first-access-box').addEventListener('toggle',()=>{if(!busy&&$('first-access-box').open){feedbackIn('start-form');$('status').hidden=true;}});
   submit('recovery-form',async()=>{const data=await api('recover',{email:$('recovery-email').value});clearSecrets();show(data.stage);message(data.message);});
-  submit('start-form', async () => {
-    lastIdentifier=$('activation-email').value;const data = await api('start', { email: $('activation-email').value }); clearSecrets(); show(data.stage); message(data.message);
+  $('first-access').addEventListener('click', () => {
+    if(busy)return;feedbackIn('login-form');if(!validateAccessForm('start-form'))return;
+    const identifier=$('login-email').value.trim();
+    run(async()=>{lastIdentifier=identifier;const data=await api('start',{email:identifier});clearSecrets();show(data.stage);message(data.message);},'login-form');
   });
   submit('login-form', async () => {
     lastIdentifier=$('login-email').value;try { const data = await api('login', { email: $('login-email').value, password: $('login-password').value }); if(data.loginReceipt){pendingLogin=data.loginReceipt;show('COMMITTING');await finish();}else if(data.stage==='MIGRATION_REQUIRED'){show('INITIAL');$('recovery-form').hidden=false;$('recovery-email').value=$('login-email').value;$('recovery-choice').hidden=false;message('Esta conta ainda usa uma credencial antiga. Confirme o e-mail e o aparelho para criar sua senha nova.');}else{show(data.stage);message('Confirme sua identidade pelo aparelho cadastrado.');} }
@@ -378,12 +401,24 @@
     if(['COMMITTING','COMPLETE'].includes(state.stage)){await finish();return;}
     pendingResponse=null;show(state.stage);message('Continue pela etapa indicada abaixo.');
   }));
-  $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('Escolha como deseja entrar.');}));
+  $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('');}));
   function requestedView(state){if(!['#entrar','#recuperar-senha'].includes(location.hash))return false;clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-senha'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
   window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-senha')run(async()=>{if(!await current()){await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');}});});
   window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;});
-  window.addEventListener('hashchange',()=>{if(location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
-  if (location.hostname !== DEV || location.protocol !== 'https:') { show('UNAVAILABLE'); message('Esta tela de acesso está disponível exclusivamente no endereço DEV da livraria.'); return; }
+  window.addEventListener('hashchange',()=>{if(localLab || production || location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
+  if (!localLab && !production && (location.hostname !== DEV || location.protocol !== 'https:')) { show('UNAVAILABLE'); message('A autenticação ainda não está configurada para este endereço. Procure a administração da livraria.'); return; }
+  if(localLab || production){
+    show('INITIAL');message('');
+    const revision=actionRevision;
+    api('state',undefined,true,location.hash==='#entrar').then(state=>{
+      if(revision!==actionRevision)return;
+      if(requestedView(state))return;
+      if(!['INITIAL','EMAIL','PASSWORD','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage))throw unavailable('ACCESS_RESPONSE_INVALID');
+      show(state.stage==='COMPLETE'?'COMMITTING':state.stage);
+      if(state.stage!=='INITIAL')message('Continue pela etapa indicada.');
+    }).catch(error=>{if(revision!==actionRevision)return;console.error('[Acesso]',{code:diagnosticCodes.has(error?.code)?error.code:'ACCESS_PAGE_UNAVAILABLE'});if(!production)message(describe(error),'error');});
+    return;
+  }
   run(async () => {
     accessPhase = 'STATE';
     const state = await api('state',undefined,true,location.hash==='#entrar');
@@ -394,7 +429,7 @@
     // after the session endpoint confirms a passkey-backed principal.
     accessPhase = 'RENDER';
     show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage);
-    message('Escolha como deseja acessar sua conta.');
+    message(state.stage==='INITIAL'?'':'Continue pela etapa indicada.');
     // A slow optional lookup must not disable the visible form. Ignore late
     // results after any user action, so they cannot replace the newer flow.
     if (!['INITIAL','COMPLETE'].includes(state.stage)) return;

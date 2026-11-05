@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const $ = id => document.getElementById(id), ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
+  const $ = id => document.getElementById(id), ORIGIN = (globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app');
   const labels = { ABERTA:'Aberta', EM_ATENDIMENTO:'Em atendimento', RESOLVIDA:'Resolvida' };
   const date = value => new Date(value).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
   let csrf = '', userId = '', admin = false, offset = 0, nextOffset = null, busy = false, loading = false, refreshAgain = false, report = null;
@@ -46,7 +46,7 @@
     if(error.code==='OFFLINE')return 'Sem conexão. Mantenha a aba aberta e confira novamente ao reconectar.';
     if (error.status === 401 || error.status === 403) return 'Entre novamente na conta verificada. Relatórios exigem acesso administrativo e autenticação forte recente.';
     if (error.code?.includes('CAPACITY')) return 'O limite seguro foi atingido. Não foi gerado um relatório parcial. Filtre por fornecedor ou solicite a revisão da capacidade.';
-    if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_NOTIFICATIONS_UNAVAILABLE') return 'As notificações ainda não foram habilitadas nesta instalação DEV.';
+    if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_NOTIFICATIONS_UNAVAILABLE') return 'As notificações ainda não foram habilitadas nesta instalação.';
     return 'Não foi possível confirmar a operação. Atualize para conferir o estado antes de tentar novamente.';
   }
   async function session() {
@@ -57,7 +57,7 @@
   }
   function clearReport() {clearTimeout(reportTimer);report=null;$('report').hidden=true;$('report-groups').replaceChildren();for(const id of ['report-meta','report-summary','supplier-warning'])$(id).textContent='';$('draft-label').hidden=true;$('draft').value='';['export','print','copy'].forEach(id=>$(id).disabled=true);}
   async function refresh() {
-    if(location.origin!==ORIGIN){$('status').textContent='Esta tela funciona exclusivamente no endereço DEV autorizado.';return;}
+    if(location.origin!==ORIGIN){$('status').textContent='Esta tela funciona exclusivamente no endereço autorizado.';return;}
     if(document.hidden||!online()){controls();if(!online())$('status').textContent='Sem conexão. O acesso será conferido ao reconectar.';return;}
     if (loading||busy) { refreshAgain = true; return; } loading = true;ready=false;clearTimeout(expiryTimer);clearReport();controls();
     const ticket=version,filter=JSON.stringify([offset,$('history').checked]);
@@ -172,7 +172,7 @@
   window.addEventListener('pageshow',event=>{if(event.persisted){invalidate();refresh();}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidate();else refresh();});
   window.addEventListener('beforeunload',event=>{if(pending){event.preventDefault();event.returnValue='';}});
-  if(location.origin!==ORIGIN){$('status').textContent='Esta tela funciona exclusivamente no endereço DEV autorizado.';return;}
+  if(location.origin!==ORIGIN){$('status').textContent='Esta tela funciona exclusivamente no endereço autorizado.';return;}
   // Keep polling from interrupting a report review or an uncertain command.
   setInterval(()=>{if(!busy&&!loading&&!report&&!pending)refresh();},60000);
   refresh();

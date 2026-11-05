@@ -2,7 +2,7 @@ import { createTableWorkbook } from './audit-xlsx.mjs';
 import { ApiError } from './errors.mjs';
 const date=v=>v?new Date(v).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):'';
 const labels={salesCount:'Vendas selecionadas',confirmedCount:'Vendas confirmadas',reversedCount:'Vendas estornadas',grossCents:'Valor bruto (centavos)',reversedCents:'Valor estornado (centavos)',netCents:'Valor líquido (centavos)',unitsNet:'Unidades líquidas',averageCents:'Ticket médio (centavos)',booksCount:'Livros',totalUnits:'Unidades em estoque',zeroCount:'Livros sem estoque',lowCount:'Livros com estoque baixo',salePotentialCents:'Estoque ao preço de venda (centavos)',movementsCount:'Movimentações',unitsIn:'Unidades de entrada',unitsOut:'Unidades de saída',netUnits:'Variação em unidades'};
-export function createReportWorkbook(report,filters,commandId){
+export function createReportSheets(report,filters,commandId){
  const summary=[['Indicador','Valor'],...Object.entries(report.summary).map(([k,v])=>[labels[k],v])],sheets=[{name:'Resumo',rows:summary,numbers:true}];
  if(report.kind==='SALES'){
   sheets.push({name:'Vendas',numbers:true,rows:[['ID da venda','Data/hora Brasília','Timestamp UTC','Atendente atual','ID do atendente','Cliente atual','ID do cliente','Cidade atual','UF','Pagamento','Situação atual','Data/hora estorno','Venda completa (centavos)','Itens selecionados (centavos)'],...report.rows.map(r=>[r.id,date(r.at),r.at,r.operator,r.operatorId,r.customer,r.customerId||'',r.city,r.state,r.paymentMethod,r.status,date(r.reversedAt),r.saleTotalCents,r.valueCents])]});
@@ -12,5 +12,13 @@ export function createReportWorkbook(report,filters,commandId){
  else sheets.push({name:'Movimentações',numbers:true,rows:[['ID do movimento','Data/hora Brasília','Timestamp UTC','Tipo','ID do produto','Título atual','Quantidade','Saldo anterior','Saldo posterior','Atendente atual','ID do atendente','ID da venda'],...report.rows.map(r=>[r.id,date(r.at),r.at,r.type,r.productId,r.title,r.quantity,r.before,r.after,r.operator,r.operatorId,r.saleId])]});
  const filterLabels={kind:'Relatório',from:'Início UTC',to:'Fim UTC',employeeId:'ID do atendente',customerId:'ID do cliente',productId:'ID do produto',query:'Produto/título',isbn:'ISBN',author:'Autor',publisher:'Editora',supplier:'Fornecedor',nicheId:'ID do nicho',category:'Categoria',city:'Cidade atual',minCents:'Valor mínimo (centavos)',maxCents:'Valor máximo (centavos)',paymentMethod:'Pagamento',stock:'Estoque atual',activity:'Ativação atual',movementType:'Movimentação'};
  sheets.push({name:'Filtros',rows:[['Informação','Valor'],['Exportação',commandId],['Gerado em UTC',report.generatedAt],['Fuso','America/Sao_Paulo'],['Critério de vendas','Data da venda e situação atual; estornos posteriores ao período também são descontados.'],['Filtros de produto e cidade','Metadados e cidade atuais; título/preço da venda preservados.'],['CPF (filtro)',filters.cpf?'Aplicado, valor omitido':'Não aplicado'],...Object.entries(filters).filter(([k])=>k!=='cpf').map(([k,v])=>[filterLabels[k],v===null||v===''?'Todos':v])]});
- try{return createTableWorkbook(sheets);}catch(e){if(e instanceof ApiError&&e.code==='AUDIT_EXPORT_LIMIT')throw new ApiError(413,'REPORT_EXPORT_LIMIT');throw e;}
+ return sheets;
+}
+export function createReportWorkbook(report,filters,commandId){
+ try{return createTableWorkbook(createReportSheets(report,filters,commandId));}catch(e){if(e instanceof ApiError&&e.code==='AUDIT_EXPORT_LIMIT')throw new ApiError(413,'REPORT_EXPORT_LIMIT');throw e;}
+}
+export function createReportCsv(report,filters,commandId){
+ const rows=createReportSheets(report,filters,commandId)[1].rows;
+ const cell=value=>{let text=String(value??'');if(typeof value==='string'&&/^[\s\u0000-\u001f]*[=+@\-\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+ return '\ufeff'+rows.map(row=>row.map(cell).join(';')).join('\r\n')+'\r\n';
 }

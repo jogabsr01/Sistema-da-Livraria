@@ -112,7 +112,7 @@ export function createFirestoreStaffService({ db, identityService, config, now =
         after: { revision, role: payload.role, status: payload.status } };
       if (state.status === 'NEW') createPendingCommand(transaction, commandRef, command);
       repositories.transaction.set(transaction, 'users', payload.id, next);
-      if (payload.delivery && result.reenrollmentRequired && payload.status === 'ATIVO') enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `staff-invite:${payload.commandId}`, to: payload.delivery, subject: 'Convite para a Livraria IPB DEV', text: `Você foi convidado para acessar a Livraria IPB. Abra ${devOrigin()}/acesso-dev.html e escolha primeiro acesso para confirmar seu e-mail, criar sua senha e cadastrar sua passkey.`, now: at });
+      if (payload.delivery && result.reenrollmentRequired && payload.status === 'ATIVO') enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `staff-invite:${payload.commandId}`, to: payload.delivery, subject: 'Convite para a Livraria IPB', text: `Você foi convidado para acessar a Livraria IPB. Abra ${config.environment === 'prod' ? devOrigin({APP_ENV:'prod'}) : devOrigin()}/acesso-dev.html e escolha primeiro acesso para confirmar seu e-mail, criar sua senha e cadastrar sua passkey.`, now: at });
       transaction.set(emailRef, { ownerId: payload.id, kind: 'STAFF_EMAIL', value: payload.emailIndex, active: true, version: revision });
       transaction.set(cpfRef, { ownerId: payload.id, kind: 'STAFF_CPF', value: payload.cpfIndex, active: true, version: revision });
       if (oldEmailRef && oldEmailSnapshot?.exists) transaction.delete(oldEmailRef);

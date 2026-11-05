@@ -50,3 +50,41 @@ button.password-visibility[aria-pressed="true"] { background: #e6eee8; }
 input[aria-invalid="true"] { border-color: #ad4434; }
 
 .remember-choice{display:flex;align-items:center;gap:10px;font-size:.8rem;font-weight:400;line-height:1.5;margin:14px 0}.remember-choice input{width:20px;min-height:20px;height:20px;flex:0 0 20px;padding:0}.login-method-help{font-size:.78rem;color:#617266}
+
+/* Mobile-first access surface; existing controls and stages remain unchanged. */
+body.page-access{min-height:100vh;min-height:100dvh;padding:16px;background:radial-gradient(circle at top,#e8f2ea,#f6f8f5 60%)}
+.page-access main{width:100%;max-width:520px;padding:24px;border:1px solid #dce8df;border-radius:22px;background:#fff;box-shadow:0 18px 60px #173b3012}
+.page-access h1{margin:4px 0 6px;font-size:clamp(1.6rem,5vw,2rem);letter-spacing:-.04em}
+.page-access h1+p{margin:0 0 24px;color:#64786c;font-size:.9rem}
+.page-access h2{margin:0 0 12px;letter-spacing:-.02em}
+.page-access input:not([type=checkbox]){transition:border-color .18s,box-shadow .18s;background:#fbfdfb}
+.page-access input:not([type=checkbox]):focus{outline:none;border-color:#408566;box-shadow:0 0 0 4px #66a68030}
+.page-access button:not(:disabled):active{transform:translateY(1px)}
+.page-access .first-access{margin-top:20px;padding-top:18px;border-top:1px solid #e4ece5}
+.page-access .first-access p{font-size:.85rem;color:#5e7066;margin:0}
+.page-access .first-access button{margin:10px 0 0}
+.page-access #status:empty{display:none}
+.page-access :is(#initial,#email-form,#password-form,#passkey,#retry,#complete):not([hidden]){animation:access-enter .2s ease-out}
+@keyframes access-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(min-width:768px){body.page-access{display:grid;place-items:center;padding:40px 24px}.page-access main{padding:40px}}
+@media(prefers-reduced-motion:reduce){.page-access :is(#initial,#email-form,#password-form,#passkey,#retry,#complete):not([hidden]){animation:none}.page-access input:not([type=checkbox]){transition:none}.page-access button:not(:disabled):active{transform:none}}
+
+/* Login-specific hierarchy, including overrides for the shared app theme. */
+.app-shell.page-access main{border:1px solid #dce8df;border-radius:24px;box-shadow:0 20px 64px #173b3017}
+.page-access .access-heading{text-align:center;margin-bottom:28px}
+.app-shell.page-access .church-brand{display:inline-flex;justify-content:center;margin:0 auto 18px}
+.app-shell.page-access .access-heading h1{font-size:clamp(1.6rem,5vw,2rem);margin:0 0 6px}
+.page-access .access-heading p{margin:0;color:#64786c;font-size:.9rem}
+.page-access .login-password-row{display:flex;align-items:stretch;gap:10px}
+.page-access .login-password-row .password-field{flex:1;min-width:0}
+.app-shell.page-access #biometric-login{width:auto;min-width:96px;min-height:48px;margin:0;padding:8px 10px;display:flex;align-items:center;justify-content:center;gap:6px;background:#f5f8f5;color:#205b43;border:1px solid #d5e2d8;box-shadow:none;font-size:.78rem}
+.page-access #biometric-login svg{width:20px;height:20px;flex:none}
+.app-shell.page-access button.password-visibility{min-height:0;border:0;background:transparent;color:#62776a;box-shadow:none}
+.app-shell.page-access button.password-visibility:hover{background:#edf4ef}
+.page-access .first-access{margin-top:16px;padding-top:16px}
+.app-shell.page-access #first-access{background:transparent;border:1px solid #afc9b8;color:#205b43;box-shadow:none}
+.app-shell.page-access #first-access:hover{background:#f0f6f1}
+.page-access .access-help{margin-top:24px;text-align:center;border-top:1px solid #e4ece5}
+.page-access .access-help summary{display:inline-block;padding:20px 0 4px;color:#526f5e;font-size:.83rem;text-decoration:underline;text-underline-offset:3px}
+.page-access .access-help p{text-align:left;color:#52685b;font-size:.85rem}
+@media(max-width:360px){.app-shell.page-access #biometric-login{min-width:82px;gap:4px;padding:8px 6px;font-size:.72rem}}

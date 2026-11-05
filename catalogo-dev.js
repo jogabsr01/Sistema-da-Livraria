@@ -9,7 +9,7 @@
   let canDelete = false, stockTarget = null, pendingStock = null, stockStorageKey = '', archiveCommand = null, extendedProducts = false, lookupEnabled = false;
   let userId = '', ready = false, checkedAt = 0, connectionVersion = 0, reconnectQueued = false, reconciling = false, freshnessTimer, dirty = false, initialized = false, archiveUncertain = false;
   const online = () => navigator.onLine !== false;
-  const fresh = () => ready && online() && performance.now() - checkedAt < 90000;
+  const fresh = () => ready && online();
   function controls() {
     const uncertain = !!command?.pending, other = uncertain || !!archiveCommand;
     const state = !online() ? 'offline' : fresh() ? 'ready' : reconciling ? 'checking' : 'stale';
@@ -55,13 +55,13 @@
   const money = cents => (cents / 100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   function explain(error) { if(error.code==='CATALOG_NOT_ACTIVATED')return 'O cadastro de produtos ainda não foi ativado. Peça à administração para liberar o catálogo.';
     if (error.code === 'OFFLINE') return 'Sem conexão. Mantenha a aba aberta e confira a conexão antes de tentar novamente.';
-    if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação DEV.';
+    if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação.';
     if (error.code?.includes('CONFLICT')) return 'Outro acesso alterou este livro. Carregue a versão mais recente antes de salvar de novo.';
     if (error.code?.includes('DUPLICATE')) return 'Já existe um livro ativo com esse ISBN ou código interno.';
     if (error.code === 'FORBIDDEN' || error.code === 'WORKSPACE_FORBIDDEN') return 'Somente administradores podem excluir ou alterar a ativação de livros.';
     if (error.code?.includes('STOCK_LIMIT')) return 'Esta entrada excede o limite de um milhão de unidades. Confira a quantidade.';
     if (error.code === 'INVALID_PRODUCT' || error.code?.includes('CATALOG_INVALID')) return 'Confira ISBN, preço, nichos e link HTTPS da capa. Use valores válidos e ao menos um nicho.';
-    if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_CATALOG_UNAVAILABLE' || error.code?.includes('CONFIGURATION')) return 'O catálogo compartilhado ainda não está disponível nesta instalação DEV.';
+    if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_CATALOG_UNAVAILABLE' || error.code?.includes('CONFIGURATION')) return 'O catálogo compartilhado ainda não está disponível nesta instalação.';
     const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     return 'Não foi possível confirmar o resultado. Confira a conexão e tente novamente; o mesmo pedido não será duplicado.';
   }
@@ -122,12 +122,14 @@
       label.append(input, document.createTextNode(niche.name+(niche.active?'':' (desativado)'))); $('niche-choices').append(label);
     });
   }
+  function updateProductType(){const book=$('product-type').value==='LIVRO';document.querySelectorAll('[data-book-only]').forEach(node=>{node.hidden=!book;});$('isbn-tools').hidden=!book||!lookupEnabled||$('product-details').hidden;$('isbn').closest('.identifier-card').querySelector('label[for=isbn]').textContent=book?'ISBN ou código de barras':'Código de barras ou SKU';}
+  $('product-type').addEventListener('change',()=>{updateProductType();dirty=true;});
   async function openBook(id) {
     if (!fresh() || command?.pending || pendingStock || archiveCommand) return;
     cancelLookup(); cleanupPhoto(); stopScanner();
     editing = id ? (await api('get', null, '?id=' + encodeURIComponent(id))).product : null; command = null;
     draftId = editing?.id || crypto.randomUUID();
-    $('book-form').reset(); $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar produto'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = 'A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.';
+    $('book-form').reset(); $('product-type-label').hidden=!extendedProducts;$('product-type').value=editing?.productType||'LIVRO'; $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar produto'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = 'A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.';
     $('product-details').hidden = !editing; $('identifier-confirm').hidden = !!editing; $('manual-product').hidden = !!editing; $('isbn-tools').hidden = !editing || !lookupEnabled;
     const mappings = { isbn:'isbn',title:'title',author:'author',publisher:'publisher',edition:'edition',supplier:'supplier',category:'category',cover:'coverUrl',synopsis:'synopsis' };
     Object.entries(mappings).forEach(([input,key]) => { $(input).value = editing?.[key] || ''; });
@@ -143,7 +145,7 @@
     $('minimum-stock').value = editing?.minimumStock ?? 0; $('year').value = editing?.year || ''; $('pages').value = editing?.pages || ''; $('active').checked = editing?.active ?? true;
     $('active').disabled = !canDelete;
     $('stock-info').textContent = editing ? `Estoque atual: ${editing.stock}. Para repor, use Adicionar unidades no catálogo.` : extendedProducts ? 'O estoque inicial será registrado junto ao produto.' : 'Estoque inicial: 0. Após salvar, use Adicionar unidades para registrar uma entrada.';
-    choices(editing?.nicheIds || (niches.filter(n => n.active).length === 1 ? [niches.find(n => n.active).id] : [])); cover(editing?.photoUrl || $('cover').value, $('cover-preview'), true);
+    updateProductType();choices(editing?.nicheIds || (niches.filter(n => n.active).length === 1 ? [niches.find(n => n.active).id] : [])); cover(editing?.photoUrl || $('cover').value, $('cover-preview'), true);
     if (!$('editor').open) $('editor').showModal();
     dirty = false;
   }
@@ -166,17 +168,17 @@
     if (!command?.pending) {
     const price = $('price').value.trim(); if (!/^\d{1,7}(?:[,.]\d{1,2})?$/.test(price)) { $('form-status').textContent = 'Informe o preço como 12,90, sem separador de milhares.'; return; }
     const [units, fractional = ''] = price.split(/[,.]/), priceCents = Number(units) * 100 + Number(fractional.padEnd(2,'0'));
-    const fields = { isbn:$('isbn').value, internalCode:$('isbn').value.trim() ? '' : editing?.internalCode || '', title:$('title').value, author:$('author').value,
-      publisher:$('publisher').value,edition:$('edition').value,supplier:$('supplier').value,priceCents,minimumStock:Number($('minimum-stock').value),category:$('category').value,
-      coverUrl:$('cover').value,year:Number($('year').value),pages:Number($('pages').value),synopsis:$('synopsis').value,
+    const isBook=$('product-type').value==='LIVRO';const isbn=isBook?$('isbn').value:'';const fields = { isbn, internalCode:isbn.trim() ? '' : editing?.internalCode || '', title:$('title').value, author:isBook?$('author').value:'',
+      publisher:isBook?$('publisher').value:'',edition:isBook?$('edition').value:'',supplier:$('supplier').value,priceCents,minimumStock:Number($('minimum-stock').value),category:$('category').value,
+      coverUrl:$('cover').value,year:isBook?Number($('year').value):0,pages:isBook?Number($('pages').value):0,synopsis:$('synopsis').value,
       nicheIds:[...document.querySelectorAll('#niche-choices input:checked')].map(input => input.value),active:$('active').checked };
     let initialStock;
     if (extendedProducts) {
-      const cost = $('cost').value.trim(), sku = $('sku').value.trim();
+      const cost = $('cost').value.trim(), sku = $('sku').value.trim() || (!isBook ? $('isbn').value.trim() : '');
       if (cost && !/^\d{1,7}(?:[,.]\d{1,2})?$/.test(cost)) { $('form-status').textContent = 'Informe o custo como 12,90, sem separador de milhares.'; return; }
       if (sku && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(sku)) { $('form-status').textContent = 'Confira o código de barras ou SKU.'; return; }
       const [whole, fraction = ''] = (cost || '0').split(/[,.]/);
-      Object.assign(fields, { subtitle:$('subtitle').value, sku, costCents:Number(whole)*100+Number(fraction.padEnd(2,'0')) });
+      Object.assign(fields, { productType:$('product-type').value, subtitle:$('subtitle').value, sku, costCents:Number(whole)*100+Number(fraction.padEnd(2,'0')) });
       if (!editing) { initialStock=Number($('initial-stock').value); if (!Number.isSafeInteger(initialStock) || initialStock<0 || initialStock>1000000) { $('form-status').textContent='Informe um estoque inicial inteiro entre 0 e 1.000.000.'; return; } }
     }
     const signature = JSON.stringify({fields,initialStock,photo:pendingPhoto}); if (!command || command.signature !== signature) command = { signature, id:crypto.randomUUID() };
@@ -258,7 +260,7 @@
     if (!manual && !isbn && !extendedProducts) { $('barcode-status').textContent = 'Este modo aceita somente ISBN. Use o cadastro manual.'; return; }
     if (!manual && isbn) { $('isbn').value = compact; if (extendedProducts && !$('sku').value.trim()) $('sku').value = compact; }
     else if (!manual) { $('isbn').value = ''; if (!$('sku').value.trim()) $('sku').value = compact; }
-    $('product-details').hidden = false; $('identifier-confirm').hidden = true; $('manual-product').hidden = true; $('isbn-tools').hidden = !lookupEnabled;
+    $('product-details').hidden = false; $('identifier-confirm').hidden = true; $('manual-product').hidden = true; $('isbn-tools').hidden = !lookupEnabled;updateProductType();
     if (!manual && isbn) scheduleLookup();
     if (manual) $('title').focus();
   }
@@ -413,7 +415,7 @@
   $('search-form').addEventListener('submit', event => { event.preventDefault(); offset = 0; reconnect(); });
   $('refresh').addEventListener('click', reconnect); $('next').addEventListener('click', () => { offset = nextOffset; reconnect(); }); $('previous').addEventListener('click', () => { offset = Math.max(0,offset-10); reconnect(); });
   document.querySelectorAll('[data-catalog-refresh]').forEach(button=>button.addEventListener('click',reconnect));
-  if (location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app' || location.protocol !== 'https:') { message('Este catálogo está disponível exclusivamente no endereço DEV da livraria.'); return; }
+  if (location.origin !== (globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app')) { message('Este catálogo está disponível exclusivamente no endereço da livraria.'); return; }
   window.addEventListener('offline',()=>{invalidate();cancelLookup();});
   window.addEventListener('online',()=>{invalidate();reconnect();});
   window.addEventListener('focus',reconnect);
@@ -446,7 +448,7 @@
         await refreshNiches(bootstrap);
         if (await list(bootstrap) && version === connectionVersion && online() && !document.hidden) {
           ready = true; checkedAt = performance.now();
-          freshnessTimer = setTimeout(()=>{ready=false;controls();},90000);
+
           initialized = true; $('catalog').hidden = false;$('catalog-error-actions').hidden=true;
           if (first) {
             const params = new URL(location.href).searchParams, focusId = params.get('livro'), stockId = params.get('entrada');

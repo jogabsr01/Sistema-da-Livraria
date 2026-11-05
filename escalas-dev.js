@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
- const $=id=>document.getElementById(id),ORIGIN='https://dev--merry-chimera-49a1f3.netlify.app',labels={RASCUNHO:'Rascunho',PUBLICADA:'Publicada',CANCELADA:'Cancelada'};
+ const $=id=>document.getElementById(id),ORIGIN=(globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app'),labels={RASCUNHO:'Rascunho',PUBLICADA:'Publicada',CANCELADA:'Cancelada'};
  let csrf='',userId='',admin=false,anchor=today(),view=innerWidth<640?'week':'month',items=[],people=new Map(),editing=null,draftId='',pending=null,busy=false,loading=false,refreshAgain=false;
  let access=false,ready=false,checkedAt=0,version=0,latest=null,freshnessTimer;
  const online=()=>navigator.onLine!==false;

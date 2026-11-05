@@ -1,5 +1,5 @@
 (() => {
-  if (location.origin !== 'https://dev--merry-chimera-49a1f3.netlify.app') return;
+  if (location.origin !== (globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app')) return;
   let busy = false, again = false;
   async function refresh() {
     if (document.hidden || navigator.onLine===false || !['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(document.body.dataset.sessionRole) || ![...document.querySelectorAll('[data-notification-count]')].some(el=>!el.closest('details:not([open])')&&el.getClientRects().length)) return; if (busy) { again = true; return; } busy = true;

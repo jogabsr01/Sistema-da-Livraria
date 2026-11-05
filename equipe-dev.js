@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
- const $=id=>document.getElementById(id),origin='https://dev--merry-chimera-49a1f3.netlify.app';
+ const $=id=>document.getElementById(id),origin=(globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app');
  let user=null,csrf='',offset=0,nextOffset=null,total=0,loading=false,busy=false,editing=null,pending=null,latest=null,access=false,ready=false,checkedAt=0,epoch=0,timer,again=false;
  const text=(tag,value,cls)=>{const el=document.createElement(tag);el.textContent=value;if(cls)el.className=cls;return el;};
  const roleName=role=>({SUPER_ADMIN:'Administrador principal',ADMIN:'Administrador',ATENDENTE:'Atendente'}[role]||'');
