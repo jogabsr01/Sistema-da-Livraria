@@ -26,6 +26,15 @@ const runtime = () => {
   return env;
 };
 
+test('production build metadata uses the canonical site URL rather than a branch URL', () => {
+  const env = { ...buildEnv(), APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main',
+    URL: 'https://merry-chimera-49a1f3.netlify.app', DEPLOY_PRIME_URL: 'https://main--merry-chimera-49a1f3.netlify.app' };
+  const meta = buildDeploymentMetadata(env);
+  assert.equal(meta.deploymentUrl, 'https://merry-chimera-49a1f3.netlify.app/');
+  const runtimeEnv = { ...env }; delete runtimeEnv.CONTEXT; delete runtimeEnv.BRANCH; delete runtimeEnv.DEPLOY_PRIME_URL;
+  assert.equal(loadConfig(runtimeEnv, meta).environment, 'prod');
+});
+
 test("realistic Functions environment resolves pinned deployment from private build metadata without mutation", () => {
   const env = Object.freeze(runtime()),
     before = JSON.stringify(env),

@@ -17,7 +17,7 @@ export function buildDeploymentMetadata(env = process.env) {
     throw Error("INVALID_DEPLOYMENT_METADATA");
   let url;
   try {
-    url = new URL(env.DEPLOY_PRIME_URL);
+    url = new URL(env.CONTEXT === 'production' ? (env.URL || env.DEPLOY_PRIME_URL) : env.DEPLOY_PRIME_URL);
   } catch {
     throw Error("INVALID_DEPLOYMENT_METADATA");
   }
