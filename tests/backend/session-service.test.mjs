@@ -86,12 +86,10 @@ test('cookie format is host-only, secure, HttpOnly and rejects duplicates or PIN
   await assert.rejects(s.service.authenticate(new Request('https://attacker.invalid', { headers: { cookie: `${SESSION_COOKIE}=${s.first.rawToken}` } })), { code: 'UNAUTHENTICATED' });
 });
 
-test('configuration stays closed by default, refuses PROD and disallows bridge key reuse', async () => {
+test('configuration stays closed by default and disallows bridge key reuse', async () => {
   const s = setup();
   assert.throws(() => loadSessionSettings(environment()), { code: 'IDENTITY_NOT_ACTIVATED' });
   assert.throws(() => loadSessionSettings(environment({ WORKSPACE_IDENTITY_SESSIONS_ENABLED: 'true', WORKSPACE_SESSION_TOKEN_KEY: properties.SIGNING_SECRET })), { code: 'IDENTITY_CONFIGURATION_UNAVAILABLE' });
-  assert.throws(() => loadSessionSettings(environment({ WORKSPACE_IDENTITY_SESSIONS_ENABLED: 'true', WORKSPACE_SESSION_TOKEN_KEY: randomBytes(32).toString('hex'),
-    APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' })), { code: 'IDENTITY_CONFIGURATION_UNAVAILABLE' });
   s.gas.props.IDENTITY_SESSIONS_ENABLED = 'false';
   await assert.rejects(s.service.authenticate(request(s.first.rawToken)), { code: 'WORKSPACE_IDENTITY_UNAVAILABLE' });
   for (const handler of [sessionHandler, logoutHandler, revokeOthersHandler]) {

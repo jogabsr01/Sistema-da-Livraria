@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadLocalLabPolicy, devOrigin, devRpId } from '../../backend/local-lab-policy.mjs';
+import { requireSameOriginMutation, requireCsrfToken } from '../../backend/authorization.mjs';
 
 const good = () => ({ WORKSPACE_LOCAL_LAB: 'YES', APP_ENV: 'dev', WORKSPACE_STORAGE_MODE: 'firestore',
   FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080', WORKSPACE_FIRESTORE_PROJECT_ID: 'demo-livraria' });
@@ -9,6 +10,17 @@ test('local laboratory policy returns a fixed immutable origin and RP ID', () =>
   const policy = loadLocalLabPolicy(good());
   assert.deepEqual(policy, { origin: 'https://localhost:8443', rpId: 'localhost', projectId: 'demo-livraria', emulatorHost: '127.0.0.1:8080' });
   assert.equal(Object.isFrozen(policy), true);
+});
+
+test('production origin and RP are exact and mutations retain origin and CSRF isolation', () => {
+  const origin=devOrigin({APP_ENV:'prod'}),token=Buffer.alloc(32,1).toString('base64url');
+  assert.equal(origin,'https://merry-chimera-49a1f3.netlify.app');
+  assert.equal(devRpId({APP_ENV:'prod'}),'merry-chimera-49a1f3.netlify.app');
+  const request=(url,from,csrf=token)=>new Request(url+'/api/test',{method:'POST',headers:{origin:from,'content-type':'application/json','x-csrf-token':csrf},body:'{}'});
+  requireSameOriginMutation(request(origin,origin),origin);requireCsrfToken(request(origin,origin),token);
+  for(const other of ['https://dev--merry-chimera-49a1f3.netlify.app','https://localhost:8443','https://evil.netlify.app']) assert.throws(()=>requireSameOriginMutation(request(origin,other),origin));
+  assert.throws(()=>requireCsrfToken(request(origin,origin,Buffer.alloc(32,2).toString('base64url')),token));
+  assert.throws(()=>devOrigin({APP_ENV:'invalid'}),/ORIGIN_CONFIGURATION_INVALID/);
 });
 
 test('local laboratory policy rejects remote, deployed and credential-bearing configurations', () => {

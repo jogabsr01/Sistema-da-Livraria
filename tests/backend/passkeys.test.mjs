@@ -104,7 +104,7 @@ test('disabled account, revoked credential or epoch change rejects verification 
   }
 });
 
-test('passkey settings remain closed, reject PROD and signed operations fail unless separately enabled', async () => {
+test('passkey settings remain closed without production credentials and signed operations fail unless separately enabled', async () => {
   assert.throws(() => loadPasskeySettings(environment()), { code: 'IDENTITY_NOT_ACTIVATED' });
   assert.throws(() => loadPasskeySettings(environment({ WORKSPACE_IDENTITY_PASSKEYS_ENABLED: 'true', APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' })), { code: 'IDENTITY_CONFIGURATION_UNAVAILABLE' });
   const s = setup(); s.gas.props.IDENTITY_PASSKEYS_ENABLED = 'false';

@@ -2,14 +2,16 @@ import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { ApiError } from './errors.mjs';
 import { loadConfig } from './config.mjs';
+import { requireProductionIdentityCredentials } from './identity-configuration.mjs';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const purposes = new Set(['ACTIVATE', 'RECOVER', 'DEVICE']);
 function invalid() { throw new ApiError(400, 'INVALID_AUTH_REQUEST'); }
 export function loadLoginGuardSettings(env = process.env) {
   if (env.WORKSPACE_IDENTITY_GUARDS_ENABLED !== 'true') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   const config = loadConfig(env), key = env.WORKSPACE_AUTH_GUARD_KEY;
+  requireProductionIdentityCredentials(env);
   const otherKeys = [config.secret, env.WORKSPACE_SESSION_TOKEN_KEY, env.WORKSPACE_PIN_PEPPER];
-  if (config.environment !== 'dev' || typeof key !== 'string' || !/^[a-f0-9]{64}$/i.test(key) ||
+  if (typeof key !== 'string' || !/^[a-f0-9]{64}$/i.test(key) ||
       otherKeys.some(other => typeof other === 'string' && other.toLowerCase() === key.toLowerCase())) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
   return { config, guardKey: Buffer.from(key, 'hex') };
 }
@@ -41,7 +43,7 @@ function canonicalToken(value) { return typeof value === 'string' && /^[A-Za-z0-
 // originAddress MUST come from the platform's trusted context.ip, not headers.
 export function createLoginGuard(settings, { client }) {
   const { config, guardKey } = settings;
-  if (config.environment !== 'dev' || !Buffer.isBuffer(guardKey) || guardKey.length !== 32 || !UUID.test(config.installationId)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
+  if (!['dev', 'prod'].includes(config.environment) || !Buffer.isBuffer(guardKey) || guardKey.length !== 32 || typeof config.installationId !== 'string' || !UUID.test(config.installationId.toLowerCase())) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
   const key = Buffer.from(guardKey), scope = [config.environment, config.installationId];
   const digest = (kind, ...values) => createHmac('sha256', key).update(JSON.stringify([kind, scope, ...values])).digest('hex');
   const tokenHash = value => digest('challenge.v1', value.challengeId, value.subjectId, value.purpose, value.authorizationVersion, value.rawToken);

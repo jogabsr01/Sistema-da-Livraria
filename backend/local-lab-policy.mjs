@@ -13,9 +13,13 @@ export function loadLocalLabPolicy(env = process.env) {
     emulatorHost: '127.0.0.1:8080' });
 }
 
+export const PRODUCTION_ORIGIN = 'https://merry-chimera-49a1f3.netlify.app';
+export const DEVELOPMENT_ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
 export function devOrigin(env = process.env) {
-  return env.WORKSPACE_LOCAL_LAB === undefined || env.WORKSPACE_LOCAL_LAB === ''
-    ? 'https://dev--merry-chimera-49a1f3.netlify.app' : loadLocalLabPolicy(env).origin;
+  if (env.WORKSPACE_LOCAL_LAB !== undefined && env.WORKSPACE_LOCAL_LAB !== '') return loadLocalLabPolicy(env).origin;
+  if (env.APP_ENV === 'prod') return PRODUCTION_ORIGIN;
+  if (env.APP_ENV === undefined || env.APP_ENV === '' || env.APP_ENV === 'dev') return DEVELOPMENT_ORIGIN;
+  throw Error('ORIGIN_CONFIGURATION_INVALID');
 }
 
 export function devRpId(env = process.env) {

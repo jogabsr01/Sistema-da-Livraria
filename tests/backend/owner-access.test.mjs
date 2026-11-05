@@ -210,7 +210,7 @@ test('default and partial flags, wrong context and reused keys keep real identit
   for (const flag of ['WORKSPACE_IDENTITY_ACCESS_ENABLED', 'WORKSPACE_IDENTITY_SESSIONS_ENABLED', 'WORKSPACE_IDENTITY_GUARDS_ENABLED', 'WORKSPACE_IDENTITY_PASSKEYS_ENABLED', 'WORKSPACE_BACKEND_ENABLED']) assert.throws(() => loadOwnerAccessSettings({ ...s.env, [flag]: 'false' }));
   for (const key of ['WORKSPACE_HMAC_SECRET', 'WORKSPACE_SESSION_TOKEN_KEY', 'WORKSPACE_AUTH_GUARD_KEY']) assert.throws(() => loadOwnerAccessSettings({ ...s.env, WORKSPACE_PIN_PEPPER: s.env[key] }), { code: 'IDENTITY_CONFIGURATION_UNAVAILABLE' });
   assert.throws(() => loadOwnerAccessSettings({ ...s.env, BRANCH: 'main' }));
-  assert.throws(() => loadOwnerAccessSettings({ ...s.env, APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' }));
+  assert.equal(loadOwnerAccessSettings({ ...s.env, APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' }).config.environment, 'prod');
   const handler = createOwnerAccessHandler(); assert.equal((await handler(new Request(ACCESS_ORIGIN + '/api/v1/access/state'))).status, 503);
   const token = randomBytes(32).toString('base64url'), csrfToken = s.service().csrf(token);
   const result = await call(s, 'start', { token, csrfToken, body: { email: properties.OWNER_EMAIL } });

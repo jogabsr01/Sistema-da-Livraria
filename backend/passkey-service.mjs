@@ -3,14 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { ApiError } from './errors.mjs';
 import { loadConfig } from './config.mjs';
-const ORIGIN = devOrigin();
-const RP_ID = devRpId();
+import { requireProductionIdentityCredentials } from './identity-configuration.mjs';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const rejected = () => { throw new ApiError(401, 'PASSKEY_REJECTED'); };
 export function loadPasskeySettings(env = process.env) {
   if (env.WORKSPACE_IDENTITY_PASSKEYS_ENABLED !== 'true') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   const config = loadConfig(env);
-  if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
+  requireProductionIdentityCredentials(env);
   return { config };
 }
 function subject(value) {
@@ -31,11 +30,13 @@ export function validatePasskeyResponse(value) {
 // No standalone public route. The caller must verify email/current identity BEFORE
 // permitting registration; login must verify PIN + durable rate limits first.
 export function createPasskeyService(settings, { client }) {
-  if (settings?.config?.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
+  if (!['dev', 'prod'].includes(settings?.config?.environment)) throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
+  const originEnv = settings.config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env;
+  const ORIGIN = devOrigin(originEnv), RP_ID = devRpId(originEnv);
   return {
     async registrationOptions(input) {
       const user = subject(input), { credentials } = await client.listPasskeys(user);
-      const options = await generateRegistrationOptions({ rpName: 'Livraria IPB — DEV', rpID: RP_ID,
+      const options = await generateRegistrationOptions({ rpName: 'Livraria IPB', rpID: RP_ID,
         userID: new TextEncoder().encode(user.subjectId), userName: user.subjectId, userDisplayName: 'Funcionário',
         attestationType: 'none', supportedAlgorithmIDs: [-7], timeout: 120000,
         authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' }, excludeCredentials: credentials });
@@ -85,13 +86,14 @@ export function createPasskeyService(settings, { client }) {
 }
 
 // The challenge and binding have already been durably stored by one signed RPC.
-export async function preparedAccessOptions(input) {
+export async function preparedAccessOptions(input, environment = 'dev') {
+  const RP_ID = devRpId(environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
   const user = subject(input);
   if (!['create','get'].includes(input.kind) || !Array.isArray(input.credentials) || input.credentials.length > 5 ||
       input.kind === 'get' && !input.credentials.length) rejected();
   const common = {rpID:RP_ID, userVerification:'required', challenge:new Uint8Array(Buffer.from(input.challenge,'base64url')), timeout:120000};
   const options = input.kind === 'create'
-    ? await generateRegistrationOptions({...common, rpName:'Livraria IPB — DEV',userID:new TextEncoder().encode(user.subjectId),userName:user.subjectId,userDisplayName:'Funcionário',attestationType:'none',supportedAlgorithmIDs:[-7],authenticatorSelection:{residentKey:'preferred',userVerification:'required'},excludeCredentials:input.credentials})
+    ? await generateRegistrationOptions({...common, rpName:'Livraria IPB',userID:new TextEncoder().encode(user.subjectId),userName:user.subjectId,userDisplayName:'Funcionário',attestationType:'none',supportedAlgorithmIDs:[-7],authenticatorSelection:{residentKey:'preferred',userVerification:'required'},excludeCredentials:input.credentials})
     : await generateAuthenticationOptions({...common,allowCredentials:input.credentials});
   if (options.challenge !== input.challenge) rejected();
   return {stage:'PASSKEY',kind:input.kind,options};

@@ -1,4 +1,5 @@
 import { ApiError } from './errors.mjs';
+import { createPrivateKey } from 'node:crypto';
 
 const STORAGE_MODES = new Set(['gas', 'shadow', 'firestore']);
 const PROJECT_ID = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
@@ -43,7 +44,7 @@ function validateEmulator(value) {
   return value;
 }
 
-export function loadFirestoreSettings(env = process.env) {
+function readFirestoreSettings(env) {
   const mode = storageMode(env);
   if (mode === 'gas') return Object.freeze({ mode });
 
@@ -51,11 +52,19 @@ export function loadFirestoreSettings(env = process.env) {
   const databaseId = env.WORKSPACE_FIRESTORE_DATABASE || '(default)';
   const location = text(env.WORKSPACE_FIRESTORE_LOCATION);
   const emulatorHost = validateEmulator(env.FIRESTORE_EMULATOR_HOST);
+  // Never direct a deployed or production process to an emulator, even when
+  // credentials are also configured. Local test environments remain supported.
+  if (emulatorHost && (env.NETLIFY === 'true' || env.APP_ENV === 'prod')) unavailable();
   const credentials = parseCredentials(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON);
+  if (env.APP_ENV === 'prod' && credentials) {
+    try {
+      if (!/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(credentials.client_email) || createPrivateKey(credentials.private_key).asymmetricKeyType !== 'rsa') unavailable();
+    } catch { unavailable(); }
+  }
   const applicationCredentials = text(env.GOOGLE_APPLICATION_CREDENTIALS);
   const emailProvider = text(env.WORKSPACE_EMAIL_PROVIDER);
   const emailProviderKey = text(env.WORKSPACE_EMAIL_PROVIDER_KEY);
-  const emailFrom = text(env.WORKSPACE_EMAIL_FROM) || (emailProvider === 'resend' ? 'Livraria IPB DEV <onboarding@resend.dev>' : null);
+  const emailFrom = text(env.WORKSPACE_EMAIL_FROM) || (emailProvider === 'resend' ? 'Livraria IPB <onboarding@resend.dev>' : null);
   const emailDeliveryKeyValue = text(env.WORKSPACE_EMAIL_DELIVERY_KEY);
   if (emailDeliveryKeyValue && !/^[a-f0-9]{64}$/i.test(emailDeliveryKeyValue)) unavailable();
   const emailDeliveryKey = emailDeliveryKeyValue ? Buffer.from(emailDeliveryKeyValue, 'hex') : null;
@@ -77,6 +86,33 @@ export function loadFirestoreSettings(env = process.env) {
     emailFrom,
     emailDeliveryKey,
   });
+}
+
+export function loadFirestoreSettings(env = process.env) {
+  try { return readFirestoreSettings(env); }
+  catch (error) {
+    if (env.APP_ENV === 'prod' && error?.code === 'FIRESTORE_CONFIGURATION_UNAVAILABLE') {
+      const fields = [];
+      if (!STORAGE_MODES.has(env.WORKSPACE_STORAGE_MODE ?? 'gas')) fields.push('WORKSPACE_STORAGE_MODE');
+      if (env.WORKSPACE_STORAGE_MODE !== 'gas') {
+        if (!PROJECT_ID.test(env.WORKSPACE_FIRESTORE_PROJECT_ID || '')) fields.push('WORKSPACE_FIRESTORE_PROJECT_ID');
+        if (!LOCATION.test(env.WORKSPACE_FIRESTORE_LOCATION || '')) fields.push('WORKSPACE_FIRESTORE_LOCATION');
+        if (env.WORKSPACE_FIRESTORE_DATABASE && !DATABASE_ID.test(env.WORKSPACE_FIRESTORE_DATABASE)) fields.push('WORKSPACE_FIRESTORE_DATABASE');
+        if (env.FIRESTORE_EMULATOR_HOST) fields.push('FIRESTORE_EMULATOR_HOST');
+        if (!env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON && !env.GOOGLE_APPLICATION_CREDENTIALS) fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON', 'GOOGLE_APPLICATION_CREDENTIALS');
+        else if (env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON) {
+          try {
+            const c = parseCredentials(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON);
+            if (!c || c.project_id !== env.WORKSPACE_FIRESTORE_PROJECT_ID || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(c.client_email) || createPrivateKey(c.private_key).asymmetricKeyType !== 'rsa') fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON');
+          } catch { fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON'); }
+        }
+        if (env.WORKSPACE_EMAIL_DELIVERY_KEY && !/^[a-f0-9]{64}$/i.test(env.WORKSPACE_EMAIL_DELIVERY_KEY)) fields.push('WORKSPACE_EMAIL_DELIVERY_KEY');
+      }
+      for (const field of fields) console.error(JSON.stringify({ event: 'firestore_configuration_unavailable', variable: field, issue: env[field] == null || env[field] === '' ? 'MISSING' : 'INVALID' }));
+      if (!fields.length) console.error(JSON.stringify({ event: 'firestore_configuration_unavailable', issue: 'INVALID' }));
+    }
+    throw error;
+  }
 }
 
 export function isFirestoreMode(config) {

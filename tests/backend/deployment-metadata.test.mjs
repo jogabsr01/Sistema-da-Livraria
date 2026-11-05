@@ -30,10 +30,36 @@ test("realistic Functions environment resolves pinned deployment from private bu
   const env = Object.freeze(runtime()),
     before = JSON.stringify(env),
     meta = buildDeploymentMetadata(buildEnv());
-  assert.throws(() => loadConfig(env), { code: "CONFIGURATION_UNAVAILABLE" });
+  assert.equal(loadConfig(env).environment, "dev");
   assert.equal(loadConfig(env, meta).environment, "dev");
   assert.equal(loadConfig(buildEnv(), meta).environment, "dev");
   assert.equal(JSON.stringify(env), before);
+});
+test("missing deployment URL uses the environment's canonical host without accepting unsafe URLs", () => {
+  for (const env of [environment(), environment({ APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' })]) {
+    for (const value of [undefined, '', null]) {
+      assert.equal(loadConfig({ ...env, DEPLOY_PRIME_URL: value }).environment, env.APP_ENV);
+      assert.equal(loadConfig({ ...env, DEPLOY_PRIME_URL: value, URL: env.DEPLOY_PRIME_URL }).environment, env.APP_ENV);
+    }
+    assert.throws(() => loadConfig({ ...env, DEPLOY_PRIME_URL: '', URL: 'https://attacker.example' }), { code: 'CONFIGURATION_UNAVAILABLE' });
+  }
+  const env = buildEnv(), meta = buildDeploymentMetadata(env);
+  for (const value of [undefined, '', null]) assert.equal(loadConfig({ ...env, DEPLOY_PRIME_URL: value }, meta).environment, 'dev');
+});
+test("missing runtime context and branch never block valid dev or production settings", () => {
+  for (const [env, context, branch] of [
+    [environment(), 'branch-deploy', 'dev'],
+    [environment({ APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' }), 'production', 'main'],
+  ]) {
+    for (const value of [undefined, '', null]) {
+      const input = { ...env, CONTEXT: value, BRANCH: value };
+      assert.equal(loadConfig(input).environment, env.APP_ENV);
+    }
+    assert.throws(() => loadConfig({ ...env, CONTEXT: context === 'production' ? 'branch-deploy' : 'production' }), { code: 'CONFIGURATION_UNAVAILABLE' });
+    assert.throws(() => loadConfig({ ...env, BRANCH: branch === 'main' ? 'dev' : 'main' }), { code: 'CONFIGURATION_UNAVAILABLE' });
+  }
+  const env = buildEnv(), meta = buildDeploymentMetadata(env);
+  assert.equal(loadConfig({ ...env, CONTEXT: '', BRANCH: '' }, meta).environment, 'dev');
 });
 test("runtime metadata cannot authorize preview, wrong branch, hostname, site, environment or contradictory runtime metadata", () => {
   const env = runtime(),

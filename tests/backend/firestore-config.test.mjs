@@ -58,6 +58,11 @@ test('Firestore service-account configuration is validated without exposing the 
   assert.equal(settings.credentials.private_key, 'test-private-key');
 });
 
+test('deployed and production configurations refuse an emulator host', () => {
+  const base={WORKSPACE_STORAGE_MODE:'firestore',WORKSPACE_FIRESTORE_PROJECT_ID:'livraria-ipb-dev',WORKSPACE_FIRESTORE_LOCATION:'southamerica-east1',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8080'};
+  for(const env of [{...base,NETLIFY:'true'},{...base,APP_ENV:'prod'}]) assert.throws(()=>loadFirestoreSettings(env),{code:'FIRESTORE_CONFIGURATION_UNAVAILABLE'});
+});
+
 test('Firestore configuration rejects missing or cross-environment bindings', () => {
   assert.throws(() => loadFirestoreSettings({ WORKSPACE_STORAGE_MODE: 'invalid' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
   assert.throws(() => loadFirestoreSettings({

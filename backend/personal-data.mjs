@@ -11,7 +11,7 @@ export function loadPersonalDataSettings(env = process.env) {
 }
 export function createPersonalDataVault(settings) {
   const {config,dataKey,indexKey}=settings;
-  if (!catalogUuid(config?.installationId) || !['dev','prod'].includes(config.environment) || ![dataKey,indexKey].every(key=>Buffer.isBuffer(key)&&key.length===32) || dataKey.equals(indexKey)) unavailable();
+  if (typeof config?.installationId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(config.installationId) || !['dev','prod'].includes(config.environment) || ![dataKey,indexKey].every(key=>Buffer.isBuffer(key)&&key.length===32) || dataKey.equals(indexKey)) unavailable();
   const aad=(entity,id)=>{ if (!['users','customers','schedules'].includes(entity)||!catalogUuid(id)) unavailable(); return Buffer.from(JSON.stringify(['personal.v1',config.environment,config.installationId,entity,id])); };
   return {
     fingerprint(value) {return createHmac('sha256',indexKey).update(JSON.stringify(['command.v1',config.environment,config.installationId,value])).digest('hex');},

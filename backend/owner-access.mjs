@@ -64,7 +64,8 @@ function readCookie(request) {
 }
 export function createOwnerAccessService(settings, { client, stagedCompletion = false, segmentedCompletion = false, passwordLogin = false, pinLogin = passwordLogin } = {}) {
   const { config, guardKey, tokenKey, pepper } = settings;
-  if (config.environment !== 'dev') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
+  if (!['dev', 'prod'].includes(config.environment) || ![guardKey, tokenKey, pepper].every(key => Buffer.isBuffer(key) && key.length === 32)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
+  const accessOrigin = devOrigin(config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
   const vault=settings.cpfEnabled||settings.staffEnabled?createPersonalDataVault(settings):null;
   const identifier=value=>{if(typeof value!=='string')throw new ApiError(400,'INVALID_AUTH_REQUEST');if(value.includes('@'))return email(value);if(!vault)throw new ApiError(503,'ACCESS_CPF_NOT_AVAILABLE');return normalizeCpf(value);};
   async function staffLookup(value){
@@ -155,7 +156,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
     },
     deviceOptions(token){
       const challenge=randomBytes(32).toString('base64url'),flowId=randomUUID(),ceremonyId=randomUUID();
-      return {receipt:accessReceipts(settings,token).seal('device-login',{challenge,flowId,ceremonyId}),options:{challenge,rpId:new URL(ACCESS_ORIGIN).hostname,allowCredentials:[],userVerification:'required',timeout:120000}};
+      return {receipt:accessReceipts(settings,token).seal('device-login',{challenge,flowId,ceremonyId}),options:{challenge,rpId:new URL(accessOrigin).hostname,allowCredentials:[],userVerification:'required',timeout:120000}};
     },
     async state(token) {
       try { const f=await read(token);return {stage:f.state==='PASSKEY'&&f.proofReady?'COMMITTING':f.state==='PIN'?'PASSWORD':f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
@@ -171,7 +172,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         if(typeof handle!=='string'||Buffer.from(handle,'base64url').toString('base64url')!==handle)rejected();
         const subjectId=Buffer.from(handle,'base64url').toString('utf8');if(!catalogUuid(subjectId))rejected();
         let browserData;try{browserData=JSON.parse(Buffer.from(response.response.clientDataJSON,'base64url').toString('utf8'));}catch{rejected();}
-        if(browserData.type!=='webauthn.get'||browserData.origin!==ACCESS_ORIGIN||browserData.challenge!==issued.challenge)rejected();
+        if(browserData.type!=='webauthn.get'||browserData.origin!==accessOrigin||browserData.challenge!==issued.challenge)rejected();
         const prepared=await client.prepareDeviceAccess({...issued,tokenHash:hash(token),subjectId,credentialId:response.id,staffAllowed:settings.staffEnabled===true,...guard.attemptKeys({identifier:'passkey:'+createHash('sha256').update(response.id||'').digest('hex'),originAddress:ip})});
         const rawToken=digest('access.session.v1',token,'base64url',tokenKey);
         return verifyPreparedProof(prepared,response,token,tokens.hash(rawToken));
@@ -198,7 +199,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         if(!['biometric','password','pin'].includes(saved.mode))rejected();
         const prepared=await client.prepareBiometricOptions({...saved.command,tokenHash:hash(token),...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),ceremonyId:randomUUID(),challenge:randomBytes(32).toString('base64url')});
         if(prepared.subjectId!==saved.command.subjectId||prepared.authorizationVersion!==saved.command.authorizationVersion||prepared.kind!=='get')rejected();
-        return await preparedAccessOptions(prepared);
+        return await preparedAccessOptions(prepared, config.environment);
       }
       if(['login','biometric'].includes(operation)&&typeof client.lookupAccessLogin==='function'){
         const value=identifier(input.email),isEmail=value.includes('@');
@@ -246,7 +247,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         const prepared = await client.prepareAccessOptions({ ...attempt, tokenHash: hash(token),
           ceremonyId: randomUUID(), challenge: randomBytes(32).toString('base64url'),
           allowReplacement: settings.emergencyRecoveryEnabled === true });
-        return await preparedAccessOptions(prepared);
+        return await preparedAccessOptions(prepared, config.environment);
       }
       if(operation==='complete'&&typeof client.prepareAccessCompletion==='function')return await completePrepared(input,token,ip);
       let completedRetry=false;if(operation==='complete'){try{const previous=await read(token);completedRetry=previous.state==='COMPLETE'&&previous.proofReady;}catch{}}
@@ -326,12 +327,14 @@ export function createOwnerAccessHandler(dependencies = {}) {
     let operation, settingsLoaded = false, client, token, rotatedFlow = false;
     const timed=response=>{const metrics=client?.timings?.();response.headers.set('server-timing',`app;dur=${Math.round(performance.now()-startedAt)}`+(metrics?`, google;dur=${metrics.durationMs}, rpc;desc="${metrics.calls}"`:''));return response;};
     try {
-      if (new URL(request.url).origin !== ACCESS_ORIGIN) throw new ApiError(403, 'FORBIDDEN');
+      if (new URL(request.url).origin !== devOrigin()) throw new ApiError(403, 'FORBIDDEN');
       operation = new URL(request.url).pathname.split('/').at(-1);
       if (operation !== 'state' && !Object.hasOwn(shapes, operation)) throw new ApiError(404, 'NOT_FOUND');
       const method = operation === 'state' ? 'GET' : 'POST';
       if (request.method !== method) { const result = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); result.headers.set('allow', method); return result; }
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
+      const accessOrigin = devOrigin(settings.config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
+      if (new URL(request.url).origin !== accessOrigin) throw new ApiError(403, 'FORBIDDEN');
       settingsLoaded = true;
       client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt, ...(optionsRequest||completionRequest||loginRequest?{timeoutMs:COMPLETION_REQUEST_BUDGET_MS}:{}) });
       const service = createOwnerAccessService(settings, { client,passwordLogin:settings.config.adminPasswordLogin===true&&request.headers.get('x-access-step-up')!=='passkey', stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3'||operation==='device-login' });
@@ -342,7 +345,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
         const result = json({ data: { ...data,...(data.stage==='INITIAL'?{deviceLogin:service.deviceOptions(token)}:{}),emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId });
         if (fresh) result.headers.set('set-cookie', accessCookie(token)); return timed(result);
       }
-      requireSameOriginMutation(request, ACCESS_ORIGIN);
+      requireSameOriginMutation(request, accessOrigin);
       // A missing/expired/invalid pre-auth cookie is not a rejected account or
       // PIN. This code is emitted only before body parsing, guard/KDF or RPC.
       try { token = readCookie(request); }
