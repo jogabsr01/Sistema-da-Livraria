@@ -18,6 +18,7 @@ import logout from '../../netlify/functions/session-logout.mjs';
 import revokeOthers from '../../netlify/functions/session-revoke-others.mjs';
 import session from '../../netlify/functions/session.mjs';
 import staff from '../../netlify/functions/staff.mjs';
+import { isIP } from 'node:net';
 
 const exact = new Map([
   ['/api/v1/health', health], ['/api/v1/schema', schema],
@@ -37,9 +38,15 @@ export function selectHandler(pathname) {
   return nested.get(match[1]) || null;
 }
 
+export async function forwardToHandler(request, handler) {
+  const address = request.headers.get('x-vercel-forwarded-for');
+  const ip = process.env.VERCEL === '1' && address && isIP(address) ? address : undefined;
+  return handler(request, { ip });
+}
+
 export async function dispatch(request) {
   const handler = selectHandler(new URL(request.url).pathname);
-  return handler ? handler(request) : Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 });
+  return handler ? forwardToHandler(request, handler) : Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 });
 }
 
 export default { fetch: dispatch };

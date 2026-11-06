@@ -6,6 +6,7 @@ import { createGasEmulator } from './gas-emulator.mjs';
 import { properties, environment } from './fixtures.mjs';
 import {ApiError} from '../../backend/errors.mjs';
 import { ACCESS_COOKIE, ACCESS_ORIGIN, accessCookie, createOwnerAccessHandler, createOwnerAccessService, loadOwnerAccessSettings } from '../../backend/owner-access.mjs';
+import { forwardToHandler } from '../../api/v1/[...slug].js';
 
 const fakePassword = 'Senha 8274';
 function code(s) { return s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1]; }
@@ -188,6 +189,31 @@ test('activated account login requires its PIN, unknown accounts get the same re
   for (const input of [{ email: properties.OWNER_EMAIL, password: '0193' }, { email: 'unknown@example.invalid', password: fakePassword }]) await assert.rejects(s.service().execute('login', input, randomBytes(32).toString('base64url'), '192.0.2.3'), { code: 'ACCESS_REJECTED' });
   const token = randomBytes(32).toString('base64url'); assert.equal((await s.service().execute('login', { email: properties.OWNER_EMAIL, password: fakePassword }, token, '192.0.2.3')).stage, 'PASSKEY');
   assert.equal(s.main.getSheetByName('Sessoes').getLastRow(), 2); await assert.rejects(s.service().execute('complete', { response: null }, token, '192.0.2.3'), { code: 'WORKSPACE_ACCESS_REJECTED' });
+});
+
+test('Vercel adapter forwards a validated client IP through a complete login request', async () => {
+  const previous = process.env.VERCEL;
+  process.env.VERCEL = '1';
+  try {
+    const s = ownerFixture(), prepared = await pending(s);
+    await prepared.service.execute('complete', { response: null }, prepared.token, prepared.ip);
+    const state = await s.handler(new Request(ACCESS_ORIGIN + '/api/v1/access/state'));
+    const cookie = state.headers.get('set-cookie').split(';')[0];
+    const csrf = (await state.json()).data.csrfToken;
+    const login = ip => new Request(ACCESS_ORIGIN + '/api/v1/access/login', {
+      method: 'POST', headers: { origin: ACCESS_ORIGIN, cookie, 'x-csrf-token': csrf,
+        'content-type': 'application/json', ...(ip ? { 'x-vercel-forwarded-for': ip } : {}) },
+      body: JSON.stringify({ email: properties.OWNER_EMAIL, password: fakePassword }),
+    });
+    const missing = await forwardToHandler(login(null), s.handler);
+    assert.equal(missing.status, 400);
+    assert.equal((await missing.json()).error.code, 'INVALID_AUTH_REQUEST');
+    const result = await forwardToHandler(login('192.0.2.10'), s.handler);
+    assert.equal(result.status, 200);
+    assert.equal((await result.json()).data.stage, 'PASSKEY');
+  } finally {
+    if (previous === undefined) delete process.env.VERCEL; else process.env.VERCEL = previous;
+  }
 });
 
 test('public HTTP requires CSRF, exact DEV origin, trusted context IP, bounded JSON and forbids caller role/subject claims', async () => {
