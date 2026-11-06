@@ -345,12 +345,20 @@ export function createOwnerAccessHandler(dependencies = {}) {
         const result = json({ data: { ...data,...(data.stage==='INITIAL'?{deviceLogin:service.deviceOptions(token)}:{}),emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId });
         if (fresh) result.headers.set('set-cookie', accessCookie(token)); return timed(result);
       }
-      requireSameOriginMutation(request, accessOrigin);
+      try { requireSameOriginMutation(request, accessOrigin); }
+      catch (error) {
+        if (error instanceof ApiError && error.code === 'CSRF_REJECTED') console.error(JSON.stringify({ event: 'csrf_rejected', requestId, check: 'origin' }));
+        throw error;
+      }
       // A missing/expired/invalid pre-auth cookie is not a rejected account or
       // PIN. This code is emitted only before body parsing, guard/KDF or RPC.
       try { token = readCookie(request); }
       catch { throw new ApiError(401, 'ACCESS_CONTEXT_EXPIRED'); }
-      requireCsrfToken(request, service.csrf(token));
+      try { requireCsrfToken(request, service.csrf(token)); }
+      catch (error) {
+        if (error instanceof ApiError && error.code === 'CSRF_REJECTED') console.error(JSON.stringify({ event: 'csrf_rejected', requestId, check: 'token' }));
+        throw error;
+      }
       const declared = request.headers.get('content-length');
       if (declared && (!/^\d+$/.test(declared) || Number(declared) > 20000)) throw new ApiError(413, 'INVALID_AUTH_REQUEST');
       // Bound the actual stream before parsing or invoking Google/KDF.

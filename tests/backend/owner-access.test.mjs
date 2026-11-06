@@ -230,6 +230,25 @@ test('public HTTP requires CSRF, exact DEV origin, trusted context IP, bounded J
   assert.equal((await call(s, 'state', { method: 'GET', origin: 'https://merry-chimera-49a1f3.netlify.app' })).response.status, 403);
 });
 
+test('CSRF diagnostics identify the failing check without logging request data', async () => {
+  const s = ownerFixture(), state = await call(s, 'state', { method: 'GET' });
+  const token = state.response.headers.get('set-cookie').split('=')[1].split(';')[0];
+  const csrfToken = state.data.data.csrfToken;
+  const original = console.error, logs = [];
+  console.error = message => logs.push(message);
+  try {
+    for (const [check, extra] of [
+      ['origin', { headers: { origin: 'https://attacker.invalid' } }],
+      ['token', { csrfToken: 'invalid-sensitive-token' }],
+    ]) {
+      const result = await call(s, 'start', { token, csrfToken, body: { email: properties.OWNER_EMAIL }, ...extra });
+      assert.equal(result.response.status, 403);
+      assert.deepEqual(JSON.parse(logs.shift()), { event: 'csrf_rejected', requestId: result.data.error.requestId, check });
+    }
+    assert.equal(logs.length, 0);
+  } finally { console.error = original; }
+});
+
 test('default and partial flags, wrong context and reused keys keep real identity routes closed; start never returns code/PII', async () => {
   assert.throws(() => loadOwnerAccessSettings(environment()), { code: 'IDENTITY_NOT_ACTIVATED' });
   const s = ownerFixture();
