@@ -1,0 +1,13 @@
+# QA de relatórios comerciais — 24/10/2026 (São Paulo)
+
+Base DEV `3f5527cef2e9a4a27e53f7fd571d2e813c727498`. [Contrato, critérios e limites](RELATORIOS_COMERCIAIS_DEV.md). Código local em validação para integração DEV, sem configuração Google real.
+
+13 grupos específicos aprovados: equações em centavos/preços históricos/estornos/rankings, filtros pessoais privados, conciliação de movimentos/saldo zero, prova de consulta vinculada à sessão e fonte, XLSX real, autenticação/CSRF/esquema/flags, falhas de autorização antes/depois do append, resposta alterada/contatos fora do contrato, metadados atuais versus históricos, estorno posterior ao período, conjunto além da página, mudança de papel/capacidade e 5.000 livros completos. Caso de volume também verifica overflow e recusa explícita de fonte Unicode excessiva, sem resultado parcial.
+
+O teste do arquivo valida CRC/ZIP, XML de todas as partes, IDs únicos de relações e alvos OOXML, seis abas e células numéricas em centavos. Um título adversarial com fórmula/URL/caracteres XML/emoji permanece texto literal, sem elemento de fórmula, macro ou vínculo externo. O gerador de auditoria mantém seu contrato anterior de células de texto e continua coberto pelos testes existentes.
+
+Sete cenários novos Chromium aprovados: celular/indicadores/rankings/detalhes/download, venda estornada descontada, estoque/movimentação/filtros/vazio, resposta de exportação perdida com comando repetido e único evento, fonte alterada exigindo nova consulta, perda de papel limpando dados e cliente identificado por CPF/cidade/pagamento com CPF/contatos ausentes no Excel. Screenshot `work/qa-reports/relatorios-celular.png` inspecionada, sem rolagem horizontal.
+
+Suíte completa aprovada: 300 contratos backend no Node 24.19.0 e 300 no Node 22.23.4, sem falhas. Chromium: 93 cenários aprovados (sete novos e 86 regressões em auditoria, eventos de segurança, acesso, operações, estoque, caixa, clientes, catálogo, equipe, perfil, e-mail, notificações, escalas e nichos). Logs locais `work/reports-full24.log`, `work/reports-full22.log`, `work/reports-browser-final.log` e `work/reports-regression-*.log`. Build, sintaxe JavaScript, diff check e kit de 43 arquivos conferidos; fontes empacotadas comparadas byte a byte.
+
+Tudo usa Google/Sheets/Drive/MailApp emulados e descartáveis; entrada browser com assinatura WebAuthn de autenticador virtual. Não comprova aparelho, quotas/IAM Google reais, liquidação bancária ou uma versão específica do Excel. Não há envio de mensagens externas, cobrança, reembolso ou alteração de flags privadas/produção. O v17 não terminou.

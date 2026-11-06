@@ -1,0 +1,31 @@
+name: Netlify DEV read-only audit
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ops/netlify-dev-audit-request.json
+      - scripts/netlify-dev-audit.mjs
+      - tests/backend/netlify-dev-audit.test.mjs
+      - .github/workflows/netlify-dev-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: netlify-dev-read-only-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    if: github.repository == 'jogabsr01/Sistema-da-Livraria' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Test read-only protocol and redaction with fake credentials
+        run: node --test tests/backend/netlify-dev-audit.test.mjs
+      - name: Audit the fixed DEV project's configuration and deploys
+        env:
+          NETLIFY_DEV_AUDIT_TOKEN: ${{ secrets.NETLIFY_DEV_AUDIT_TOKEN }}
+        run: node scripts/netlify-dev-audit.mjs

@@ -1,0 +1,3 @@
+# Diretriz permanente de UI/UX
+
+O Sistema da Livraria deve manter um visual clean, moderno e com ar de tecnologia de ponta, com um toque futurista sutil na logo e no card de acesso. Trate tipografia, espaçamento, bordas e estados de foco com atenção aos detalhes; prefira leveza visual, consistência e acessibilidade, evitando elementos pesados ou estilização incompleta. Preserve responsividade, contraste, navegação por teclado e comportamento funcional existente.

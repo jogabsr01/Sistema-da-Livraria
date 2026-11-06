@@ -1,0 +1,105 @@
+'use strict';
+(()=>{
+ const connectionNode=document.createElement('span'),reconnectNode=document.createElement('button');
+ const $=id=>document.getElementById(id),ORIGIN=(globalThis.LivrariaOrigin?.current(location.origin)||'https://dev--merry-chimera-49a1f3.netlify.app'),money=v=>(v/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),date=v=>v?new Date(v).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):'';
+ const kinds={SALES:'Vendas e faturamento',STOCK:'Posição atual do estoque',MOVEMENTS:'Movimentações de estoque'},payments={PIX:'Pix',DINHEIRO:'Dinheiro',DEBITO:'Débito',CREDITO:'Crédito'},types={ENTRADA:'Entrada',SAIDA:'Saída por venda',AJUSTE:'Ajuste',ESTORNO:'Estorno'};
+ const textFields=['employeeId','customerId','cpf','productId','query','isbn','author','publisher','supplier','nicheId','category','city','paymentMethod','stock','activity','movementType'];
+ let csrf='',userId='',data=null,applied=null,pending=null,busy=false,page=0,urls=new Set(),peopleChoices=new Map(),nicheChoices=new Map();
+ let access=false,version=0,previewTimer;
+ const csvButton=document.createElement('button');csvButton.type='button';csvButton.textContent='↓ Exportar CSV';csvButton.hidden=true;$('export-report').after(csvButton);
+ const online=()=>navigator.onLine!==false;
+ function connection(){const state=!online()?'offline':access?'ready':'stale';connectionNode.dataset.state=state;connectionNode.textContent=!online()?'Sem conexão. Os resultados foram ocultados. Mantenha a aba aberta se houver uma exportação pendente.':pending?'Há uma exportação aguardando conferência. Reconectar não baixa o arquivo automaticamente.':access?'Acesso conferido. Faça uma consulta para preparar um arquivo com autorização atual.':'Confira a mesma conta administrativa para continuar. Resultados anteriores foram ocultados.';}
+ function invalidate(){version++;clear(true);controls();}
+ function armExpiry(expiresAt){clearTimeout(previewTimer);const delay=Math.max(0,Math.min(300000,expiresAt-Date.now()));previewTimer=setTimeout(()=>{version++;clear();controls();$('status').textContent='A autorização da consulta venceu. Consulte novamente. Uma exportação anterior pode já ter sido autorizada no servidor.';},Number.isFinite(delay)?delay:0);}
+ function today(){const p=new Intl.DateTimeFormat('en',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());return ['year','month','day'].map(k=>p.find(v=>v.type===k).value).join('-');}
+ function error(e){ if(e.code==='OFFLINE')return 'Sem conexão. Mantenha a aba aberta e confira o acesso ao reconectar.';if(e.code==='CONTEXT_CHANGED')return 'A conexão ou o contexto mudou. Nenhum arquivo foi preparado nesta resposta; confira o pedido pendente ou faça uma nova consulta.';if(e.status===401||e.status===403)return 'Confirme seu acesso administrativo com PIN e confirmação pelo aparelho. A consulta exige autenticação recente.';if(e.code?.includes('PREVIEW_EXPIRED'))return 'A consulta venceu. Consulte novamente antes de exportar.';if(e.code?.includes('CHANGED'))return 'Os dados mudaram desde a consulta. Atualize o relatório antes de exportar.';if(e.code?.includes('CAPACITY')||e.code?.includes('EXPORT_LIMIT'))return 'O volume ultrapassou o limite seguro. Reduza o período ou refine os filtros.';if(e.code?.includes('CONFLICT'))return 'Este pedido não corresponde à autorização anterior. Consulte novamente.';if(e.code?.includes('INVALID'))return 'Confira datas, CPF, ISBN e valores. Consulte até um ano por vez e use valores como 45,00.';if(e.code?.includes('NOT_ACTIVATED')||e.code?.includes('UNAVAILABLE'))return 'Os relatórios ainda não estão disponíveis nesta instalação.';const common = globalThis.LivrariaMessages?.describe(e); if (common) return common;return 'Não foi possível confirmar agora. Confira a conexão e tente novamente.';}
+ function clear(keepPending=false){
+  const retained=keepPending?pending:null;data=null;applied=null;pending=retained;csrf='';access=false;page=0;
+  if(!retained)clearTimeout(previewTimer);
+  peopleChoices.clear();nicheChoices.clear();$('employeeId').replaceChildren(new Option('Todos',''));$('nicheId').replaceChildren(new Option('Todos',''));
+  for(const id of ['metrics','rows','top-products','top-operators','detail-content'])$(id).replaceChildren();
+  for(const id of ['updated','criteria','count','export-note'])$(id).textContent='';
+  $('result').hidden=true;$('export-report').hidden=true;$('pending-export').hidden=!retained;$('reports').hidden=true;
+  for(const id of ['cpf','city','customerId','employeeId'])$(id).value='';
+  if($('detail').open)$('detail').close();for(const url of urls)URL.revokeObjectURL(url);urls.clear();
+ }
+ async function request(path,body,responseOnly=false){
+  if(!online())throw {code:'OFFLINE'};
+  if(location.origin!==ORIGIN)throw {status:403};
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+  try{
+   const response=await fetch(path,{credentials:'same-origin',cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify(body)}:{})});
+   if(!response.ok){const out=await response.json();throw {status:response.status,code:out.error?.code,field:out.error?.field,readOnly:!body};}
+   return responseOnly?response:(await response.json()).data;
+  }catch(e){if(!e.status||e.status===401||e.status===403)invalidate();throw e;}finally{clearTimeout(timer);}
+ }
+ async function session(){
+  const current=await request('/api/v1/session');
+  if(userId&&current.user.id!==userId){invalidate();throw {status:401};}
+  if(!['ADMIN','SUPER_ADMIN'].includes(current.user.role)){invalidate();throw {status:403};}
+  userId=current.user.id;csrf=current.csrfToken;access=true;document.body.dataset.sessionRole=current.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
+ }
+ async function api(op,p){return request('/api/v1/reports/'+op,p,op==='export');}
+ function cents(id){const t=$(id).value.trim();if(!t)return null;if(!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(t))throw {code:'INVALID_REPORT'};const [a,b='']=t.replace(/\./g,'').split(',');return Number(a)*100+Number(b.padEnd(2,'0'));}
+ function filters(){const kind=$('kind').value,f={kind,from:'',to:''};if(kind!=='STOCK'){const start=new Date($('from').value+'T00:00:00-03:00'),end=new Date($('to').value+'T00:00:00-03:00');end.setUTCDate(end.getUTCDate()+1);f.from=start.toISOString();f.to=new Date(end.getTime()-1).toISOString();}for(const k of textFields)f[k]=$(k).dataset.incompatible==='true'?'':$(k).value.trim();f.minCents=kind==='MOVEMENTS'?null:cents('min-value');f.maxCents=kind==='MOVEMENTS'?null:cents('max-value');return f;}
+ function dirty(){try{return !applied||JSON.stringify(filters())!==JSON.stringify(applied);}catch{return true;}}
+ function controls(){
+  connection();
+  for(const el of document.querySelectorAll('#filters input,#filters select,#filters button,#previous,#next,#export-report'))el.disabled=busy||!!pending||!online()||!access||el.dataset.incompatible==='true';
+  $('retry-export').disabled=busy||!pending||!online();
+  $('discard-export').disabled=busy||!pending;reconnectNode.disabled=busy||!online();$('pending-export').hidden=!pending;
+  if(data)$('export-report').disabled=busy||!!pending||!online()||!access||dirty()||!data.rows.length;
+  csvButton.hidden=$('export-report').hidden;csvButton.disabled=$('export-report').disabled;
+ }
+ function kindChanged(){const k=$('kind').value;for(const[selector,hidden]of [['.period-field',k==='STOCK'],['.employee-field',k==='STOCK'],['.sales-field',k!=='SALES'],['.movement-field',k!=='MOVEMENTS'],['.value-field',k==='MOVEMENTS']])for(const group of document.querySelectorAll(selector)){group.hidden=hidden;for(const el of group.querySelectorAll('input,select')){el.dataset.incompatible=String(hidden);el.disabled=hidden;}}$('kind-note').textContent=k==='SALES'?'Vendas pela data da compra e situação atual, com estornos descontados.':k==='STOCK'?'Uma posição do estoque de agora. O filtro de período não se aplica a este relatório.':'Entradas, saídas, ajustes e estornos pela data do movimento.';$('value-note').textContent=k==='SALES'?'O filtro de valor considera a venda completa. Quando houver filtro de produto, os totais somam os itens selecionados.':k==='STOCK'?'O filtro de valor considera o preço de venda atual do livro. Valor de estoque usa preço de venda e não representa custo ou lucro.':'Movimentações mostram unidades e saldos, sem atribuir valores que não foram registrados.';controls();}
+ function metric(label,value){const card=document.createElement('article'),p=document.createElement('p'),strong=document.createElement('strong');card.className='metric';p.textContent=label;strong.textContent=value;card.append(p,strong);$('metrics').append(card);}
+ function rankings(){const visible=data.kind==='SALES';$('rankings').hidden=!visible;for(const id of ['top-products','top-operators'])$(id).replaceChildren();if(!visible)return;for(const [id,list,value,label]of [['top-products',data.products,'units',v=>v+' un.'],['top-operators',data.operators,'netCents',money]]){const max=Math.max(1,...list.map(p=>p[value]));for(const p of list.slice(0,8)){const row=document.createElement('div'),text=document.createElement('label'),name=document.createElement('span'),amount=document.createElement('span'),bar=document.createElement('meter');row.className='ranking';name.textContent=p.title||p.name;amount.textContent=label(p[value]);bar.min=0;bar.max=max;bar.value=p[value];bar.setAttribute('aria-label',name.textContent+': '+amount.textContent);text.append(name,amount);row.append(text,bar);$(id).append(row);}if(!list.length)$(id).textContent='Nenhuma venda confirmada nesta seleção.';}}
+ function render(){for(const r of data.rows)if(r.operatorId)peopleChoices.set(r.operatorId,r.operator);for(const n of data.niches)nicheChoices.set(n.id,n.name);for(const[id,map]of [['employeeId',peopleChoices],['nicheId',nicheChoices]]){const value=$(id).value;$(id).replaceChildren(new Option('Todos',''),...[...map].sort((a,b)=>a[1].localeCompare(b[1])).map(([id,name])=>new Option(name,id)));$(id).value=value;}const s=data.summary;$('metrics').replaceChildren();if(data.kind==='SALES'){metric('Valor líquido',money(s.netCents));metric('Valor bruto',money(s.grossCents));metric('Valor estornado',money(s.reversedCents));metric('Ticket médio',money(s.averageCents));$('criteria').textContent=s.confirmedCount+' venda(s) confirmada(s) · '+s.reversedCount+' estornada(s) · '+s.unitsNet+' unidade(s) líquida(s). Estornos registrados depois do período também são descontados. Totais consideram somente os itens selecionados.';}else if(data.kind==='STOCK'){metric('Unidades em estoque',String(s.totalUnits));metric('Livros cadastrados',String(s.booksCount));metric('Sem estoque',String(s.zeroCount));metric('Ao preço de venda',money(s.salePotentialCents));$('criteria').textContent=s.lowCount+' livro(s) com estoque baixo, acima de zero. A posição é atual e inclui a situação dos livros selecionada nos filtros; valor ao preço de venda não é custo nem lucro.';}else{metric('Movimentações',String(s.movementsCount));metric('Unidades de entrada',String(s.unitsIn));metric('Unidades de saída',String(s.unitsOut));metric('Variação em unidades',String(s.netUnits));$('criteria').textContent='Movimentações pela data do registro. Entradas e estornos somam unidades; saídas e ajustes refletem a variação real dos saldos.';}$('criteria').textContent+=' Títulos e preços da venda são históricos; filtros de metadados dos livros e cidade usam os cadastros atuais.';if(data.legacyExcluded)$('criteria').textContent+=' '+data.legacyExcluded+' registro(s) técnico(s) antigo(s), sem contrato do Caixa, não compõem os totais.';$('result-kind').textContent=kinds[data.kind].toUpperCase();$('updated').textContent='Consultado em '+date(data.generatedAt);rankings();renderRows();$('result').hidden=false;$('export-report').hidden=false;$('export-note').textContent='O Excel contém todas as páginas e os filtros aplicados, sem incluir o CPF digitado. A autorização fica registrada na auditoria.';}
+ function renderRows(){const host=$('rows');host.replaceChildren();const total=data.rows.length,rows=data.rows.slice(page*25,page*25+25);$('rows-title').textContent={SALES:'Vendas selecionadas',STOCK:'Livros selecionados',MOVEMENTS:'Movimentações selecionadas'}[data.kind];$('count').textContent=total+' registro(s) · Página '+(page+1);for(const r of rows){const card=document.createElement('article'),body=document.createElement('div'),h=document.createElement('h4'),p=document.createElement('p'),v=document.createElement('p'),badge=document.createElement('span'),button=document.createElement('button');card.className='report-row';v.className='row-value';if(data.kind==='SALES'){h.textContent=r.customer;p.textContent=r.operator+' · '+date(r.at)+' · '+payments[r.paymentMethod];v.textContent=money(r.valueCents);badge.textContent=r.status==='CONFIRMADA'?'Confirmada':'Estornada';badge.className='badge'+(r.status==='CANCELADA'?' cancelled':'');}else if(data.kind==='STOCK'){h.textContent=r.title;p.textContent=(r.author||'Autor não informado')+' · '+(r.supplier||'Fornecedor não informado');v.textContent=r.stock+' un. · '+money(r.priceCents);badge.textContent=r.active?'Ativo':'Inativo';badge.className='badge';}else{h.textContent=r.title;p.textContent=r.operator+' · '+date(r.at);v.textContent=r.before+' → '+r.after+' un.';badge.textContent=types[r.type];badge.className='badge';}body.append(h,p,v,badge);button.textContent='Ver detalhes';button.className='secondary';button.type='button';button.addEventListener('click',()=>detail(r));card.append(body,button);host.append(card);}if(!rows.length){const p=document.createElement('p');p.className='empty';p.textContent='Nenhum registro encontrado com estes filtros.';host.append(p);}$('previous').hidden=page===0;$('next').hidden=(page+1)*25>=total;}
+ function pair(dl,k,v){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=String(v??'');dl.append(dt,dd);}
+ function detail(r){$('detail-content').replaceChildren();const dl=document.createElement('dl');dl.className='detail-grid';const values=data.kind==='SALES'?[['ID da venda',r.id],['Data',date(r.at)],['Atendente',r.operator],['ID do atendente',r.operatorId],['Cliente',r.customer],['ID do cliente',r.customerId||'Sem cadastro'],['Cidade / UF',[r.city,r.state].filter(Boolean).join(' / ')||'Não informada'],['Situação atual',r.status==='CONFIRMADA'?'Confirmada':'Estornada'],['Estorno',date(r.reversedAt)||'Não se aplica'],['Venda completa',money(r.saleTotalCents)],['Itens selecionados',money(r.valueCents)]]:data.kind==='STOCK'?[['ID do livro',r.id],['Título',r.title],['ISBN',r.isbn||'Não informado'],['Autor',r.author],['Editora',r.publisher],['Fornecedor',r.supplier],['Categoria',r.category],['Nichos',r.niches.join(' · ')],['IDs dos nichos',r.nicheIds.join(' · ')],['Saldo atual',r.stock],['Estoque mínimo',r.minimumStock],['Ativo',r.active?'Sim':'Não']]:[['ID do movimento',r.id],['Data',date(r.at)],['Tipo',types[r.type]],['ID do livro',r.productId],['Título atual',r.title],['Quantidade',r.quantity],['Saldo anterior',r.before],['Saldo posterior',r.after],['Atendente',r.operator],['ID do atendente',r.operatorId],['ID da venda',r.saleId||'Não se aplica']];for(const[k,v]of values)pair(dl,k,v);$('detail-content').append(dl);if(data.kind==='SALES')for(const i of r.items){const item=document.createElement('section'),title=document.createElement('strong'),p=document.createElement('p'),id=document.createElement('small');item.className='sale-item';title.textContent=i.title;p.textContent=i.quantity+' × '+money(i.unitPriceCents)+' = '+money(i.subtotalCents);id.textContent='ID do livro: '+i.productId;item.append(title,p,id);$('detail-content').append(item);}$('detail').showModal();}
+ async function query(){
+  if(busy||pending||!online()||!access||!$('filters').reportValidity())return;
+  busy=true;data=null;applied=null;clearTimeout(previewTimer);$('result').hidden=true;$('export-report').hidden=true;$('detail-content').replaceChildren();
+  if($('detail').open)$('detail').close();controls();const ticket=version;
+  try{
+   const f=filters();await session();if(ticket!==version||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};const out=await api('query',{filters:f});await session();
+   if(ticket!==version||!online()||document.hidden||JSON.stringify(f)!==JSON.stringify(filters()))throw {code:'CONTEXT_CHANGED'};
+   data=out;applied=f;page=0;render();armExpiry(out.expiresAt);$('reports').hidden=false;$('access-help').hidden=true;$('status').textContent='Relatório pronto para conferir.';
+  }catch(e){$('status').textContent=error(e);if(e.status===401||e.status===403){clear(true);$('access-help').hidden=false;}else{$('export-report').hidden=true;}}
+  finally{busy=false;controls();}
+ }
+ async function exportFile(format='xlsx'){
+  if(busy||!online()||!pending&&(!access||!data||dirty()))return;
+  if(!pending)pending={commandId:crypto.randomUUID(),filters:{...applied},sourceSnapshot:data.sourceSnapshot,proof:data.proof,expiresAt:data.expiresAt,format};
+  const command=pending,ticket=version;busy=true;controls();
+  try{
+   await session();if(ticket!==version||pending!==command||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};const response=await api('export',command),blob=await response.blob();await session();
+   if(ticket!==version||pending!==command||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};
+   const url=URL.createObjectURL(blob);urls.add(url);const link=document.createElement('a');link.href=url;link.download='relatorio-livraria-'+command.commandId+'.'+command.format;document.body.append(link);link.click();link.remove();
+   setTimeout(()=>{URL.revokeObjectURL(url);urls.delete(url);},10000);pending=null;$('status').textContent='Arquivo '+command.format.toUpperCase()+' preparado. A autorização foi registrada na auditoria.';
+  }catch(e){
+   $('status').textContent=error(e);
+   if(e.code?.includes('CHANGED')&&e.code!=='CONTEXT_CHANGED'||e.code?.includes('PREVIEW_EXPIRED')||e.code?.includes('INVALID')||e.code?.includes('CONFLICT')){clear();await check(false);$('status').textContent=error(e);}
+   else if(e.status===401||e.status===403){clear(true);$('access-help').hidden=false;}
+   else if(e.code==='CONTEXT_CHANGED')clear(true);
+  }finally{busy=false;controls();}
+ }
+ $('filters').addEventListener('submit',e=>{e.preventDefault();query();});$('kind').addEventListener('change',kindChanged);$('filters').addEventListener('input',controls);$('filters').addEventListener('change',controls);$('export-report').addEventListener('click',()=>exportFile('xlsx'));csvButton.addEventListener('click',()=>exportFile('csv'));$('retry-export').addEventListener('click',()=>exportFile());$('previous').addEventListener('click',()=>{if(data&&!busy&&!pending){page--;renderRows();}});$('next').addEventListener('click',()=>{if(data&&!busy&&!pending){page++;renderRows();}});$('close-detail').addEventListener('click',()=>{$('detail').close();$('detail-content').replaceChildren();});
+ $('discard-export').addEventListener('click',()=>{if(busy||!pending)return;version++;clear();controls();$('status').textContent='Referência descartada nesta página. Autorizações anteriores permanecem na auditoria. Confira o acesso e faça uma nova consulta.';check();});
+ reconnectNode.addEventListener('click',()=>check());
+ async function check(skipBusy=true,announce=true){
+  if(document.hidden||!online()||skipBusy&&busy){controls();return;}
+  const recovering=!access;
+  try{await session();$('reports').hidden=false;$('access-help').hidden=true;if(announce&&recovering&&!data)$('status').textContent=pending?'Acesso conferido. Confira o pedido pendente ou descarte a referência para uma nova consulta.':'Escolha o relatório e aplique os filtros para consultar.';}
+  catch(e){clear(true);$('access-help').hidden=false;$('status').textContent=error(e);}finally{controls();}
+ }
+ window.addEventListener('focus',()=>check());
+ window.addEventListener('offline',invalidate);window.addEventListener('online',()=>{invalidate();check();});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidate();else check();});
+ setInterval(()=>check(true,false),60000);
+ window.addEventListener('beforeunload',e=>{if(pending){e.preventDefault();e.returnValue='';}});
+ window.addEventListener('pagehide',invalidate);window.addEventListener('pageshow',e=>{if(e.persisted){invalidate();check();}});
+ async function start(){try{await session();$('reports').hidden=false;$('status').textContent='Escolha o relatório e aplique os filtros para consultar.';}catch(e){clear(true);$('access-help').hidden=false;$('status').textContent=error(e);}finally{controls();}}
+ const end=today(),begin=new Date(end+'T12:00Z');begin.setUTCDate(begin.getUTCDate()-30);$('from').value=begin.toISOString().slice(0,10);$('to').value=end;kindChanged();if(location.origin===ORIGIN)start();
+})();

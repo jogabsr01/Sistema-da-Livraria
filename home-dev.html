@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer">
+  <title>Início — Livraria IPB</title>
+  <link rel="stylesheet" href="/home-dev.css"><link rel="stylesheet" href="/account-menu.css">
+  <script src="/vendor/zxing-0.21.3.min.js" defer></script><script src="/home-dev.js" defer></script>
+
+<link rel="stylesheet" href="/app-theme.css">
+</head>
+<body class="app-shell page-home"><main>
+  <header class="home-masthead"><a class="home-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><img class="church-brand-logo" src="/brand/ipb-jardim-bonfiglioli.png" width="252" height="81" alt="Igreja Presbiteriana JD Bonfiglioli"></a><div class="header-end"><nav id="account-navigation" aria-label="Sua conta" hidden></nav></div></header>
+  <section id="welcome" class="welcome" aria-labelledby="welcome-title">
+    <div class="welcome-story">
+      <p class="welcome-eyebrow"><span></span> LIVROS QUE CONECTAM</p>
+      <h1 id="welcome-title">Sua livraria.<br>Em um só <em>lugar.</em></h1>
+      <p class="welcome-description">Mais tempo para as pessoas.<br>Mais cuidado com cada história.</p>
+      <div class="welcome-art" aria-hidden="true">
+        <div class="art-orbit"></div><div class="art-book book-one"><span>Histórias<br>que ficam.</span><i></i></div>
+        <div class="art-book book-two"><span>Cada página,<br>um encontro.</span><i></i></div>
+        <span class="art-star"><svg viewBox="0 0 40 40" fill="none"><path d="M20 3v34M3 20h34M8 8l24 24M8 32 32 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span><span class="art-caption">LIVRARIA IPB · JARDIM BONFIGLIOLI</span>
+      </div>
+    </div>
+    <div class="welcome-entry">
+      <span class="entry-number" aria-hidden="true">01 / BEM-VINDO</span>
+      <h2>Bom ter você aqui.</h2>
+      <p>Entre na sua conta para continuar na livraria.</p>
+      <a id="sign-in" class="entry-button" href="/acesso-dev.html#entrar">Entrar na minha conta <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="entry-note"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.5"/></svg><span>Seu acesso, protegido.<br>Use seu CPF ou e-mail e PIN cadastrado.</span></div>
+      <div class="entry-divider"></div><p class="entry-help">Primeira vez por aqui?<br><span>Na próxima tela, escolha “É meu primeiro acesso”.</span></p>
+    </div>
+  </section>
+  <section id="member-intro" class="home-intro" aria-labelledby="home-title" hidden><div><p class="badge">SUA LIVRARIA, MAIS PERTO</p><h1 id="home-title">Vamos fazer <em>acontecer.</em></h1></div><span class="member-label">INÍCIO</span></section>
+  <div class="access-status"><p id="status" role="status" aria-live="polite">Conferindo seu acesso…</p><button id="retry" type="button" hidden>Tentar novamente</button></div>
+  <section id="entry-failure" class="entry-failure" hidden>
+    <h2>Sua entrada não foi mantida</h2>
+    <p>Não conseguimos confirmar sua sessão ao abrir a livraria. Clique em “Conferir sessão” antes de tentar entrar novamente.</p>
+    <details class="system-diagnostics"><summary>Informações para o suporte</summary><p id="entry-diagnostic"></p><button id="download-entry-diagnostic" class="secondary" type="button">Baixar diagnóstico desta abertura</button></details>
+    <a href="/acesso-dev.html?verificar=1#entrar">Abrir verificação do acesso</a>
+  </section>
+  <section id="home" aria-label="Início da livraria" hidden>
+    <div class="main-actions">
+      <button id="new-purchase" class="action-card purchase" type="button"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M3 5h4l4 17h14l4-12H8M12 16h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="27" r="2" fill="currentColor"/><circle cx="24" cy="27" r="2" fill="currentColor"/></svg></span><span><strong>Nova compra</strong><small>Encontre livros e monte a compra</small></span><span aria-hidden="true">→</span></button>
+      <button id="search-product" class="action-card search" type="button"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><circle cx="13" cy="13" r="9" stroke="currentColor" stroke-width="2.5"/><path d="m20 20 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span><span><strong>Pesquisar produto</strong><small>Consulte livros, preços e estoque</small></span><span aria-hidden="true">→</span></button>
+    </div>
+    <h2 class="section-caption">Mais na sua livraria</h2>
+    <nav class="other-actions" aria-label="Mais opções">
+      <a class="action-card" href="/catalogo-dev.html?novo=1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="2.5"/><path d="M16 10v12M10 16h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span><span><strong>Adicionar novo produto</strong><small>Cadastre um livro na livraria</small></span><span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+</main>
+<dialog id="lookup" aria-labelledby="lookup-title">
+  <div class="dialog-header"><h2 id="lookup-title">Pesquisar produto</h2><button id="close-lookup" class="quiet" type="button" aria-label="Fechar busca">✕</button></div>
+  <p>Como você quer encontrar o livro?</p>
+  <div class="lookup-options"><button id="open-camera" type="button">Abrir câmera<br><small>Código de barras</small></button><button id="search-name" class="secondary" type="button">Buscar por nome<br><small>Nome do livro</small></button></div>
+  <section id="camera-panel" hidden aria-label="Leitor de código de barras"><video id="barcode-video" muted playsinline aria-label="Imagem da câmera para ler o código de barras"></video><p>Enquadre o código de barras do livro.</p><button id="stop-camera" class="secondary" type="button">Desligar câmera</button></section>
+  <p id="lookup-status" role="status" aria-live="polite"></p>
+  <form id="lookup-form"><label for="book-query">Nome do livro ou código de barras</label><input id="book-query" type="search" maxlength="100" autocomplete="off" required><button type="submit">Buscar livro</button></form>
+</dialog>
+</body></html>

@@ -11,12 +11,34 @@
 <!-- Tailwind para utilitários. Os estilos essenciais também estão inline, para
        preservar o visual se o CDN falhar depois do primeiro carregamento. -->
 
+  <script defer src="/cover-references.js"></script>
   <script id="demo-diagnostics">
   (function(){
-    const messages=[];
-    window.demoError=function(m){
-      const message=String(m?.message||m||'Erro desconhecido').slice(0,500);
-      messages.push(message);
+    const records=[];
+    const limit=24;
+    function safeText(value,max=1200){
+      // Do not copy URL queries/fragments, credentials or inline data images.
+      return String(value||'').replace(/(?:https?:|chrome-extension:|moz-extension:)\/\/[^\s<>"')]+/g,function(raw){
+        try{const url=new URL(raw);return url.protocol+'//'+url.host+url.pathname;}catch(_){return '[endereço]';}
+      }).replace(/data:[^\s]+/g,'[dados omitidos]').slice(0,max);
+    }
+    function errorSource(raw){
+      if(!raw)return 'Origem não identificada';
+      try{
+        const url=new URL(raw,location.href);
+        if(['chrome-extension:','moz-extension:'].includes(url.protocol))return 'Extensão do navegador';
+        if(url.origin===location.origin && url.pathname===location.pathname)return 'Página do protótipo';
+        return 'Outro script';
+      }catch(_){return 'Origem não identificada';}
+    }
+    window.demoError=function(error,details){
+      details=details||{};
+      const message=safeText(error?.message||error||'Erro desconhecido',500);
+      const stack=safeText(error?.stack||'',1800);
+      const file=safeText(details.file||'',400);
+      const record={message:message,file:file,line:Number(details.line)||0,column:Number(details.column)||0,
+        source:errorSource(details.file),stack:stack};
+      records.push(record);if(records.length>limit)records.shift();
       const paint=()=>{
         const el=document.getElementById('demoErrorBanner');
         if(!el)return;
@@ -27,17 +49,21 @@
       else paint();
     };
     window.addEventListener('error',function(e){
-      // Falhas de rede de recursos opcionais não devem bloquear a demonstração.
-      if(e.error)window.demoError(e.error);
+      // Resource load failures do not contain an ErrorEvent error object.
+      if(e.error)window.demoError(e.error,{file:e.filename,line:e.lineno,column:e.colno});
     });
     window.addEventListener('unhandledrejection',function(e){
-      window.demoError(e.reason?.message||e.reason||'Falha na operação.');
+      window.demoError(e.reason||'Falha na operação.');
     });
     window.demoCopyDiagnostic=function(){
-      const report='IPB Jardim Bonfiglioli V15 — diagnóstico\n'+
+      const report='IPB Jardim Bonfiglioli — diagnóstico v2\n'+
+        'Página: '+location.origin+location.pathname+'\n'+
         'Navegador: '+navigator.userAgent+'\n'+
         'Online: '+navigator.onLine+'\n'+
-        'Erros: '+(messages.join(' | ')||'Nenhum registrado')+'\n';
+        'Erros: '+(records.map(function(r){
+          return r.message+'\nOrigem: '+r.source+(r.file?'\nArquivo: '+r.file+':'+r.line+':'+r.column:'')+
+            (r.stack?'\nPilha: '+r.stack:'');
+        }).join('\n---\n')||'Nenhum registrado')+'\n';
       if(navigator.clipboard?.writeText){
         navigator.clipboard.writeText(report).catch(()=>prompt('Copie o diagnóstico:',report));
       }else prompt('Copie o diagnóstico:',report);
@@ -124,7 +150,7 @@
     .bar{height:9px;border-radius:30px;background:#E7F2ED;overflow:hidden}.bar span{display:block;background:var(--brand);height:100%;border-radius:30px}
     .hint{font-size:12px;color:var(--muted);margin:9px 0 0}.notice{padding:13px;border-radius:12px;border:1px solid #BAE6FD;background:#F0F9FF;color:#075985;font-size:13px}
     .notice.warn{border-color:#FDE68A;background:#FFFBEB;color:#92400E}.notice.danger{border-color:#FECACA;background:#FEF2F2;color:#991B1B}
-    .modal-wrap{position:fixed;inset:0;background:rgba(7,26,19,.65);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px;overflow:auto}
+    .modal-wrap{position:fixed;inset:0;background:rgba(7,26,19,.65);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;overflow:auto}
     .modal{background:#fff;border-radius:22px;width:100%;max-width:560px;max-height:min(94vh,900px);overflow:auto;padding:23px;box-shadow:0 35px 90px rgba(0,0,0,.25)}
     .modal h3{font-size:21px;letter-spacing:-.7px;margin:0 0 5px;font-weight:800}.modal .subtitle{font-size:13px;color:var(--muted);margin-bottom:17px}
     .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-group{margin-bottom:13px}.form-group label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
@@ -158,6 +184,8 @@
     .church-division{border-left:1px solid #d4ddd7;padding-left:12px;display:flex;flex-direction:column;line-height:1.35}
     .church-division strong{font-size:14px;color:#0F3D2E}
     .church-division span{font-size:11px;color:#64748b}
+    .dev-environment-badge{display:table;margin:0 auto 8px;padding:2px 6px;border:1px solid #FDE68A;border-radius:6px;background:#FFFBEB;color:#92400E;font-size:9px;font-weight:700;line-height:1.4}
+    .dev-environment-badge[hidden]{display:none!important}
     .advanced-switch{margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:1px solid #d7e4de;background:#f8fbf9;border-radius:12px;padding:11px 13px;color:#0f3d2e;font-weight:750;text-align:left}
     .advanced-panel{border:1px solid #d7e4de;border-top:0;border-radius:0 0 14px 14px;padding:14px;background:#f9fcfa;margin-top:-4px;margin-bottom:8px}
     .advanced-panel[hidden]{display:none!important}
@@ -230,7 +258,9 @@
       border-radius:20px;font-size:11px;font-weight:750;margin:3px 4px 3px 0}
     .cover-upload{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:8px 0 14px}
     .cover-upload .cover-upload-label{font-size:12px;color:#475569;line-height:1.5;flex:1;min-width:180px}
-    .cover-upload label.btn{cursor:pointer}
+    .cover-upload .btn{cursor:pointer;white-space:normal}
+    .cover-camera-panel{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFC}
+    .cover-camera-panel video{display:block;width:100%;max-height:320px;background:#102A22;border-radius:10px;margin-bottom:10px}
     @media(max-width:440px){.book-cover.cover-large{width:92px;height:130px}.cover-highlight{gap:10px}}
 
 
@@ -238,7 +268,7 @@
     .scanner-preview{position:relative;background:#122D24;border-radius:15px;overflow:hidden}
     .scanner-preview video{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
     .scanner-preview::after{content:'';position:absolute;inset:20% 7%;border:2px solid #38BDF8;border-radius:13px;box-shadow:0 0 0 999px rgba(0,0,0,.07);pointer-events:none}
-    .scanner-file-label{cursor:pointer;display:flex}
+    .scanner-file-label{cursor:pointer;display:flex;white-space:normal;text-align:center;min-width:0}
     .scanner-preview-info{font-size:12px;color:#64748b;margin-top:7px}
     .scanner-alert{border-radius:12px;padding:10px 12px;font-size:13px;margin:7px 0;background:#EFF6F3;color:#0F3D2E}
     .scanner-alert.warn{background:#FFFBEB;color:#92400E}
@@ -358,6 +388,7 @@
         <button class="btn btn-outline btn-sm" onclick="LoginUI.logout()" title="Sair e bloquear demonstração" aria-label="Sair">🔒</button>
       </div>
     </div>
+    <span id="devEnvironmentBadge" class="dev-environment-badge" hidden>AMBIENTE DE TESTES — DEV</span>
   </header>
   <main class="shell">
     <nav class="nav" aria-label="Seções">
@@ -375,6 +406,11 @@
 </section>
     </div>
   </main>
+  <script>
+    document.getElementById('devEnvironmentBadge').hidden =
+      window.location.hostname !== 'dev--merry-chimera-49a1f3.netlify.app';
+  </script>
+
   <nav class="bottom-nav" aria-label="Navegação no celular">
     <button data-tab="pdv" class="active" onclick="UI.tab('pdv')"><b>🛒</b>Caixa</button>
     <button data-tab="catalogo" onclick="UI.tab('catalogo')"><b>📖</b>Catálogo</button>
@@ -386,8 +422,9 @@
 
 
 <script>
-/* DEMONSTRAÇÃO LOCAL: dados inteiramente fictícios, sem Google Sheets. */
-(function () {
+/* DEMONSTRAÇÃO LOCAL: dados inteiramente fictícios, sem Google Sheets.
+   Transporte próprio: não substituir namespaces de scripts do navegador. */
+const DemoRPC = (function () {
   'use strict';
   const KEY = 'livraria_igreja_dados_demo_v7';
   const categories = [
@@ -506,12 +543,17 @@
     p.codigoBarras=p.semCodigo?'':(p.codigoBarras||p.isbn);
     p.codigoInterno=p.semCodigo?p.isbn:(p.codigoInterno||'');
     p.capaUrl=String(p.capaUrl||'').trim();
+    p.capaFonte=String(p.capaFonte||'').trim();
     p.anoPublicacao=String(p.anoPublicacao||'').trim();
     p.numeroPaginas=Number(p.numeroPaginas||0)||0;
     p.descricao=String(p.descricao||'').trim();
     p.fonteBibliografica=String(p.fonteBibliografica||'').trim();
   });
-  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db));}catch(_){}};
+  let lastStoredJSON=JSON.stringify(db);
+  const save=()=>{
+    try{const serialized=JSON.stringify(db);localStorage.setItem(KEY,serialized);lastStoredJSON=serialized;}
+    catch(_){db=JSON.parse(lastStoredJSON);const error=Error('Não foi possível salvar: o armazenamento deste navegador está indisponível ou cheio. Mantenha o formulário aberto e tente novamente.');error.code='DEMO_STORAGE_FAILED';throw error;}
+  };
   const clone=value=>JSON.parse(JSON.stringify(value));
   const dayKey = date => {
     const parts=new Intl.DateTimeFormat('en-US',{
@@ -581,6 +623,7 @@
       row.codigoBarras=row.semCodigo?'':p.isbn;
       row.codigoInterno=row.semCodigo?p.isbn:'';
       row.capaUrl=coverValue(p.capaUrl);
+      row.capaFonte=row.capaUrl?String(p.capaFonte||'').trim():'';
       row.anoPublicacao=String(p.anoPublicacao||'').trim();
       row.numeroPaginas=Number(p.numeroPaginas||0)||0;
       row.descricao=String(p.descricao||'').trim();
@@ -605,6 +648,7 @@
         row[key]=key==='capaUrl'?coverValue(value):value;
       }
       row.numeroPaginas=Number(p.numeroPaginas||0)||0;
+      row.capaFonte=row.capaUrl?String(p.capaFonte??row.capaFonte??'').trim():'';
       save();return {ok:true,data:clone(row)};
     }
     if(action==='addStock'){
@@ -626,12 +670,20 @@
       if(incomingAddr.cep && (!/^\d{8}$/.test(String(incomingAddr.cep))||
          !String(incomingAddr.numero||'').trim()))
         return failure('VALIDATION','Confira o CEP e número do endereço.');
+      if(!Array.isArray(p.itens)||!p.itens.length||p.itens.length>100)return failure('VALIDATION','Carrinho inválido.');
+      const quantities=new Map();
+      for(const item of p.itens){
+        if(!item||typeof item.isbn!=='string'||!Number.isSafeInteger(item.quantidade)||item.quantidade<1)return failure('VALIDATION','Quantidade inválida.');
+        const quantity=(quantities.get(item.isbn)||0)+item.quantidade;
+        if(!Number.isSafeInteger(quantity))return failure('VALIDATION','Quantidade inválida.');
+        quantities.set(item.isbn,quantity);
+      }
       const items=[];let total=0;
-      for(const it of p.itens||[]){
+      for(const it of [...quantities].map(([isbn,quantidade])=>({isbn,quantidade}))){
         const product=db.produtos.find(x=>x.isbn===it.isbn);
         if(!product)return failure('NOT_FOUND','Livro não localizado no catálogo.');
         if(!Number.isInteger(it.quantidade)||it.quantidade<1)return failure('VALIDATION','Quantidade inválida.');
-        if(it.quantidade>product.estoque&&!p.permitirEstoqueNegativo)
+        if(it.quantidade>product.estoque)
           return failure('INSUFFICIENT_STOCK','Estoque insuficiente para '+product.titulo+'. Disponível: '+product.estoque);
         const subtotal=it.quantidade*product.precoCentavos;
         items.push({isbn:it.isbn,titulo:product.titulo,quantidade:it.quantidade,
@@ -674,8 +726,8 @@
     }
     return failure('INVALID_ACTION','Operação não disponível.');
   }
-  // Emular apenas o transporte google.script.run para usar a MESMA interface de produção.
-  window.google={script:{run:{
+  // Transporte exclusivo da demonstração; nunca escreve em window.google.
+  const run={
     withSuccessHandler(cb){
       return {withFailureHandler(errCb){
         return {api(action,payload,pin){
@@ -686,7 +738,7 @@
         }};
       }};
     }
-  }}};
+  };
   window.reiniciarDemo=async function(){
     if(!confirm('Restaurar SOMENTE os dados fictícios desta demonstração?'))return;
     db=initial();
@@ -707,6 +759,7 @@
     const banner=document.getElementById('demoErrorBanner');
     if(banner)banner.hidden=true;
   };
+  return run;
 })();
 </script>
 <script>
@@ -795,6 +848,7 @@ const uid = prefix => prefix + '-' + (self.crypto?.randomUUID?.() || (Date.now()
 const productOf = isbn => state.data?.produtos.find(p=>p.isbn===isbn);
 const pendingFor = isbn => state.queue.reduce((total,q) => total + (q.payload.itens||[]).filter(it=>it.isbn===isbn).reduce((s,it)=>s+it.quantidade,0),0);
 const cartTotal = () => state.cart.reduce((s,it)=>s+(productOf(it.isbn)?.precoCentavos||0)*it.quantidade,0);
+const cartHasStock = () => state.cart.length>0 && state.cart.every(it=>Number.isSafeInteger(it.quantidade)&&it.quantidade>0&&it.quantidade<=(productOf(it.isbn)?.estoque??0)-pendingFor(it.isbn));
 const cartCount = () => state.cart.reduce((s,it)=>s+it.quantidade,0);
 function toast(message,type='ok') {
   const el = document.createElement('div'); el.className='toast'+(type==='ok'?'':' '+type); el.textContent=message;
@@ -826,19 +880,28 @@ function onlineStatus() {
   $('pendingBadge').textContent = 'Pendentes: ' + state.queue.length;
 }
 
+function demoUserMessage(error) {
+  if (typeof error?.userMessage==='string') return error.userMessage;
+  if (error?.code==='DEMO_STORAGE_FAILED') return 'Não foi possível salvar: o armazenamento deste navegador está indisponível ou cheio. Mantenha o formulário aberto e tente novamente.';
+  if (error?.code==='DEMO_NOT_READY') return 'A demonstração não ficou pronta. Recarregue a página. Se continuar, peça ajuda à administração.';
+  if (error?.name==='AbortError') return 'A consulta demorou mais que o esperado. Aguarde alguns instantes e tente novamente.';
+  if (['A capa não carregou. Escolha outra imagem ou remova o link para salvar sem capa.','Endereço HTTPS obrigatório.'].includes(error?.message)) return error.message;
+  return 'Não foi possível concluir esta ação. Confira os dados e tente novamente. Se continuar, peça ajuda à administração.';
+}
+
 /* =========================== API (RPC) ================================ */
 const Api = {
   call(action,payload={}) {
     return new Promise((resolve,reject)=>{
       // Protótipo usa API simulada local: funciona sem internet.
       // A versão de produção continuará verificando conectividade no backend.
-      if (!window.google?.script?.run) {const e=new Error('Abra pelo endereço /exec do Google Apps Script.');e.code='NO_RPC';reject(e);return;}
-      google.script.run.withSuccessHandler(res=>{
+      if (typeof DemoRPC === 'undefined') {const e=new Error('A demonstração local não inicializou. Copie o diagnóstico para verificar a falha.');e.code='DEMO_NOT_READY';reject(e);return;}
+      DemoRPC.withSuccessHandler(res=>{
         if (!res || !res.ok) {
-          const e=new Error(res?.error || 'Erro do servidor.'); e.code=res?.code || 'INTERNAL'; reject(e);
+          const e=new Error('DEMO_REQUEST_FAILED'); e.code=res?.code || 'INTERNAL'; if(['VALIDATION','DUPLICATE','NOT_FOUND','PRICE_CHANGED','INSUFFICIENT_STOCK'].includes(e.code)&&typeof res.error==='string'&&res.error.length<=500)e.userMessage=res.error; reject(e);
         } else resolve(res.data);
       }).withFailureHandler(err=>{
-        const e=new Error(err?.message || 'Não foi possível comunicar com o servidor.');
+        const e=new Error('Não foi possível comunicar com o serviço. Aguarde alguns instantes e tente novamente.');e.userMessage='Não foi possível comunicar com o serviço. Aguarde alguns instantes e tente novamente.';
         e.code='NETWORK';reject(e);
       }).api(action,payload,state.pin);
     });
@@ -928,7 +991,7 @@ const Bibliografia={
       anoPublicacao:'2019',
       numeroPaginas:224,
       descricao:'Redescubra o alimento que nutre a alma.',
-      capaUrl:'',
+      capaUrl:'https://www.mundocristao.com.br/wp-content/uploads/2021/12/Examinando-as-escrituras.png',
       fonteUrl:'https://www.mundocristao.com.br/produto/examinando-as-escrituras/',
       fonte:'Referência editorial verificada — Mundo Cristão'
     }
@@ -954,6 +1017,7 @@ const Bibliografia={
       numeroPaginas:Number(livro.page_count||livro.pageCount||0)||0,
       descricao:String(livro.synopsis||livro.description||'').slice(0,1500),
       capaUrl:coverHTTPS(livro.cover_url||livro.coverUrl||''),
+      capas:[livro.cover_url,livro.coverUrl],
       fonte:'BrasilAPI ('+provider+')'
     };
   },
@@ -972,6 +1036,7 @@ const Bibliografia={
       numeroPaginas:Number(info.pageCount)||0,
       descricao:description.slice(0,1500),
       capaUrl:coverHTTPS(info.imageLinks?.thumbnail||info.imageLinks?.smallThumbnail||''),
+      capas:['extraLarge','large','medium','thumbnail','smallThumbnail'].map(k=>info.imageLinks?.[k]),
       fonte:'Google Books'
     };
   },
@@ -997,6 +1062,8 @@ const Bibliografia={
       descricao:(typeof desc==='string'?desc:desc?.value||'').slice(0,1500),
       capaUrl:coverHTTPS(data?.cover?.large||data?.cover?.medium||
         (edition?.covers?.[0]?'https://covers.openlibrary.org/b/id/'+edition.covers[0]+'-M.jpg?default=false':'')),
+      capas:[data?.cover?.large,data?.cover?.medium,data?.cover?.small,
+        ...(edition?.covers||[]).slice(0,4).filter(id=>Number(id)>0).map(id=>'https://covers.openlibrary.org/b/id/'+id+'-M.jpg?default=false')],
       fonte:'Open Library'
     };
   },
@@ -1028,6 +1095,21 @@ const Bibliografia={
       return sum%11===0;
     }
     return false;
+  },
+  async buscarCapa(fontes,isbn){
+    const cached=window.LivrariaCoverReferences?.[isbn];
+    if(cached && /^\/covers\/97[89]\d{10}-[a-f0-9]{16}\.png$/.test(cached.path) && location.protocol==='https:'){
+      const local=location.origin+cached.path;
+      if(await testarImagem(local,2000))return {url:local,fonte:cached.source+' — cópia local'};
+    }
+    const candidatos=[
+      ...fontes.filter(Boolean).flatMap(source=>
+        [source.capaUrl,...(source.capas||[])].map(url=>({url:coverHTTPS(url),fonte:source.fonte}))),
+      {url:'https://covers.openlibrary.org/b/isbn/'+isbn+'-M.jpg?default=false',fonte:'Open Library Covers (ISBN)'}
+    ].filter((c,i,all)=>c.url && all.findIndex(other=>other.url===c.url)===i);
+    // Cada validação tem timeout; uma imagem quebrada não atrasa todas as demais.
+    const validas=await Promise.all(candidatos.map(async c=>await testarImagem(c.url,4000)?c:null));
+    return validas.find(Boolean)||null;
   },
   async consultar(raw){
     const isbn=isoCode(raw);
@@ -1074,31 +1156,20 @@ const Bibliografia={
     const mercado=this.normalizarBrasil(value(1),isbn);
     const google=this.normalizarGoogle(value(2),isbn);
     const international=this.normalizarOpen(value(3),value(4),isbn);
-    const dados=this.combinar([cbl,mercado,google,international,referencia]);
+    let dados=this.combinar([cbl,mercado,google,international,referencia]);
+    const capa=await this.buscarCapa([cbl,mercado,google,international,referencia],isbn);
+    // Covers pode responder mesmo sem ficha bibliográfica: os demais campos ficam manuais.
+    if(!dados && capa)dados={titulo:'',fontes:[],ilustrativo:false};
     const trace='Consultas: '+status.map(s=>s.label+': '+s.info).join(' · ')+'.';
     if(dados){
-      // Mesmo quando não há ISBN catalogado na Open Library, sua API de capas
-      // pode ter uma imagem indexada separadamente. default=false evita imagem em branco.
-      const capaPeloISBN='https://covers.openlibrary.org/b/isbn/'+isbn+'-M.jpg?default=false';
-      const candidatos=[
-        {url:coverHTTPS(dados.capaUrl),fonte:''},
-        {url:capaPeloISBN,fonte:'Open Library Covers (ISBN)'}
-      ].filter(c=>c.url);
-      dados.capaUrl='';
-      let fonteCapa='';
-      for(const candidato of candidatos){
-        if(await testarImagem(candidato.url,4000)){
-          dados.capaUrl=candidato.url;
-          fonteCapa=candidato.fonte;
-          break;
-        }
-      }
-      if(fonteCapa && !dados.fontes.includes(fonteCapa))dados.fontes.push(fonteCapa);
+      dados.capaUrl=capa?.url||'';
+      dados.capaFonte=capa?.fonte||'';
+      if(capa && !dados.fontes.includes(capa.fonte))dados.fontes.push(capa.fonte);
       const used=dados.fontes.join(' + ');
       const specialOnly=dados.fontes.length===1&&!!referencia &&
         dados.fontes[0]===referencia.fonte;
       const statusCapa=dados.capaUrl?'✅ Capa encontrada e verificada.':
-        '⚠️ A ficha do livro foi encontrada, mas nenhuma capa disponível passou na verificação. Você pode enviar uma foto da capa.';
+        '⚠️ A ficha do livro foi encontrada, mas nenhuma capa foi validada. Use “Tirar foto da capa” ou “Escolher da galeria” para completar o cadastro.';
       return {dados,mensagem:(specialOnly
         ? 'Dados preenchidos por referência editorial conferida (não por API).'
         : 'Dados encontrados; confira título, edição e capa antes de salvar.')+
@@ -1129,7 +1200,7 @@ const UI = {
       toast('Sistema pronto para atendimento.');
       if (state.queue.length) Sync.run();
     } catch(e){
-      state.pin='';$('loginError').textContent=e.message;
+      state.pin='';$('loginError').textContent=demoUserMessage(e);
     } finally {btn.disabled=false;btn.textContent='Entrar no sistema';}
   },
   logout(){
@@ -1152,7 +1223,7 @@ const UI = {
   },
   clearNicho(){state.catalogNicho='';View.render();},
   openPending(){if(state.data) View.modalPending();else toast('Desbloqueie o sistema para sincronizar.','warn');},
-  async refresh(){try{await Api.refresh();toast('Dados atualizados.');}catch(e){toast(e.message,'error');}},
+  async refresh(){try{await Api.refresh();toast('Dados atualizados.');}catch(e){toast(demoUserMessage(e),'error');}},
   search(value,target){
     if(target==='inventory')state.inventorySearch=value;
     else if(target==='catalog')state.catalogSearch=value;
@@ -1222,7 +1293,7 @@ const UI = {
       state.busy=false; // A consulta bibliográfica é cancelável e não bloqueia o formulário.
       if(found)View.modalStock(found,isbn,false);
       else await this.openAutofillForm(isbn);
-    }catch(e){toast('Não foi possível consultar o código. Tente novamente: '+e.message,'error');}
+    }catch(e){toast('Não foi possível consultar o código. Tente novamente: '+demoUserMessage(e),'error');}
     finally {state.busy=false;}
   },
   async openAutofillForm(isbn){
@@ -1245,20 +1316,107 @@ const UI = {
   useDemoBookExample(){
     this.lookupNewBook(Bibliografia.exampleISBN);
   },
+  async findCoverForForm(button){
+    if(state.busy)return;this.closeCoverCamera();
+    const form=button.closest('form'),preview=form?.querySelector('#stockCoverPreview,#editCoverPreview');
+    if(!form||!preview)return;
+    const isbn=isoCode(form.elements.isbn?.value||'');
+    if(!Bibliografia.isbnValido(isbn)){toast('Este livro não possui ISBN válido. Use a câmera ou a galeria.','warn');return;}
+    if(form.elements.capaLocal?.value||form.elements.capaUrl?.value.trim()){toast('A capa existente foi preservada. Para buscar outra, limpe o link primeiro.','warn');return;}
+    const token=Symbol();preview.coverToken=token;button.disabled=true;
+    try{
+      let selected=null;const local=window.LivrariaCoverReferences?.[isbn];
+      if(local&&/^\/covers\/97[89]\d{10}-[a-f0-9]{16}\.png$/.test(local.path)&&location.protocol==='https:'){
+        const url=location.origin+local.path;if(await testarImagem(url,2000))selected={url,source:local.source+' — cópia local'};
+      }
+      if(!selected){const result=await Bibliografia.consultar(isbn);if(result.dados?.capaUrl)selected={url:result.dados.capaUrl,source:result.dados.capaFonte};}
+      if(!form.isConnected||preview.coverToken!==token||form.elements.capaLocal?.value||form.elements.capaUrl?.value.trim())return;
+      if(!selected){toast('Nenhuma capa carregou para este ISBN. Use Tirar foto da capa ou Escolher da galeria.','warn');return;}
+      form.elements.capaUrl.value=selected.url;if(form.elements.capaFonte)form.elements.capaFonte.value=selected.source;
+      preview.innerHTML=bookCover({capaUrl:selected.url,titulo:form.elements.titulo?.value||'Livro'},'cover-large');
+      toast('Capa encontrada. Confira a prévia e salve para confirmar.');
+    }catch(_){if(form.isConnected)toast('Não foi possível buscar a capa. Seus campos foram preservados; use câmera ou galeria.','warn');}
+    finally{if(button.isConnected)button.disabled=false;}
+  },
+  coverCameraSession:0,
+  coverCameraStream:null,
+  coverCameraForm:null,
+  closeCoverCamera(){
+    ++this.coverCameraSession;
+    this.coverCameraStream?.getTracks().forEach(track=>track.stop());
+    const panel=this.coverCameraForm?.querySelector('[data-cover-camera-panel]');
+    const video=panel?.querySelector('video');
+    if(video)video.srcObject=null;
+    if(panel)panel.hidden=true;
+    this.coverCameraStream=null;this.coverCameraForm=null;
+  },
+  async openCoverCamera(button){
+    const form=button.closest('form');if(!form)return;
+    this.closeCoverCamera();
+    if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){
+      toast('A prévia da câmera não está disponível. Tentando o seletor de câmera do aparelho; a galeria também pode ser usada.','warn');
+      form.querySelector('[data-cover-camera]')?.click();return;
+    }
+    const panel=form.querySelector('[data-cover-camera-panel]'),video=panel.querySelector('video');
+    this.coverCameraForm=form;
+    const session=this.coverCameraSession;
+    panel.hidden=false;
+    panel.querySelector('[data-cover-camera-status]').textContent='Solicitando permissão para usar a câmera…';
+    panel.scrollIntoView({block:'nearest'});
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+      if(session!==this.coverCameraSession||!form.isConnected){stream.getTracks().forEach(t=>t.stop());return;}
+      this.coverCameraStream=stream;video.srcObject=stream;await video.play();
+      if(session!==this.coverCameraSession)return;
+      panel.querySelector('[data-cover-camera-status]').textContent='Enquadre a frente do livro e toque em “Usar esta foto”.';
+      panel.scrollIntoView({block:'nearest'});
+    }catch(e){
+      if(session!==this.coverCameraSession)return;
+      this.closeCoverCamera();
+      toast(e?.name==='NotAllowedError'?'Permissão da câmera negada. Permita o acesso no navegador ou escolha da galeria.':
+        e?.name==='NotFoundError'?'Nenhuma câmera encontrada. Conecte uma câmera ou escolha da galeria.':'Não foi possível abrir a câmera. Tente novamente ou escolha da galeria.','warn');
+    }
+  },
+  async captureCoverPhoto(button){
+    const form=button.closest('form'),video=form?.querySelector('[data-cover-camera-panel] video');
+    if(!video?.videoWidth||!video.videoHeight||video.readyState<2){toast('Aguarde a câmera ficar pronta.','warn');return;}
+    const session=this.coverCameraSession,canvas=document.createElement('canvas');
+    canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    const ctx=canvas.getContext('2d');if(!ctx){toast('Não foi possível preparar a foto.','warn');return;}
+    let blob;
+    try{
+      ctx.drawImage(video,0,0);
+      blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.85));
+    }catch(_){
+      if(session===this.coverCameraSession)toast('Não foi possível preparar a foto. Tente novamente.','warn');
+      return;
+    }
+    if(session!==this.coverCameraSession||!form.isConnected)return;
+    if(!blob){toast('Não foi possível preparar a foto. Tente novamente.','warn');return;}
+    this.closeCoverCamera();
+    await this.applyCoverPhoto(new File([blob],'capa-camera.jpg',{type:'image/jpeg'}),form);
+  },
   async coverFileChanged(ev){
     const input=ev.target, file=input.files?.[0];
     if(!file)return;
+    this.closeCoverCamera();
+    try{await this.applyCoverPhoto(file,input.closest('form'));}
+    finally{input.value='';}
+  },
+  async applyCoverPhoto(file,form){
     if(!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size>8*1024*1024){
-      toast('Escolha JPG, PNG ou WebP com até 8 MB.','warn');input.value='';return;
+      toast('Escolha JPG, PNG ou WebP com até 8 MB.','warn');return;
     }
-    const form=input.closest('form');
     const localField=form?.elements?.capaLocal;
     if(!form||!localField)return;
+    const target=$('stockCoverPreview')||$('editCoverPreview');
+    const token=Symbol();if(target)target.coverToken=token;
     const tempUrl=URL.createObjectURL(file);
     try{
       const image=await new Promise((resolve,reject)=>{
         const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(Error('Imagem inválida'));i.src=tempUrl;
       });
+      if(!form.isConnected||target?.coverToken!==token)return;
       const ratio=Math.min(1,560/image.naturalWidth,780/image.naturalHeight);
       const c=document.createElement('canvas');
       c.width=Math.max(1,Math.round(image.naturalWidth*ratio));
@@ -1271,27 +1429,32 @@ const UI = {
       if(encoded.length>430000)encoded=c.toDataURL('image/jpeg',0.47);
       if(!coverValue(encoded))throw Error('Imagem muito grande depois de otimizar');
       localField.value=encoded;
+      if(form.elements.capaFonte)form.elements.capaFonte.value='Foto manual';
       form.elements.capaUrl.value='';
-      const target=$('stockCoverPreview')||$('editCoverPreview');
       if(target)target.innerHTML=bookCover({capaUrl:encoded,titulo:form.elements.titulo?.value||'Livro'},'cover-large');
       const hint=$('stockCoverHint');
-      if(hint)hint.textContent='Foto adicionada ao protótipo. Na integração real, a imagem será enviada ao Google Drive.';
+      if(hint)hint.textContent='Foto da capa preparada. Confira a imagem e salve o cadastro para mantê-la.';
       toast('Foto da capa adicionada. Confira a prévia antes de salvar.');
-    }catch(e){toast('Não foi possível usar esta foto: '+e.message,'error');}
-    finally{URL.revokeObjectURL(tempUrl);input.value='';}
+    }catch(e){toast('Não foi possível usar esta foto: '+demoUserMessage(e),'error');}
+    finally{URL.revokeObjectURL(tempUrl);}
   },
-  coverInput(value){
+  async coverInput(value){
     const form=$('stockCoverPreview')?.closest('form')||$('editCoverPreview')?.closest('form');
     if(form?.elements?.capaLocal)form.elements.capaLocal.value='';
 
     const target=$('stockCoverPreview')||$('editCoverPreview');
     if(!target)return;
     const url=coverHTTPS(value);
-    target.innerHTML=bookCover({capaUrl:url,
-      titulo:$('stockTitle')?.value||$('editCoverPreview')?.closest('form')?.elements?.titulo?.value||'Livro'},'cover-large');
+    if(form?.elements?.capaFonte)form.elements.capaFonte.value=value?'Link manual':'';
+    const token=Symbol();target.coverToken=token;
+    target.innerHTML=bookCover({titulo:'Livro'},'cover-large');
     const hint=$('stockCoverHint');
-    if(hint)hint.textContent=value&&!url?'Informe um link HTTPS válido.':
-      'A imagem é apenas uma prévia; se falhar, o ícone de livro será mostrado.';
+    if(hint)hint.textContent=value&&!url?'Informe um link HTTPS válido.':url?'Verificando imagem…':'Selecione uma capa, se desejar.';
+    if(!url)return;
+    const valid=await testarImagem(url);
+    if(!target.isConnected||target.coverToken!==token)return;
+    if(valid)target.innerHTML=bookCover({capaUrl:url,titulo:form?.elements?.titulo?.value||'Livro'},'cover-large');
+    if(hint)hint.textContent=valid?'Imagem verificada. Confira se corresponde ao exemplar.':'A imagem não carregou. Escolha outra URL ou envie uma foto.';
   },
   async checkNewBook(ev){
     ev.preventDefault();
@@ -1348,7 +1511,7 @@ const UI = {
     try{
       await Api.call('updateProductNiches',{isbn:ev.target.elements.isbn.value,nichos});
       View.closeModal(true);await Api.refresh();toast('Nichos do livro atualizados.');
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   async scan(code,mode){
@@ -1393,7 +1556,7 @@ const UI = {
       }
       const input=$(mode==='estoque'?'stockBarcode':mode==='catalogo'?'catalogSearch':'barcode');
       if(input && mode!=='catalogo'){input.value='';input.focus();}
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
   },
   scanner(mode){
     let url=String(readStore(KEYS.scanner,'')||'').trim();
@@ -1409,7 +1572,7 @@ const UI = {
       if(!windowRef){toast('Permita pop-ups para abrir o leitor da câmera.','warn');return;}
       state.scannerWindow=windowRef;state.scannerNonce=nonce;state.scannerOrigin=parsed.origin;
       toast('Leitor aberto em outra guia.');
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
   },
   saveScanner(ev,mode){
     ev.preventDefault();
@@ -1429,6 +1592,7 @@ const UI = {
       quantidade:Number(form.elements.quantidade.value),categoria:form.elements.categoria.value,
       nichos:this.selectedStockNiches(),
       capaUrl:coverValue(form.elements.capaLocal?.value||form.elements.capaUrl.value),
+      capaFonte:form.elements.capaFonte.value,
       anoPublicacao:form.elements.anoPublicacao.value,
       numeroPaginas:Number(form.elements.numeroPaginas.value||0),
       descricao:form.elements.descricao.value,
@@ -1443,6 +1607,8 @@ const UI = {
     }
     state.busy=true;View.setBusy(true);
     try {
+      if(p.capaUrl && !p.capaUrl.startsWith('data:') && !await testarImagem(p.capaUrl))
+        throw Error('A capa não carregou. Escolha outra imagem ou remova o link para salvar sem capa.');
       await Api.call('saveProduct',p);View.closeModal(true);
       try{
         await Api.refresh();
@@ -1453,7 +1619,7 @@ const UI = {
           toast('Livro cadastrado e adicionado ao carrinho.');
         }else toast('Livro cadastrado e estoque atualizado.');
       }catch(_){toast('Cadastro salvo; atualize o catálogo quando houver conexão.','warn');}
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   async metadataSubmit(ev){
@@ -1462,6 +1628,7 @@ const UI = {
     const p={isbn:f.isbn.value,titulo:f.titulo.value,
       autor:f.autor.value,editora:f.editora.value,fornecedor:f.fornecedor.value,
       edicao:f.edicao.value,capaUrl:coverValue(f.capaLocal?.value||f.capaUrl.value),
+      capaFonte:f.capaFonte.value,
       anoPublicacao:f.anoPublicacao.value,numeroPaginas:Number(f.numeroPaginas.value||0),
       descricao:f.descricao.value};
     if(f.capaUrl.value && !coverHTTPS(f.capaUrl.value)){
@@ -1469,11 +1636,13 @@ const UI = {
     }
     state.busy=true;View.setBusy(true);
     try{
+      if(p.capaUrl && !p.capaUrl.startsWith('data:') && !await testarImagem(p.capaUrl))
+        throw Error('A capa não carregou. Escolha outra imagem ou remova o link para salvar sem capa.');
       await Api.call('updateProductDetails',p);
       View.closeModal(true);
       await Api.refresh();
       toast('Dados editoriais atualizados.');
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   async stockAdd(ev){
@@ -1484,13 +1653,14 @@ const UI = {
     try {
       await Api.call('addStock',p);View.closeModal(true);toast('Entrada de estoque registrada.');
       try{await Api.refresh();}catch(_){toast('Entrada salva; atualize o estoque quando houver conexão.','warn');}
-    }catch(e){toast(e.message,'error');}
+    }catch(e){toast(demoUserMessage(e),'error');}
     finally{state.busy=false;View.setBusy(false);}
   },
   stockSearchEnter(ev){if(ev.key==='Enter'){ev.preventDefault();this.scan(ev.target.value,'estoque');}},
   pdvBarcodeEnter(ev){if(ev.key==='Enter'){ev.preventDefault();this.scan(ev.target.value,'pdv');}},
   openCheckout(){
     if(!state.cart.length){toast('Adicione livros ao carrinho.','warn');return;}
+    if(!cartHasStock()){toast('Estoque insuficiente. Reponha as unidades ou ajuste o carrinho para continuar.','warn');return;}
     View.modalCheckout(state.checkoutDraft || {});
   },
   closeCheckout(){ View.closeModal(); },
@@ -1563,12 +1733,13 @@ const UI = {
         form.elements.nome.focus();
       }
     }catch(e){
-      info.className='cpf-feedback error'; info.textContent=e.message||'Não foi possível consultar o CPF.';
+      info.className='cpf-feedback error'; info.textContent=demoUserMessage(e)||'Não foi possível consultar o CPF.';
     }finally{if(button)button.disabled=false;}
   },
   async checkout(ev) {
     ev.preventDefault(); if(state.busy)return;
     if(!state.cart.length){toast('Carrinho vazio.','warn');return;}
+    if(!cartHasStock()){toast('Estoque insuficiente. Reponha as unidades ou ajuste o carrinho para continuar.','warn');return;}
     const form=ev.target;
     const cpf=onlyDigits(form.elements.cpf.value);
     if(cpf && (!cpfValido(cpf)||form.elements.cpf.dataset.checkedCpf!==cpf)){
@@ -1595,7 +1766,7 @@ const UI = {
     if (!state.saleId) state.saleId=uid('V');
     const payload={idVenda:state.saleId,
       itens:state.cart.map(it=>({isbn:it.isbn,quantidade:it.quantidade})),
-      totalPrevistoCentavos:cartTotal(),cliente,pagamento,permitirEstoqueNegativo:false};
+      totalPrevistoCentavos:cartTotal(),cliente,pagamento};
     // Write-ahead: persistir ANTES de transmitir. A venda nunca recebe novo ID no reenvio.
     let found=state.queue.find(q=>q.payload.idVenda===payload.idVenda);
     if(found){found.payload=payload;found.status='aguardando';delete found.error;}
@@ -1606,18 +1777,7 @@ const UI = {
     }
     onlineStatus();state.busy=true;View.setBusy(true);
     try{
-      let result;
-      try {result=await Api.call('checkout',payload);}
-      catch(e) {
-        if(e.code==='INSUFFICIENT_STOCK') {
-          if(!confirm(e.message+'\n\nAutorizar EXCEPCIONALMENTE a venda com estoque negativo?')) throw e;
-          payload.permitirEstoqueNegativo=true;
-          const q=state.queue.find(x=>x.payload.idVenda===payload.idVenda);
-          if(q)q.payload=payload;
-          if(!queueSave())throw Error('Não foi possível salvar a confirmação.');
-          result=await Api.call('checkout',payload);
-        } else throw e;
-      }
+      const result=await Api.call('checkout',payload);
       const id=payload.idVenda;
       state.queue=state.queue.filter(q=>q.payload.idVenda!==id);
       queueSave();onlineStatus();
@@ -1630,7 +1790,7 @@ const UI = {
         state.queue=state.queue.filter(q=>q.payload.idVenda!==payload.idVenda);
         queueSave();onlineStatus();
         if(e.code==='PRICE_CHANGED') {try{await Api.refresh();}catch(_){}}
-        toast(e.message,'error');
+        toast(demoUserMessage(e),'error');
       }else{
         // Timeout ou falha depois de persistir remotamente: status incerto.
         // Reenvio com o MESMO ID evita cobrar/baixar duas vezes.
@@ -1662,7 +1822,7 @@ const Cart = {
     const p=productOf(isbn);if(!p)return;
     const item=state.cart.find(i=>i.isbn===isbn);
     const available=p.estoque-pendingFor(isbn);
-    if((item?.quantidade||0)>=available && !confirm('Estoque disponível: '+available+'. Adicionar mesmo assim? A finalização exigirá confirmação de override.'))return;
+    if((item?.quantidade||0)>=available){toast('Sem unidades disponíveis para esta compra. Reponha o estoque antes de vender.','warn');return;}
     if(item)item.quantidade++;else state.cart.push({isbn,quantidade:1});
     persistCart();View.render();toast('Livro adicionado: '+p.titulo);
     const input=$('barcode');if(input)input.focus();
@@ -1670,8 +1830,7 @@ const Cart = {
   change(isbn,amount){
     const item=state.cart.find(it=>it.isbn===isbn);if(!item)return;
     const p=productOf(isbn);
-    if(amount>0 && item.quantidade >= (p?.estoque ?? 0)-pendingFor(isbn) &&
-      !confirm('Quantidade acima do estoque. Continuar?'))return;
+    if(amount>0 && item.quantidade+amount > (p?.estoque ?? 0)-pendingFor(isbn)){toast('Quantidade acima do estoque disponível.','warn');return;}
     item.quantidade+=amount;
     if(item.quantidade<=0)state.cart=state.cart.filter(it=>it.isbn!==isbn);
     persistCart();View.render();
@@ -1697,11 +1856,11 @@ const Sync = {
         success++;
       }catch(e){
         if(e.code==='INSUFFICIENT_STOCK' || e.code==='PRICE_CHANGED' || e.code==='VALIDATION' || e.code==='NOT_FOUND'){
-          item.status='revisar';item.error=e.message;queueSave();blocked++;
+          item.status='revisar';item.error=demoUserMessage(e);queueSave();blocked++;
           continue;
         }
         // Credenciais, rede e erro incerto: não apagar registro pendente.
-        item.status='aguardando';item.error=e.message;queueSave();break;
+        item.status='aguardando';item.error=demoUserMessage(e);queueSave();break;
       }
     }
     state.syncing=false;onlineStatus();
@@ -1804,7 +1963,7 @@ const View = {
         <div class="searchbar"><input id="barcode" class="field" placeholder="Buscar por nome" autocomplete="off"
           value="${esc(state.search)}" oninput="UI.search(this.value,'sale')" onkeydown="UI.pdvSearchEnter(event)">
           <button class="btn btn-sky" onclick="UI.pdvLookup()">🔎 Buscar</button>
-          <button class="btn btn-outline" onclick="UI.scanner('pdv')">📷 Câmera</button><button class="btn btn-light" onclick="UI.gallery('pdv')">🖼️ Galeria</button></div>
+          <button class="btn btn-outline" onclick="UI.scanner('pdv')">📷 Câmera</button></div>
         <p class="search-note">Você também pode bipar o código de barras neste campo. Se for novo, o sistema oferece o cadastro.</p>
         ${this.advancedPanel('pdv')}
         <button class="btn btn-light btn-wide" style="margin-top:10px" onclick="UI.startNewBook()">➕ Cadastrar novo livro</button>
@@ -1818,7 +1977,7 @@ const View = {
         <div id="cartList">${this.cartRows()}</div>
         <div class="summary"><div class="summary-row"><span class="small muted">Total da compra</span><strong>${cartCount()} itens</strong></div>
           <div class="summary-row"><span class="small">Valor a receber</span><strong class="total">${money(cartTotal())}</strong></div></div>
-        <button class="btn btn-primary btn-wide" ${!state.cart.length?'disabled':''} onclick="UI.openCheckout()">Finalizar venda →</button>
+        <button class="btn btn-primary btn-wide" ${!cartHasStock()?'disabled':''} onclick="UI.openCheckout()">Finalizar venda →</button>
         <button class="btn btn-light btn-wide" style="margin-top:8px" onclick="Cart.clear()" ${!state.cart.length?'disabled':''}>Limpar carrinho</button>
         ${state.queue.length?`<p class="notice warn" style="margin-top:13px"><b>${state.queue.length} venda(s) pendente(s).</b> Não confunda com vendas confirmadas. <button class="btn btn-sm btn-outline" style="margin-top:7px" onclick="UI.openPending()">Ver pendências</button></p>`:''}
       </div></aside>
@@ -1839,7 +1998,7 @@ const View = {
           placeholder="Buscar por nome" value="${esc(state.catalogSearch)}"
           oninput="UI.search(this.value,'catalog')" onkeydown="UI.catalogSearchEnter(event)">
         <button class="btn btn-primary" onclick="UI.catalogLookup()">🔎 Buscar</button>
-        <button class="btn btn-sky" onclick="UI.scanner('catalogo')">📷 Câmera</button><button class="btn btn-light" onclick="UI.gallery('catalogo')">🖼️ Galeria</button>
+        <button class="btn btn-sky" onclick="UI.scanner('catalogo')">📷 Câmera</button>
       </div>
       <p class="search-note">Digite o nome ou use um leitor de código de barras; a consulta não adiciona o livro ao carrinho.</p>
       ${this.advancedPanel('catalogo')}
@@ -1865,11 +2024,11 @@ const View = {
       <div class="card-title">📦 Entrada de livros</div>
       <div class="searchbar"><input class="field" id="stockBarcode" autocomplete="off" placeholder="Bipe ou digite o ISBN..." onkeydown="UI.stockSearchEnter(event)">
         <button class="btn btn-primary" onclick="UI.scan($('stockBarcode').value,'estoque')">Verificar</button>
-        <button class="btn btn-sky" onclick="UI.scanner('estoque')">📷 Câmera</button><button class="btn btn-light" onclick="UI.gallery('estoque')">🖼️ Galeria</button></div>
+        <button class="btn btn-sky" onclick="UI.scanner('estoque')">📷 Câmera</button></div>
       <p class="hint">Se já estiver cadastrado, você poderá adicionar unidades; se for novo, abrirá o formulário de cadastro.</p>
       <button class="btn btn-light btn-wide" style="margin-top:10px" onclick="UI.startNewBook()">➕ Cadastrar novo livro (ISBN)</button>
       <button class="btn btn-outline btn-wide" style="margin-top:9px" onclick="UI.scanner('edicao')">📷 Bipar para editar um livro</button>
-      <button class="btn btn-light btn-wide" style="margin-top:7px" onclick="UI.gallery('edicao')">🖼️ Foto da galeria para editar</button>
+
       <input class="field" style="margin-top:13px" placeholder="Buscar por título ou ISBN..." value="${esc(state.inventorySearch)}" oninput="UI.search(this.value,'inventory')">
     </div><div class="card"><div class="card-title">Estoque atual <span class="small muted">${state.data.produtos.length} títulos</span></div>
     <div id="inventoryResults" class="scroll"></div></div>`;
@@ -2001,6 +2160,7 @@ const View = {
         <div class="book-meta">Publicação: <b>${esc(product.anoPublicacao||'Não informada')}</b> ·
           Páginas: <b>${product.numeroPaginas||'Não informado'}</b></div>
         ${product.fonteBibliografica?`<div class="book-meta">Dados consultados: ${esc(product.fonteBibliografica)}</div>`:''}
+        ${product.capaFonte?`<div class="book-meta">Origem da capa: ${esc(product.capaFonte)} · Confira a edição com o exemplar.</div>`:''}
         <div class="book-meta">Categoria: <b>${esc(product.categoria)}</b></div>
         <div class="book-meta"><b>Nichos vinculados:</b></div>
         ${nicheBadges(product)}
@@ -2060,6 +2220,22 @@ const View = {
         </div>
       </form>`);
   },
+  coverUpload(){
+    return `<div class="cover-upload">
+      <button type="button" class="btn btn-outline" onclick="UI.findCoverForForm(this)">🔎 Buscar capa pelo ISBN</button>
+      <button type="button" class="btn btn-outline" onclick="UI.openCoverCamera(this)">📷 Tirar foto da capa</button>
+      <input data-cover-camera type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onchange="UI.coverFileChanged(event)">
+      <button type="button" class="btn btn-outline" onclick="this.parentElement.querySelector('[data-cover-gallery]').click()">🖼️ Escolher da galeria</button>
+      <input data-cover-gallery type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="UI.coverFileChanged(event)">
+      <span class="cover-upload-label">Fotografe a frente do livro ou escolha uma imagem JPG, PNG ou WebP (até 8 MB). Confira a prévia antes de salvar.</span>
+      <div data-cover-camera-panel class="cover-camera-panel" hidden>
+        <video autoplay muted playsinline aria-label="Prévia da câmera para a capa"></video>
+        <p data-cover-camera-status role="status" aria-live="polite"></p>
+        <button type="button" class="btn btn-primary" onclick="UI.captureCoverPhoto(this)">Usar esta foto</button>
+        <button type="button" class="btn btn-outline" onclick="UI.closeCoverCamera()">Fechar câmera</button>
+      </div>
+    </div>`;
+  },
   modalEditMetadata(product){
     if(!product)return;
     this.modal(`<h3>✏️ Dados editoriais do livro</h3>
@@ -2076,13 +2252,9 @@ const View = {
         <div class="form-group"><label>Edição</label><input class="field" name="edicao" value="${esc(product.edicao)}"></div>
         <div class="form-grid"><div class="form-group"><label>Ano / data de publicação</label><input class="field" name="anoPublicacao" value="${esc(product.anoPublicacao||'')}"></div>
           <div class="form-group"><label>Páginas</label><input class="field" name="numeroPaginas" type="number" min="0" value="${product.numeroPaginas||''}"></div></div>
-        <div class="cover-upload">
-          <label class="btn btn-outline">📷 Trocar foto da capa
-            <input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="UI.coverFileChanged(event)">
-          </label>
-          <span class="cover-upload-label">Se não houver imagem on-line, escolha uma foto da capa.</span>
-        </div>
+        ${this.coverUpload()}
         <input type="hidden" name="capaLocal" value="${product.capaUrl?.startsWith('data:image/')?esc(product.capaUrl):''}">
+        <input type="hidden" name="capaFonte" value="${esc(product.capaFonte||'')}">
         <div class="form-group"><label>Link HTTPS da capa</label><input class="field" name="capaUrl" type="url"
           value="${esc(product.capaUrl?.startsWith('data:image/')?'':(product.capaUrl||''))}"
           oninput="UI.coverInput(this.value)"></div>
@@ -2101,11 +2273,6 @@ const View = {
           <span class="big" aria-hidden="true">📷</span>
           <span>Ler código pela câmera</span>
           <small>Reconhecimento automático, sem botão de capturar</small>
-        </button>
-        <button type="button" class="register-option register-option-gallery" onclick="UI.gallery('novoLivro')">
-          <span class="big" aria-hidden="true">🖼️</span>
-          <span>Ler código de foto da galeria</span>
-          <small>Escolha a foto do código de barras</small>
         </button>
         <button type="button" class="register-option register-option-secondary" onclick="UI.registerWithoutBarcode()">
           <span class="big" aria-hidden="true">📚</span>
@@ -2161,6 +2328,7 @@ const View = {
         </div>`:''}
       <form onsubmit="UI.stockSubmit(event)">
         <input type="hidden" name="fonteBibliografica" value="${esc((d.fontes||[]).join(' + '))}">
+        <input type="hidden" name="capaFonte" value="${esc(d.capaFonte||'')}">
         <input type="hidden" name="semCodigo" value="${semCodigo?'1':'0'}">
         <div class="form-group"><label>${semCodigo?'Código interno (não é ISBN)':'ISBN / Código de barras'}</label>
           <input class="field" name="isbn" value="${esc(isbn)}" readonly></div>
@@ -2168,13 +2336,8 @@ const View = {
         <div class="lookup-preview">
           <span id="stockCoverPreview">${bookCover({capaUrl:d.capaUrl,titulo:d.titulo},'cover-large')}</span>
           <div class="helper"><b>📘 Capa do livro</b><div>Será exibida no Catálogo, Caixa e carrinho.</div>
-            <div id="stockCoverHint" style="margin-top:5px">Você pode trocar a imagem usando o link abaixo.</div></div></div>
-        <div class="cover-upload">
-          <label class="btn btn-outline">📷 Escolher foto da capa
-            <input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="UI.coverFileChanged(event)">
-          </label>
-          <span class="cover-upload-label">Foto tirada com o celular ou escolhida na galeria (opcional).</span>
-        </div>
+            <div id="stockCoverHint" style="margin-top:5px">Tire uma foto, escolha da galeria ou informe um link de imagem.</div></div></div>
+        ${this.coverUpload()}
         <input type="hidden" name="capaLocal" value="">
         <div class="form-group"><label>Link HTTPS da capa (opcional)</label>
           <input class="field" name="capaUrl" type="url" value="${esc(d.capaUrl||'')}" placeholder="https://..."
@@ -2325,6 +2488,7 @@ const View = {
 };
 
 /* ====================== EVENTOS E INICIALIZAÇÃO ======================== */
+window.addEventListener('pagehide',()=>{UI.closeCoverCamera();stopDemoCamera();});
 window.addEventListener('online',()=>{onlineStatus();if(state.pin)Sync.run();});
 window.addEventListener('offline',onlineStatus);
 window.addEventListener('storage',ev=>{
@@ -2356,8 +2520,15 @@ function stopDemoCamera(){
   }
 }
 const baseCloseDemo=View.closeModal.bind(View);
+const baseModalDemo=View.modal.bind(View);
+View.modal=inner=>{
+  // Trocar de formulário também encerra leituras/permissões ainda pendentes.
+  UI.closeCoverCamera();
+  stopDemoCamera();
+  baseModalDemo(inner);
+};
 View.closeModal=(force=false)=>{
-  if(!state.busy || force){stopDemoCamera();state.lookupToken++;}
+  if(!state.busy || force){UI.closeCoverCamera();stopDemoCamera();state.lookupToken++;}
   baseCloseDemo(force);
 };
 function scanStatus(message,warning=false){
@@ -2368,8 +2539,8 @@ function normalizedScanCode(raw){
   const code=isoCode(raw);
   return /^[A-Z0-9]{6,32}$/.test(code) ? code : '';
 }
-async function demoBarcodeFound(value,mode){
-  if(demoCam.accepted)return;
+async function demoBarcodeFound(value,mode,session=demoCam.session){
+  if(session!==demoCam.session||demoCam.accepted)return;
   const code=normalizedScanCode(value);
   if(!code){
     scanStatus('Código não reconhecido como identificador de produto. Reposicione a câmera ou escolha outra foto.',true);
@@ -2406,33 +2577,42 @@ async function startDemoCamera(mode){
   try{
     const detector=await makeBarcodeDetector();
     if(session!==demoCam.session)return;
+    if(!detector&&!window.ZXing?.BrowserMultiFormatReader){
+      demoCam.active=false;
+      scanStatus('Leitor indisponível. Verifique sua conexão ou digite o código manualmente.',true);
+      return;
+    }
+    const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+    if(session!==demoCam.session){stream.getTracks().forEach(t=>t.stop());return;}
+    demoCam.stream=stream;
     if(detector){
-      const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
-      if(session!==demoCam.session){stream.getTracks().forEach(t=>t.stop());return;}
-      demoCam.stream=stream;
       video.srcObject=stream;await video.play();
+      if(session!==demoCam.session)return;
       scanStatus('📷 Câmera ativa. Basta enquadrar o código: a leitura é automática.');
       const poll=async()=>{
         if(!demoCam.active||demoCam.accepted||session!==demoCam.session||!video.isConnected)return;
         try{
           const codes=await detector.detect(video);
+          if(session!==demoCam.session)return;
           if(codes.length){
             const valid=codes.map(item=>normalizedScanCode(item.rawValue)).find(Boolean);
-            if(valid){await demoBarcodeFound(valid,mode);return;}
+            if(valid){await demoBarcodeFound(valid,mode,session);return;}
           }
         }catch(_){}
         if(demoCam.active && session===demoCam.session)demoCam.timer=setTimeout(poll,180);
       };
       poll();
     }else if(window.ZXing?.BrowserMultiFormatReader){
-      demoCam.reader=new ZXing.BrowserMultiFormatReader();
-      scanStatus('📷 Solicitando acesso à câmera. Depois, basta apontar o código.');
-      await demoCam.reader.decodeFromVideoDevice(undefined,video,(result,_error)=>{
+      const reader=new ZXing.BrowserMultiFormatReader();
+      demoCam.reader=reader;
+      scanStatus('📷 Câmera ativa. Basta apontar o código.');
+      await reader.decodeFromStream(stream,video,(result,_error)=>{
         if(result && demoCam.active && session===demoCam.session && !demoCam.accepted){
-          demoBarcodeFound(result.getText(),mode);
+          demoBarcodeFound(result.getText(),mode,session);
         }
       });
       if(session===demoCam.session)scanStatus('📷 Câmera ativa. A leitura acontece automaticamente.');
+      else {reader.reset();stream.getTracks().forEach(t=>t.stop());}
     }else{
       demoCam.active=false;
       scanStatus('Este navegador não dispõe de leitor. Verifique a conexão para carregar a biblioteca ZXing ou digite o código.',true);
@@ -2500,7 +2680,7 @@ async function decodeDemoGallery(input,mode){
     }
     if(session!==demoCam.session)return;
     if(detected){
-      await demoBarcodeFound(detected,mode);
+      await demoBarcodeFound(detected,mode,session);
     }else{
       scanStatus('Nenhum código legível encontrado na foto. Use uma imagem nítida da etiqueta (barras inteiras), tente outra foto ou pesquise pelo nome do livro.',true);
     }
@@ -2521,7 +2701,7 @@ UI.scanner=(mode,startCamera=true)=>{
     <div class="scanner-alert" id="demoCamStatus" role="status" aria-live="polite">${startCamera?'Preparando câmera…':'Escolha uma foto da galeria.'}</div>
     <div class="scanner-actions">
       <button type="button" class="btn btn-sky" onclick="startDemoCamera('${mode}')">📷 Ativar / tentar câmera</button>
-      <label class="btn btn-light scanner-file-label" for="demoBarcodeFile">🖼️ Ler foto da galeria</label>
+      <button type="button" class="btn btn-light scanner-file-label" onclick="document.getElementById('demoBarcodeFile').click()">Não tenho o livro — escolher foto da galeria</button>
       <input id="demoBarcodeFile" type="file" accept="image/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"
         aria-label="Selecionar foto do código de barras" onchange="decodeDemoGallery(this,'${mode}')">
     </div>
@@ -2535,11 +2715,6 @@ UI.scanner=(mode,startCamera=true)=>{
     </form>
     ${mode==='novoLivro'?'<button type="button" class="btn btn-light btn-wide" style="margin-top:10px" onclick="UI.registerWithoutBarcode()">📚 Livro sem código de barras</button>':''}`);
   if(startCamera)startDemoCamera(mode);
-};
-UI.gallery=mode=>{
-  UI.scanner(mode,false);
-  // Diretamente do clique do usuário; o navegador abre seu seletor de fotos.
-  $('demoBarcodeFile')?.click();
 };
 
 const reportDayKey = (input)=>{
@@ -2628,7 +2803,7 @@ const ReportUI={
       state.tab='dashboard'; View.render();toast('Área administrativa de demonstração liberada.');
     }catch(e){
       window.DemoAdminSession.active=false;
-      toast('Falha ao carregar os dados: '+e.message,'error');
+      toast('Falha ao carregar os dados: '+demoUserMessage(e),'error');
     }
   },
   async lock(){
@@ -2979,7 +3154,7 @@ const ReportUI={
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(url),12000);
       toast('Arquivo Excel exportado. Contém os filtros aplicados.');
-    }catch(e){toast('Falha ao gerar Excel: '+e.message,'error');}
+    }catch(e){toast('Falha ao gerar Excel: '+demoUserMessage(e),'error');}
   }
 };
 const ExcelLite={
@@ -3109,6 +3284,7 @@ const LoginUI={
   },
   switchRole(){this.logout();},
   logout(){
+    UI.closeCoverCamera();
     this.authenticated=false;this.busy=false;
     window.DemoAdminSession.active=false;
     ReportUI.last=null;ReportUI.draftText='';ReportUI.draftAllowed=false;

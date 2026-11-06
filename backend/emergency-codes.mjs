@@ -1,0 +1,5 @@
+import { createHash,createHmac } from 'node:crypto';
+import { ApiError } from './errors.mjs';
+export function normalizeEmergencyCode(value){if(typeof value!=='string'||value.length>80)throw new ApiError(401,'ACCESS_REJECTED');const code=value.trim().replace(/[-\s]/g,'').toUpperCase();if(!/^[A-F0-9]{32}$/.test(code))throw new ApiError(401,'ACCESS_REJECTED');return code;}
+export function emergencyCodeHash(settings,userId,code){return createHash('sha256').update(JSON.stringify(['emergency.code.hash.v1',settings.config.environment,settings.config.installationId,userId,normalizeEmergencyCode(code)])).digest('hex');}
+export function emergencyCodeBatch(settings,userId,commandId){const codes=Array.from({length:6},(_,i)=>createHmac('sha256',settings.tokenKey).update(JSON.stringify(['emergency.code.value.v1',settings.config.environment,settings.config.installationId,userId,commandId,i])).digest('hex').slice(0,32).toUpperCase().match(/.{4}/g).join('-'));return {codes,hashes:codes.map(c=>emergencyCodeHash(settings,userId,c))};}

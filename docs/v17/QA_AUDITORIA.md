@@ -1,0 +1,13 @@
+# QA da consulta de auditoria — 24/10/2026 (São Paulo)
+
+Base DEV `19b0f69879f116bb99c79249071c85f48d6c62d4`. [Contrato, privacidade e limites](AUDITORIA_DEV.md). Código validado para publicação DEV; nenhuma ativação Google real.
+
+12 grupos de contratos específicos aprovados: filtros combinados e sem alteração histórica; privacidade com esquema fechado; paginação estável e bloqueio de origem alterada; Excel OOXML real; repetição após falhas de gravação/ack sem duplicação; papel/autenticação recente/CSRF/origem/campos/flags; 500 registros completos e recusa de 501; resposta upstream malformada; leitura das 5.000 linhas sem apagar histórico e recusa de exportar sem capacidade; orçamento de detalhes e meia-noite brasileira; nomes cifrados/sessão revogada; referências explícitas de produto e titularidade do comando de exportação.
+
+Cinco cenários Chromium aprovados: filtros e detalhes em celular com download real de Excel; resposta perdida com mesmo comando e único evento; nova inserção durante paginação exigindo atualização; perda de papel com limpeza de resultados/detalhes; interseção produto/venda/resultado e resultado vazio. O teste de resposta perdida aguarda o término da tentativa antes de conferir a gravação no servidor. Screenshot `work/qa-audit/auditoria-celular.png` inspecionada, sem rolagem horizontal.
+
+O teste do arquivo valida CRC do ZIP, XML de todas as partes, vínculos OOXML, quantidade de registros além da página visível, horários brasileiros, texto Unicode e célula com fórmula literal sem elemento de fórmula/vínculo externo. Não comprova uma versão específica do Excel nem abertura em aparelho físico.
+
+274 contratos backend aprovados em Node 24.19.0 e 22.23.4, logs `work/audit-full24-final.log` e `work/audit-full22-final.log`. Após os ajustes finais de validação de resposta e impressão autenticada, os 12 grupos do módulo foram reexecutados nas duas versões, incluindo os vínculos OOXML, em `work/audit-focused24-final.log` e `work/audit-focused22-final.log`.
+
+41 cenários Chromium aprovados: auditoria 5, equipe 6, operações 6, escalas 6, catálogo 6, notificações 7 e perfil 5. Logs `work/audit-browser-final.log` e `work/audit-regression-*.log`. Build, sintaxe JS/Python e diff check aprovados. Kit `/tmp/livraria-dev-auditoria.zip` com 39 arquivos revisados, conferidos byte a byte, incluindo Audit.gs e o guia; sem configuração privada. Google/Sheets/Drive/MailApp são emulados; login browser assina com autenticador virtual WebAuthn. Sem dados reais, ativação privada, cobrança, mensagem externa ou produção. Os testes não habilitam flags em instalações reais.

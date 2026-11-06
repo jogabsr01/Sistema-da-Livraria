@@ -1,0 +1,397 @@
+import { devOrigin } from './local-lab-policy.mjs';
+import { accessReceipts } from './access-receipt.mjs';
+import { identityConfigurationIssues } from './identity-configuration.mjs';
+import { emergencyCodeHash } from './emergency-codes.mjs';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { loadPersonalDataSettings, createPersonalDataVault } from './personal-data.mjs';
+import { normalizeCpf, normalizeStaffContact } from './staff-model.mjs';
+import { catalogUuid } from './catalog-model.mjs';
+import { ApiError, json, safeFailure } from './errors.mjs';
+import { loadSessionSettings } from './session-config.mjs';
+import { loadLoginGuardSettings, createLoginGuard } from './login-guard.mjs';
+import { loadPasskeySettings, createPasskeyService, preparedAccessOptions, validatePasskeyResponse } from './passkey-service.mjs';
+import { createPinHasher, createPasswordHasher, createSessionTokens } from './credential-core.mjs';
+import { createWorkspaceClient } from './workspace-client.mjs';
+import { requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
+import { sessionCookie, validateSessionPrincipal, readSessionToken } from './session-service.mjs';
+export const ACCESS_ORIGIN = devOrigin();
+export const ACCESS_COOKIE = '__Host-livraria_access';
+const rejected = () => { throw new ApiError(401, 'ACCESS_REJECTED'); };
+const canonical = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value) && Buffer.from(value, 'base64url').toString('base64url') === value;
+const EMAIL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export function createAccessEmailCode() {
+  // 32 symbols: masking is unbiased, using seven independent random bytes.
+  return Array.from(randomBytes(7), byte => EMAIL_CODE_ALPHABET[byte & 31]).join('');
+}
+function normalizeAccessEmailCode(value) {
+  if (typeof value !== 'string') rejected();
+  const trimmed = value.trim();
+  if (/^[A-HJ-NP-Z2-9]{7}$/i.test(trimmed)) return trimmed.toUpperCase();
+  // A code already delivered before rollout remains valid for its original TTL.
+  if (canonical(trimmed)) return trimmed;
+  rejected();
+}
+function email(value) {
+  if (typeof value !== 'string' || value.length > 254 || /[\x00-\x1f\x7f]/.test(value)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+  const normalized = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+  return normalized;
+}
+export function loadOwnerAccessSettings(env = process.env) {
+  if (env.WORKSPACE_IDENTITY_ACCESS_ENABLED !== 'true') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
+  const sessions = loadSessionSettings(env), guards = loadLoginGuardSettings(env);
+  loadPasskeySettings(env);
+  const pepper = env.WORKSPACE_PIN_PEPPER;
+  if (typeof pepper !== 'string' || !/^[a-f0-9]{64}$/i.test(pepper) ||
+      [sessions.config.secret, env.WORKSPACE_SESSION_TOKEN_KEY, env.WORKSPACE_AUTH_GUARD_KEY].some(key => key?.toLowerCase() === pepper.toLowerCase()) ||
+      sessions.tokenKey.equals(guards.guardKey)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
+  const staffEnabled=env.WORKSPACE_STAFF_ENABLED==='true';
+  let personal = null;
+  if (staffEnabled) personal = loadPersonalDataSettings(env);
+  else if (env.WORKSPACE_PERSONAL_DATA_KEY && env.WORKSPACE_PERSONAL_INDEX_KEY) { try { personal = loadPersonalDataSettings(env); } catch {} }
+  return { ...sessions, ...guards, ...personal, cpfEnabled: !!personal, pepper: Buffer.from(pepper, 'hex'),staffEnabled,emergencyRecoveryEnabled:env.WORKSPACE_EMERGENCY_RECOVERY_ENABLED==='true'&&env.WORKSPACE_RECOVERY_ENABLED==='true',recoveryEnabled:env.WORKSPACE_RECOVERY_ENABLED==='true', };
+}
+export function accessCookie(value) {
+  if (!canonical(value)) rejected();
+  return `${ACCESS_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=600`;
+}
+function readCookie(request) {
+  const header = request.headers.get('cookie') || '';
+  if (header.length > 4096) rejected();
+  const found = header.split(';').map(value => value.trim()).filter(value => value.split('=', 1)[0] === ACCESS_COOKIE);
+  if (found.length !== 1 || !canonical(found[0].slice(ACCESS_COOKIE.length + 1))) rejected();
+  return found[0].slice(ACCESS_COOKIE.length + 1);
+}
+export function createOwnerAccessService(settings, { client, stagedCompletion = false, segmentedCompletion = false, passwordLogin = false, pinLogin = passwordLogin } = {}) {
+  const { config, guardKey, tokenKey, pepper } = settings;
+  if (!['dev', 'prod'].includes(config.environment) || ![guardKey, tokenKey, pepper].every(key => Buffer.isBuffer(key) && key.length === 32)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
+  const accessOrigin = devOrigin(config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
+  const vault=settings.cpfEnabled||settings.staffEnabled?createPersonalDataVault(settings):null;
+  const identifier=value=>{if(typeof value!=='string')throw new ApiError(400,'INVALID_AUTH_REQUEST');if(value.includes('@'))return email(value);if(!vault)throw new ApiError(503,'ACCESS_CPF_NOT_AVAILABLE');return normalizeCpf(value);};
+  async function staffLookup(value){
+    if(!vault||!settings.staffEnabled)return null;const data=await client.staffAccess('lookup',{emailIndex:value.includes('@')?vault.index('email',value):'',cpfIndex:value.includes('@')?'':vault.index('cpf',value)});
+    if(!data||!Object.hasOwn(data,'account'))throw new ApiError(502,'UPSTREAM_UNTRUSTED');if(data.account===null)return null;
+    const a=data.account;if(!catalogUuid(a.subjectId)||!Number.isSafeInteger(a.authorizationVersion)||a.authorizationVersion<1||typeof a.activated!=='boolean')throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+    let contact;try{contact=normalizeStaffContact(vault.open('users',a.subjectId,a.contact));}catch(e){if(e instanceof ApiError&&e.status===400)throw new ApiError(502,'UPSTREAM_UNTRUSTED');throw e;}
+    if((value.includes('@')?contact.email:contact.cpf)!==value)throw new ApiError(502,'UPSTREAM_UNTRUSTED');return {...a,delivery:contact.email};
+  }
+  async function ownerDelivery(value, operation) {
+    if (value.includes('@')) return value;
+    const result = await client.access('ownerLookup',{cpfIndex:vault.index('cpf',value)});
+    if (result.email) return result.email;
+    if (operation === 'start') throw new ApiError(404,'ACCESS_CPF_NOT_REGISTERED');
+    return 'unknown@example.invalid';
+  }
+  function acceptedStart(result, value) {
+    if (result?.accepted !== true || result.outcome !== undefined && !['SENT','NOT_FOUND','ALREADY_ACTIVE','THROTTLED','DELIVERY_UNAVAILABLE'].includes(result.outcome)) throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+    const codes = {NOT_FOUND:value.includes('@')?'ACCESS_EMAIL_NOT_REGISTERED':'ACCESS_CPF_NOT_REGISTERED',ALREADY_ACTIVE:'ACCESS_ALREADY_ACTIVATED',THROTTLED:'AUTH_DELIVERY_RATE_LIMITED',DELIVERY_UNAVAILABLE:'ACCESS_EMAIL_DELIVERY_UNAVAILABLE'};
+    if (codes[result.outcome]) { const error=new ApiError(result.outcome==='NOT_FOUND'?404:result.outcome==='ALREADY_ACTIVE'?409:result.outcome==='THROTTLED'?429:503,codes[result.outcome]);if(result.outcome==='THROTTLED')error.retryAfterSeconds=60;throw error; }
+    return {stage:'EMAIL',message:result.outcome==='SENT'?'Código enviado ao e-mail vinculado ao seu cadastro. Confira a caixa de entrada.':'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.'};
+  }
+  const scope = [config.environment, config.installationId];
+  const digest = (purpose, value, format = 'hex', key = guardKey) => createHmac('sha256', key).update(JSON.stringify([purpose, scope, value])).digest(format);
+  const guard = createLoginGuard(settings, { client }), pins = createPinHasher({ ...config, pepper }), passwords = createPasswordHasher({ ...config, pepper });
+  const passkeys = createPasskeyService(settings, { client }), tokens = createSessionTokens({ ...config, tokenKey });
+  const csrf = token => digest('access.csrf.v1', token, 'base64url');
+  const hash = token => digest('access.token.v1', token);
+  // Fixed fake records keep the KDF path indistinguishable for unknown accounts.
+  const dummy = { version: 1, credentialType: 'PASSWORD_V1', algorithm: 'scrypt-N32768-r8-p1', salt: '00'.repeat(32), hash: '00'.repeat(32) };
+  async function read(token) { return client.access('read', { tokenHash: hash(token) }); }
+  function completedOutput(flow, value, rawToken) {
+    const principal=validateSessionPrincipal(value,Date.now(),config.adminPasswordLogin===true);
+    if(principal.id!==flow.subjectId||principal.sessionId!==flow.flowId||principal.authorizationVersion!==flow.authorizationVersion+(flow.purpose==='RECOVER'?1:0)||!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role)||principal.assurance!==(flow.purpose==='PIN_LOGIN'?'pin':flow.purpose==='PASSWORD_LOGIN'?'password':'passkey'))rejected();
+    const sessionCsrfToken=createHmac('sha256',tokenKey).update(JSON.stringify(['csrf.v1',config.environment,config.installationId,rawToken])).digest('base64url');
+    return {stage:'COMPLETE',user:{role:principal.role,assurance:principal.assurance},cookie:sessionCookie(rawToken),sessionCsrfToken};
+  }
+  async function completePrepared(input,token,ip) {
+    if(segmentedCompletion&&input.receipt){
+      const saved=accessReceipts(settings,token).open(input.receipt,'proof');
+      if(!['registerPasskey','advancePasskeyCounter','rescueKey'].includes(saved.method))rejected();
+      await client.access('saveProof',{tokenHash:hash(token),method:saved.method,command:saved.command});
+      return {stage:'COMMITTING',proofSaved:true};
+    }
+    const response=input.response;
+    const hasResponse=response!==null&&response!==undefined&&!(typeof response==='object'&&!Array.isArray(response)&&Object.keys(response).length===0);
+    let handleSubjectId='';
+    if(hasResponse){
+      validatePasskeyResponse(response);
+      const handle=response.response?.userHandle;
+      if(handle!==null&&handle!==undefined){
+        if(typeof handle!=='string'||Buffer.from(handle,'base64url').toString('base64url')!==handle)rejected();
+        handleSubjectId=Buffer.from(handle,'base64url').toString('utf8');if(!catalogUuid(handleSubjectId))rejected();
+      }
+    }
+    const rawToken=digest('access.session.v1',token,'base64url',tokenKey),sessionTokenHash=tokens.hash(rawToken);
+    const prepared=await client.prepareAccessCompletion({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token),sessionTokenHash,credentialId:hasResponse&&typeof response.id==='string'?response.id:'',hasResponse,allowReplacement:settings.emergencyRecoveryEnabled===true,handleSubjectId});
+    return verifyPreparedProof(prepared,response,token,sessionTokenHash);
+  }
+  async function verifyPreparedProof(prepared,response,token,sessionTokenHash){
+    const rawToken=digest('access.session.v1',token,'base64url',tokenKey);
+    const flow=prepared.flow;
+    if(prepared.done)return completedOutput(flow,prepared.principal,rawToken);
+    const user={subjectId:flow.subjectId,authorizationVersion:flow.authorizationVersion};
+    let continuation;
+    const capture=method=>async command=>{continuation={method,command};return {};};
+    const provider=createPasskeyService(settings,{client:{...client,
+      ...(segmentedCompletion?{registerPasskey:capture('registerPasskey'),advancePasskeyCounter:capture('advancePasskeyCounter')}:{}),
+      takePasskey:async supplied=>{
+        if(supplied.subjectId!==flow.subjectId||supplied.authorizationVersion!==flow.authorizationVersion||supplied.ceremonyId!==flow.ceremonyId||supplied.credentialId!==(flow.purpose==='ACTIVATE'||flow.replacementAllowed?'':response.id))rejected();
+        return prepared.ceremony;
+      },
+      ...(flow.replacementAllowed?{registerPasskey:({ceremonyId,credentialId,publicKey,counter,transports})=>{const command={tokenHash:hash(token),sessionTokenHash,ceremonyId,credentialId,publicKey,counter,transports};return segmentedCompletion?capture('rescueKey')(command):client.access('rescueKey',command);}}:{})
+    }});
+    await provider[flow.purpose==='ACTIVATE'||flow.replacementAllowed?'verifyRegistration':'verifyAuthentication']({...user,ceremonyId:flow.ceremonyId},response);
+    // Positive acknowledgement only: proof is durable, but no session/cookie is
+    // granted until a subsequent authoritative commit succeeds.
+    if(segmentedCompletion){if(!continuation)rejected();return {stage:'COMMITTING',proofReceipt:accessReceipts(settings,token).seal('proof',continuation)};}
+    if(stagedCompletion)return {stage:'COMMITTING',proofSaved:true};
+    return completedOutput(flow,await client.access('commit',{tokenHash:hash(token),sessionTokenHash}),rawToken);
+  }
+
+  return {
+    csrf,
+    confirmSessionCookie(token,raw){
+      const expected=digest('access.session.v1',token,'base64url',tokenKey);
+      if(!canonical(raw)||!timingSafeEqual(Buffer.from(expected),Buffer.from(raw)))throw new ApiError(401,'ACCESS_SESSION_COOKIE_MISSING');
+    },
+    deviceOptions(token){
+      const challenge=randomBytes(32).toString('base64url'),flowId=randomUUID(),ceremonyId=randomUUID();
+      return {receipt:accessReceipts(settings,token).seal('device-login',{challenge,flowId,ceremonyId}),options:{challenge,rpId:new URL(accessOrigin).hostname,allowCredentials:[],userVerification:'required',timeout:120000}};
+    },
+    async state(token) {
+      try { const f=await read(token);return {stage:f.state==='PASSKEY'&&f.proofReady?'COMMITTING':f.state==='PIN'?'PASSWORD':f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
+      catch (error) { if (error?.code === 'WORKSPACE_ACCESS_REJECTED') return { stage: 'INITIAL' }; throw error; }
+    },
+    async execute(operation, input, token, ip) {
+     try {
+      if(operation==='device-login'){
+        const issued=accessReceipts(settings,token).open(input.receipt,'device-login');
+        validatePasskeyResponse(input.response);
+        const response=input.response,handle=response.response?.userHandle;
+        if(typeof response.id!=='string'||!/^[A-Za-z0-9_-]{2,1400}$/.test(response.id))rejected();
+        if(typeof handle!=='string'||Buffer.from(handle,'base64url').toString('base64url')!==handle)rejected();
+        const subjectId=Buffer.from(handle,'base64url').toString('utf8');if(!catalogUuid(subjectId))rejected();
+        let browserData;try{browserData=JSON.parse(Buffer.from(response.response.clientDataJSON,'base64url').toString('utf8'));}catch{rejected();}
+        if(browserData.type!=='webauthn.get'||browserData.origin!==accessOrigin||browserData.challenge!==issued.challenge)rejected();
+        const prepared=await client.prepareDeviceAccess({...issued,tokenHash:hash(token),subjectId,credentialId:response.id,staffAllowed:settings.staffEnabled===true,...guard.attemptKeys({identifier:'passkey:'+createHash('sha256').update(response.id||'').digest('hex'),originAddress:ip})});
+        const rawToken=digest('access.session.v1',token,'base64url',tokenKey);
+        return verifyPreparedProof(prepared,response,token,tokens.hash(rawToken));
+      }
+      // Trusted platform address only, never body/forwarded HTTP headers.
+      if (operation === 'email' && typeof client.verifyAccessEmail === 'function' && typeof input.code === 'string' && (/^[A-HJ-NP-Z2-9]{7}$/i.test(input.code.trim()) || canonical(input.code.trim()))) {
+        const code=normalizeAccessEmailCode(input.code);
+        const result=await client.verifyAccessEmail({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code])});
+        if (!result.verified) rejected();
+        return {stage:'PASSWORD'};
+      }
+      if(operation==='continue-login'){
+        const saved=accessReceipts(settings,token).open(input.receipt,'login');
+        if(saved.mode==='password-session'){
+          if(!passwordLogin||!config.adminPasswordLogin)rejected();
+          const principal=await client.access('passwordLogin',{...saved.command,tokenHash:hash(token)});
+          return completedOutput({subjectId:saved.command.subjectId,flowId:saved.command.flowId,authorizationVersion:saved.command.authorizationVersion,purpose:'PASSWORD_LOGIN'},principal,digest('access.session.v1',token,'base64url',tokenKey));
+        }
+        if(saved.mode==='pin-session'){
+          if(!pinLogin||!config.adminPinLogin)rejected();
+          const principal=await client.access('pinLogin',{...saved.command,tokenHash:hash(token)});
+          return completedOutput({subjectId:saved.command.subjectId,flowId:saved.command.flowId,authorizationVersion:saved.command.authorizationVersion,purpose:'PIN_LOGIN'},principal,digest('access.session.v1',token,'base64url',tokenKey));
+        }
+        if(!['biometric','password','pin'].includes(saved.mode))rejected();
+        const prepared=await client.prepareBiometricOptions({...saved.command,tokenHash:hash(token),...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),ceremonyId:randomUUID(),challenge:randomBytes(32).toString('base64url')});
+        if(prepared.subjectId!==saved.command.subjectId||prepared.authorizationVersion!==saved.command.authorizationVersion||prepared.kind!=='get')rejected();
+        return await preparedAccessOptions(prepared, config.environment);
+      }
+      if(['login','biometric'].includes(operation)&&typeof client.lookupAccessLogin==='function'){
+        const value=identifier(input.email),isEmail=value.includes('@');
+        const result=await client.lookupAccessLogin({...guard.attemptKeys({identifier:value,originAddress:ip}),email:isEmail?value:'',emailIndex:isEmail&&settings.staffEnabled?vault.index('email',value):'',cpfIndex:isEmail?'':vault.index('cpf',value),staffLookup:settings.staffEnabled===true});
+        const account=result.account;
+        if(result.kind==='STAFF'&&account){
+          let contact;try{contact=normalizeStaffContact(vault.open('users',account.subjectId,account.contact));}catch{throw new ApiError(502,'UPSTREAM_UNTRUSTED');}
+          if((isEmail?contact.email:contact.cpf)!==value)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+        }
+        const biometric=operation==='biometric',legacyPinLogin=typeof input.pin==='string'&&input.password===undefined;
+        const credentialType=account?.record?.credentialType;
+        let valid=false;
+        if(biometric) valid=!!account&&credentialType!=='PIN_LEGACY';
+        else if(legacyPinLogin&&credentialType==='PIN_LEGACY') valid=await pins.verify(input.pin,account.subjectId,account.record);
+        else if(credentialType==='PASSWORD_V1') valid=await passwords.verify(input.password,account.subjectId,account.record);
+        else if(account) { await passwords.verify(input.password,'00000000-0000-4000-8000-000000000000',dummy); }
+        if(account?.record?.credentialType==='PIN_LEGACY'&&!legacyPinLogin) return {stage:'MIGRATION_REQUIRED'};
+        if(!account||!valid)rejected();
+        if(!biometric&&((legacyPinLogin&&pinLogin&&config.adminPinLogin)||(!legacyPinLogin&&passwordLogin&&config.adminPasswordLogin))){
+          const raw=digest('access.session.v1',token,'base64url',tokenKey),command={flowId:randomUUID(),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion,sessionTokenHash:tokens.hash(raw),verifierHash:createHash('sha256').update(JSON.stringify(account.record)).digest('hex')};
+          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:legacyPinLogin?'pin-session':'password-session',command})};
+        }
+        if(biometric||stagedCompletion){
+          const command={flowId:randomUUID(),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion};
+          return {stage:'COMMITTING',loginReceipt:accessReceipts(settings,token).seal('login',{mode:biometric?'biometric':legacyPinLogin?'pin':'password',command})};
+        }
+        await client.access('login',{flowId:randomUUID(),tokenHash:hash(token),subjectId:account.subjectId,authorizationVersion:account.authorizationVersion});
+        return {stage:'PASSKEY'};
+      }
+      let passwordFlow;
+      if (['password','pin'].includes(operation)) {
+        const reader=operation==='password'?client.readAccessForPassword:client.readAccessForPin;
+        if(typeof reader==='function') passwordFlow=await reader({...guard.attemptKeys({identifier:'flow:'+hash(token),originAddress:ip}),tokenHash:hash(token)});
+      }
+      if (operation === 'start' && !settings.staffEnabled && typeof client.startOwnerAccess === 'function' && typeof input.email === 'string' && input.email.includes('@')) {
+        const value=identifier(input.email), code=createAccessEmailCode();
+        const result=await client.startOwnerAccess({...guard.attemptKeys({identifier:value,originAddress:ip}),email:value,flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code});
+        return acceptedStart(result,value);
+      }
+      // This fixed command reserves the SAME durable attempt in GAS before
+      // checking the flow, listing keys, storing the challenge and binding it.
+      // Other operations, completion/retry and time budgets remain unchanged.
+      if (operation === 'options' && typeof client.prepareAccessOptions === 'function') {
+        const attempt = guard.attemptKeys({ identifier: 'flow:' + hash(token), originAddress: ip });
+        const prepared = await client.prepareAccessOptions({ ...attempt, tokenHash: hash(token),
+          ceremonyId: randomUUID(), challenge: randomBytes(32).toString('base64url'),
+          allowReplacement: settings.emergencyRecoveryEnabled === true });
+        return await preparedAccessOptions(prepared, config.environment);
+      }
+      if(operation==='complete'&&typeof client.prepareAccessCompletion==='function')return await completePrepared(input,token,ip);
+      let completedRetry=false;if(operation==='complete'){try{const previous=await read(token);completedRetry=previous.state==='COMPLETE'&&previous.proofReady;}catch{}}
+      // Releasing the same durable, cookie-bound grant is not another guess.
+      if(!completedRetry&&!passwordFlow)await guard.reserveAttempt({ identifier: ['start', 'login','biometric','recover'].includes(operation) ? identifier(input.email) : (operation==='rescue'?'rescue:':'flow:') + hash(token), originAddress: ip });
+      if (operation === 'start'||operation==='recover') {
+        if(operation==='recover'&&!settings.recoveryEnabled)throw new ApiError(503,'RECOVERY_NOT_ACTIVATED');
+        const code = createAccessEmailCode();
+        const value=identifier(input.email),staff=await staffLookup(value),proof={flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code};
+        const result=staff ? await client.staffAccess(operation==='recover'?'recover':'start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery})
+          : await client.access(operation==='recover'?'recover':'start', { email:await ownerDelivery(value,operation),...proof });
+        return operation==='start'?acceptedStart(result,value):{stage:'EMAIL',message:'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.'};
+      }
+      if (operation === 'login') {
+        if (typeof input.password !== 'string') rejected();
+        const value=identifier(input.email),staff=await staffLookup(value);
+        const {account}=staff?{account:staff.activated&&staff.record?staff:null}:await client.access('lookup',{email:await ownerDelivery(value,'login')});
+        const valid = account?.record?.credentialType==='PASSWORD_V1' ? await passwords.verify(input.password, account.subjectId, account.record) : account ? (await passwords.verify(input.password,'00000000-0000-4000-8000-000000000000',dummy),false) : await passwords.verify(input.password,'00000000-0000-4000-8000-000000000000',dummy);
+        if(account?.record?.credentialType==='PIN_LEGACY') return {stage:'MIGRATION_REQUIRED'};
+        if (!account || !valid) rejected();
+        await client.access('login', { flowId: randomUUID(), tokenHash: hash(token), subjectId: account.subjectId, authorizationVersion: account.authorizationVersion });
+        return { stage: 'PASSKEY' };
+      }
+      if (operation === 'email') {
+        const code = normalizeAccessEmailCode(input.code);
+        const { verified } = await client.access('email', { tokenHash: hash(token), codeHash: digest('access.email.v1', [hash(token), code]) });
+        if (!verified) rejected(); return { stage: 'PASSWORD' };
+      }
+      const flow = passwordFlow || await read(token), subject = { subjectId: flow.subjectId, authorizationVersion: flow.authorizationVersion };
+      if(operation==='rescue'){if(!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');if(flow.purpose!=='RECOVER'||!['PASSWORD','PIN'].includes(flow.state))rejected();const result=await client.access('rescue',{tokenHash:hash(token),codeHash:emergencyCodeHash(settings,flow.subjectId,input.recoveryCode)});if(!result.authorized)rejected();return {stage:'PASSWORD',replacementAllowed:true};}
+      if (['password','pin'].includes(operation)) {
+        if (flow.state !== 'PASSWORD' && flow.state !== 'PIN') rejected();
+        const record = operation==='password' ? await passwords.hash(input.newPassword, flow.subjectId) : await pins.hash(input.pin, flow.subjectId);
+        await client.access(operation==='password'?'password':'pin', { tokenHash: hash(token), record: JSON.stringify(record) }); return { stage: 'PASSKEY' };
+      }
+      if (operation === 'options') {
+        if (flow.state !== 'PASSKEY') rejected();
+        if(flow.replacementAllowed&&!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');
+        const provider=flow.replacementAllowed?createPasskeyService(settings,{client:{...client,beginPasskey:({ceremonyId,challenge})=>client.access('rescueBegin',{tokenHash:hash(token),ceremonyId,challenge})}}):passkeys;
+        const ceremony = await provider[flow.purpose === 'ACTIVATE'||flow.replacementAllowed ? 'registrationOptions' : 'authenticationOptions'](subject);
+        await client.access('bind', { tokenHash: hash(token), ceremonyId: ceremony.ceremonyId });
+        return { stage: 'PASSKEY', kind: flow.purpose === 'ACTIVATE'||flow.replacementAllowed ? 'create' : 'get', options: ceremony.options };
+      }
+      if (operation === 'complete') {
+        if (!['PASSKEY', 'COMMITTING', 'COMPLETE'].includes(flow.state) || !flow.ceremonyId) rejected();
+        if (flow.state === 'PASSKEY' && !flow.proofReady){
+          if(flow.replacementAllowed&&!settings.emergencyRecoveryEnabled)throw new ApiError(503,'EMERGENCY_RECOVERY_NOT_ACTIVATED');
+          const futureRaw=digest('access.session.v1',token,'base64url',tokenKey),provider=flow.replacementAllowed?createPasskeyService(settings,{client:{...client,registerPasskey:({ceremonyId,credentialId,publicKey,counter,transports})=>client.access('rescueKey',{tokenHash:hash(token),sessionTokenHash:tokens.hash(futureRaw),ceremonyId,credentialId,publicKey,counter,transports})}}):passkeys;
+          await provider[flow.purpose === 'ACTIVATE'||flow.replacementAllowed ? 'verifyRegistration' : 'verifyAuthentication']({ ...subject, ceremonyId: flow.ceremonyId }, input.response);
+        }
+        // Deterministic only for this unguessable pre-auth cookie and deployment.
+        // A lost acknowledgement retries the SAME session, never a second grant.
+        const rawToken = digest('access.session.v1', token, 'base64url', tokenKey), tokenHash = tokens.hash(rawToken);
+        const principal = validateSessionPrincipal(await client.access('commit', { tokenHash: hash(token), sessionTokenHash: tokenHash }),Date.now(),config.adminPasswordLogin===true);
+        if (principal.id !== flow.subjectId || principal.sessionId !== flow.flowId || !['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(principal.role) || principal.assurance !== 'passkey') rejected();
+        return completedOutput(flow,principal,rawToken);
+      }
+      throw new ApiError(404, 'NOT_FOUND');
+     } catch(error) {
+      if(error instanceof ApiError&&error.status===401&&['ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED','WORKSPACE_CHALLENGE_REJECTED'].includes(error.code)){const code=operation==='login'?'CREDENTIALS_REJECTED':operation==='email'?'EMAIL_PROOF_REJECTED':['PASSKEY_REJECTED','WORKSPACE_PASSKEY_REJECTED'].includes(error.code)?'PASSKEY_REJECTED':'FLOW_REJECTED';await client.recordSecurityEvent({commandId:randomUUID(),phase:operation==='rescue'?'RECOVER':['biometric','continue-login','device-login'].includes(operation)?'LOGIN':operation.toUpperCase(),code});}
+      throw error;
+     }
+    },
+  };
+}
+const shapes = { cookie:[], 'device-login':['response','receipt'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'password'], email: ['code'], password: ['newPassword'], options: [], complete: ['response'] };
+export const OWNER_ACCESS_BUDGET_MS = 55_000;
+export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
+export const OPTIONS_REQUEST_BUDGET_MS = 27_000;
+export function createOwnerAccessHandler(dependencies = {}) {
+  return async (request, context = {}) => {
+    const requestId = randomUUID(), startedAt = performance.now();
+    const requestedOperation=new URL(request.url).pathname.split('/').at(-1);
+    const loginRequest=['login','biometric','continue-login','device-login'].includes(requestedOperation), optionsRequest=requestedOperation==='options';
+    const completionRequest=new URL(request.url).pathname.split('/').at(-1)==='complete'&&['2','3'].includes(request.headers.get('x-access-completion-version'));
+    const deadlineAt=startedAt+(optionsRequest?OPTIONS_REQUEST_BUDGET_MS:completionRequest||loginRequest?COMPLETION_REQUEST_BUDGET_MS:OWNER_ACCESS_BUDGET_MS);
+    let operation, settingsLoaded = false, client, token, rotatedFlow = false;
+    const timed=response=>{const metrics=client?.timings?.();response.headers.set('server-timing',`app;dur=${Math.round(performance.now()-startedAt)}`+(metrics?`, google;dur=${metrics.durationMs}, rpc;desc="${metrics.calls}"`:''));return response;};
+    try {
+      if (new URL(request.url).origin !== devOrigin()) throw new ApiError(403, 'FORBIDDEN');
+      operation = new URL(request.url).pathname.split('/').at(-1);
+      if (operation !== 'state' && !Object.hasOwn(shapes, operation)) throw new ApiError(404, 'NOT_FOUND');
+      const method = operation === 'state' ? 'GET' : 'POST';
+      if (request.method !== method) { const result = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); result.headers.set('allow', method); return result; }
+      const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
+      const accessOrigin = devOrigin(settings.config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
+      if (new URL(request.url).origin !== accessOrigin) throw new ApiError(403, 'FORBIDDEN');
+      settingsLoaded = true;
+      client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt, ...(optionsRequest||completionRequest||loginRequest?{timeoutMs:COMPLETION_REQUEST_BUDGET_MS}:{}) });
+      const service = createOwnerAccessService(settings, { client,passwordLogin:settings.config.adminPasswordLogin===true&&request.headers.get('x-access-step-up')!=='passkey', stagedCompletion:['2','3'].includes(request.headers.get('x-access-completion-version')),segmentedCompletion:request.headers.get('x-access-completion-version')==='3'||operation==='device-login' });
+      if (operation === 'state') {
+        let fresh = request.headers.get('x-access-view')==='login';
+        try { if(fresh)throw new Error('NEW_LOGIN_VIEW'); token = readCookie(request); } catch { token = randomBytes(32).toString('base64url'); fresh = true; }
+        const data = fresh ? { stage: 'INITIAL' } : await service.state(token);
+        const result = json({ data: { ...data,...(data.stage==='INITIAL'?{deviceLogin:service.deviceOptions(token)}:{}),emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId });
+        if (fresh) result.headers.set('set-cookie', accessCookie(token)); return timed(result);
+      }
+      requireSameOriginMutation(request, accessOrigin);
+      // A missing/expired/invalid pre-auth cookie is not a rejected account or
+      // PIN. This code is emitted only before body parsing, guard/KDF or RPC.
+      try { token = readCookie(request); }
+      catch { throw new ApiError(401, 'ACCESS_CONTEXT_EXPIRED'); }
+      requireCsrfToken(request, service.csrf(token));
+      const declared = request.headers.get('content-length');
+      if (declared && (!/^\d+$/.test(declared) || Number(declared) > 20000)) throw new ApiError(413, 'INVALID_AUTH_REQUEST');
+      // Bound the actual stream before parsing or invoking Google/KDF.
+      const reader = request.body?.getReader(); let text = '', size = 0;
+      if (reader) { const decoder = new TextDecoder('utf-8', { fatal: true }); try {
+        while (true) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > 20000) { await reader.cancel(); throw new ApiError(413, 'INVALID_AUTH_REQUEST'); } text += decoder.decode(value, { stream: true }); } text += decoder.decode();
+      } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError(400, 'INVALID_AUTH_REQUEST'); } }
+      let input; try { input = JSON.parse(text); } catch { throw new ApiError(400, 'INVALID_AUTH_REQUEST'); }
+      if (!input || typeof input !== 'object' || Array.isArray(input) || JSON.stringify(Object.keys(input).sort()) !== JSON.stringify((operation==='complete'&&request.headers.get('x-access-completion-version')==='3'?['response','receipt']:shapes[operation]).slice().sort())) throw new ApiError(400, 'INVALID_AUTH_REQUEST');
+      if(operation==='cookie'){
+        let raw;try{raw=readSessionToken(request);}catch{throw new ApiError(401,'ACCESS_SESSION_COOKIE_MISSING');}
+        service.confirmSessionCookie(token,raw);
+        const result=json({data:{stage:'COOKIE_CONFIRMED',csrfToken:service.csrf(token)},requestId});
+        result.headers.set('set-cookie',`${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);return timed(result);
+      }
+      // Rotate the flow bearer for every new request/login, after CSRF validation.
+      if (['start', 'login','biometric','recover'].includes(operation)) { token = randomBytes(32).toString('base64url'); rotatedFlow = true; }
+      const output = await service.execute(operation, input, token, context.ip), { cookie, ...data } = output;
+      const separateCookie=!!cookie&&request.headers.get('x-access-cookie-mode')==='separate';
+      const result = json({ data: { ...data,...(separateCookie?{cookieConfirmationRequired:true}:{}),emergencyRecoveryEnabled:settings.emergencyRecoveryEnabled===true,recoveryEnabled:settings.recoveryEnabled===true, cpfAvailable:settings.cpfEnabled===true, csrfToken: service.csrf(token) }, requestId }, ['start','recover'].includes(operation)||data.stage==='COMMITTING' ? 202 : 200);
+      if (cookie) {
+        result.headers.append('set-cookie', cookie);
+        if(!separateCookie)result.headers.append('set-cookie', `${ACCESS_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);
+      } else if (['start', 'login','biometric','recover'].includes(operation)) result.headers.set('set-cookie', accessCookie(token));
+      return timed(result);
+    } catch (error) {
+      // DEV operator setup only, before any identity/cookie/command processing.
+      // This does not relax validation or expose key material on public errors.
+      if (!settingsLoaded && operation === 'state' && process.env.APP_ENV === 'dev' &&
+          error instanceof ApiError && error.code === 'IDENTITY_CONFIGURATION_UNAVAILABLE') {
+        const configurationIssues = identityConfigurationIssues(process.env);
+        if (configurationIssues.length) return json({ error: { code: error.code, requestId, configurationIssues } }, 503);
+      }
+      const result = safeFailure(error, requestId);
+      // An uncertain upstream result may have persisted the new cookie-bound
+      // flow. Deliver its pre-auth cookie even on error so state can recover it.
+      // This is never a session grant; malformed/origin/CSRF denials reach no
+      // rotation and no cookie, and completed flows retain Google expiry checks.
+      if(rotatedFlow&&result.status>=500)result.headers.set('set-cookie',accessCookie(token));
+      if (['AUTH_RATE_LIMITED','AUTH_DELIVERY_RATE_LIMITED'].includes(error?.code)) result.headers.set('retry-after', String(error.retryAfterSeconds));
+      return timed(result);
+    }
+  };
+}

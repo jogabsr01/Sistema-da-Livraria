@@ -1,0 +1,104 @@
+import { devOrigin } from './local-lab-policy.mjs';
+import { createHmac } from 'node:crypto';
+import { ApiError } from './errors.mjs';
+import { createSessionTokens } from './credential-core.mjs';
+import { requireSameOriginMutation, requireCsrfToken } from './authorization.mjs';
+
+export const SESSION_COOKIE = '__Host-livraria_session';
+const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const MAX_AGE_SECONDS = 24 * 60 * 60;
+const denied = () => { throw new ApiError(401, 'UNAUTHENTICATED'); };
+function validToken(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value) &&
+    Buffer.from(value, 'base64url').toString('base64url') === value;
+}
+export function sessionCookie(rawToken, maxAgeSeconds = MAX_AGE_SECONDS) {
+  if (!validToken(rawToken) || !Number.isSafeInteger(maxAgeSeconds) || maxAgeSeconds < 1 || maxAgeSeconds > MAX_AGE_SECONDS) throw new ApiError(400, 'INVALID_SESSION_TOKEN');
+  return `${SESSION_COOKIE}=${rawToken}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
+}
+export function clearSessionCookie() {
+  return `${SESSION_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+export function readSessionToken(request) {
+  const header = request.headers.get('cookie');
+  if (!header || header.length > 4096) denied();
+  const matches = header.split(';').map(value => value.trim()).filter(value => value.split('=', 1)[0] === SESSION_COOKIE);
+  if (matches.length !== 1) denied();
+  const token = matches[0].slice(SESSION_COOKIE.length + 1);
+  if (!validToken(token)) denied();
+  return token;
+}
+export function validateSessionPrincipal(value, now = Date.now(), adminPasswordLogin = false) {
+  if (!value || !uuid.test(value.id) || !uuid.test(value.sessionId) ||
+      !['SUPER_ADMIN', 'ADMIN', 'ATENDENTE'].includes(value.role) || !['password', 'pin', 'mfa', 'passkey'].includes(value.assurance) ||
+      !Number.isSafeInteger(value.authenticatedAt) || value.authenticatedAt > now ||
+      !Number.isSafeInteger(value.expiresAt) || value.expiresAt <= now || value.expiresAt <= value.authenticatedAt ||
+      value.expiresAt - value.authenticatedAt > MAX_AGE_SECONDS * 1000 ||
+      !Number.isSafeInteger(value.authorizationVersion) || value.authorizationVersion < 1 ||
+      (value.role !== 'ATENDENTE' && ['password', 'pin'].includes(value.assurance) && adminPasswordLogin!==true)) denied();
+  return Object.freeze({ ...(adminPasswordLogin===true&&['password', 'pin'].includes(value.assurance)?{adminPasswordLogin:true,...(value.assurance==='pin'?{adminPinLogin:true}:{})}:{}),id: value.id, sessionId: value.sessionId, role: value.role, assurance: value.assurance,
+    authenticatedAt: value.authenticatedAt, expiresAt: value.expiresAt, authorizationVersion: value.authorizationVersion });
+}
+export function createSessionService(settings, { client, now = () => Date.now() }) {
+  const { config, tokenKey } = settings;
+  // Constructor validates the private key/bindings, without issuing any session.
+  const tokens = createSessionTokens({ environment: config.environment, installationId: config.installationId, tokenKey });
+  const csrfKey = Buffer.from(tokenKey);
+  // Only principals created by this service instance can derive CSRF without
+  // repeating the same session RPC. No cache of authorization across requests.
+  const authenticated = new WeakMap();
+  const origin = config.environment === 'dev' ? devOrigin() : devOrigin({ APP_ENV: config.environment });
+  function csrf(rawToken) {
+    return createHmac('sha256', csrfKey).update(JSON.stringify(['csrf.v1', config.environment, config.installationId, rawToken])).digest('base64url');
+  }
+  function checkHost(request) { if (new URL(request.url).origin !== origin) denied(); }
+  async function resolve(request) {
+    checkHost(request);
+    const rawToken = readSessionToken(request), tokenHash = tokens.hash(rawToken);
+    const principal = validateSessionPrincipal(await client.readSession(tokenHash), now(), config.adminPasswordLogin===true);
+    return { principal, rawToken, tokenHash };
+  }
+  async function mutation(request) {
+    requireSameOriginMutation(request, origin);
+    const session = await resolve(request);
+    requireCsrfToken(request, csrf(session.rawToken));
+    return session;
+  }
+  return {
+    async authenticate(request) {
+      const { principal, tokenHash } = await resolve(request);
+      const result = Object.freeze({ ...principal, sessionTokenHash: tokenHash });
+      authenticated.set(result, tokenHash);
+      return result;
+    },
+    csrfFor(request, principal) {
+      checkHost(request);
+      const rawToken = readSessionToken(request);
+      if (!authenticated.has(principal) || authenticated.get(principal) !== tokens.hash(rawToken)) denied();
+      return csrf(rawToken);
+    },
+    async current(request) {
+      const { principal, rawToken } = await resolve(request);
+      return { user: { id: principal.id, role: principal.role, assurance: principal.assurance, expiresAt: principal.expiresAt }, csrfToken: csrf(rawToken) };
+    },
+    async logout(request) {
+      requireSameOriginMutation(request,origin);checkHost(request);const rawToken=readSessionToken(request);requireCsrfToken(request,csrf(rawToken));
+      await client.revokeSession(tokens.hash(rawToken));
+      return { revoked: true };
+    },
+    async revokeOthers(request) {
+      const { tokenHash } = await mutation(request);
+      await client.revokeOtherSessions(tokenHash);
+      return { revoked: true };
+    },
+  };
+}
+
+// Cookie/CSRF transport binding only, never a principal or permission grant.
+// Read-only bootstrap handlers MUST validate the fresh signed Google principal
+// and requirePermission before disclosing their data.
+export function sessionTransportContext(request,settings){
+  if(!['dev','prod'].includes(settings.config.environment)||new URL(request.url).origin!==(settings.config.environment==='dev'?devOrigin():devOrigin({APP_ENV:settings.config.environment})))denied();
+  const rawToken=readSessionToken(request),tokens=createSessionTokens({...settings.config,tokenKey:settings.tokenKey});
+  return {actor:{sessionTokenHash:tokens.hash(rawToken)},csrfToken:createHmac('sha256',settings.tokenKey).update(JSON.stringify(['csrf.v1',settings.config.environment,settings.config.installationId,rawToken])).digest('base64url')};
+}

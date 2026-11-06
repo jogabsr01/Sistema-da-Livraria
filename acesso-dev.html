@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Acesso — Livraria IPB</title>
+  <link rel="stylesheet" href="/acesso-dev.css">
+  <script src="/acesso-dev.js" defer></script>
+<link rel="stylesheet" href="/app-theme.css">
+</head>
+<body class="app-shell page-access">
+  <main>
+    <div class="access-heading"><a class="church-brand" href="/home-dev.html" aria-label="Livraria IPB — Início"><img class="church-brand-logo" src="/brand/ipb-jardim-bonfiglioli.png" width="252" height="81" alt="Igreja Presbiteriana JD Bonfiglioli"></a>
+    <h1>Acesso à sua conta</h1>
+    <p>Livraria IPB Jardim Bonfiglioli</p></div>
+    <div id="access-feedback">
+    <div id="access-progress" class="access-progress" role="status" aria-live="polite" hidden><span class="access-spinner" aria-hidden="true"></span><span>Aguarde…</span></div>
+    <p id="status" role="status" aria-live="polite">Conferindo disponibilidade…</p>
+    <button id="check-step" type="button" class="secondary" hidden>Conferir etapa salva</button>
+    <a id="environment-access" class="action-link secondary" href="/" target="_blank" rel="noopener" hidden>Autorizar acesso ao ambiente</a>
+    <details id="support-details" class="system-diagnostics" hidden>
+      <summary>Informações para o suporte</summary>
+      <p>Se precisar de ajuda, informe à administração o detalhe abaixo. Não envie sua senha nem o código do e-mail.</p>
+      <p id="access-diagnostic" class="diagnostic" hidden></p>
+      <button id="download-access-diagnostic" type="button" class="secondary">Baixar diagnóstico de acesso</button>
+    </details>
+    </div>
+    <section id="initial" hidden>
+      <form id="login-form" novalidate>
+        <label for="login-email">CPF ou e-mail cadastrado</label>
+        <input id="login-email" aria-describedby="login-email-error" type="text" autocomplete="username webauthn" autocapitalize="none" spellcheck="false" placeholder="Seu CPF ou e-mail" maxlength="254" required><p id="login-email-error" class="field-error" hidden></p>
+        <label for="login-password">Senha</label>
+        <div class="login-password-row"><div class="password-field"><input id="login-password" aria-describedby="login-password-error" type="password" autocomplete="current-password" required><button class="password-visibility" type="button" data-password-target="login-password" aria-controls="login-password" aria-label="Mostrar senha de entrada" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div><button id="biometric-login" type="button" class="secondary"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 11a8 8 0 0 1 16 0M7 11a5 5 0 0 1 10 0c0 4-.5 7-2 10M10 20c1-2 2-5 2-9M7 15c0 2-.4 3.5-1 5M20 14c0 2-.3 4-1 6"/></svg><span>Biometria</span></button></div>
+        <p id="login-password-error" class="field-error" hidden></p>
+        <div id="recovery-choice" class="recovery-choice"><a id="recovery-open" href="#recuperar-senha" class="forgot-password-link" role="button" aria-controls="recovery-form" aria-expanded="false">Esqueci minha senha</a></div>
+        <button>Entrar na minha conta</button>
+        <label class="remember-choice"><input id="remember-identifier" type="checkbox" checked> Lembrar meu CPF ou e-mail neste navegador</label>
+        <div class="first-access"><button id="first-access" type="button" class="secondary">É meu primeiro acesso</button></div>
+      </form>
+      <form id="recovery-form" novalidate hidden><h2>Recuperar sua senha</h2><p>Confirme o e-mail cadastrado e a confirmação pelo aparelho já cadastrado. As sessões antigas serão encerradas ao concluir. Sem acesso aos aparelhos cadastrados, use um código de recuperação que tenha guardado. Sem esse código, solicite verificação à administração.</p><label for="recovery-email">CPF ou e-mail cadastrado</label><input id="recovery-email" aria-describedby="recovery-email-error" autocomplete="username" maxlength="254" required><p id="recovery-email-error" class="field-error" hidden></p><button>Enviar código de recuperação</button></form>
+    </section>
+    <form id="email-form" hidden>
+      <h2>Confirme seu e-mail</h2>
+      <p id="email-code-help">Copie o código recebido e cole abaixo. O novo código tem 7 letras e números, vale por 15 minutos e só funciona neste navegador.</p>
+      <label for="email-code">Código do e-mail</label>
+      <input id="email-code" type="text" aria-describedby="email-code-help" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="43" required>
+      <button>Confirmar código</button>
+    </form>
+    <form id="password-form" hidden>
+      <h2>Crie sua senha</h2>
+      <p>Escolha uma senha nova. Não reutilize uma senha enviada por mensagem.</p>
+      <fieldset id="rescue-choice" hidden><legend>Não consegue confirmar pelo aparelho?</legend><label><input id="use-rescue" type="checkbox"> Usar um código de recuperação guardado</label><div id="rescue-inputs" hidden><label for="rescue-code">Código de recuperação</label><input id="rescue-code" type="password" autocomplete="off" maxlength="80" spellcheck="false"><button id="rescue-confirm" type="button">Validar código de recuperação</button><p id="rescue-status" role="status"></p></div></fieldset><p id="password-rules">Use de 8 a 40 caracteres. Espaços, símbolos e letras são aceitos como você digitar.</p><label for="new-password">Senha</label>
+      <div class="password-field"><input id="new-password" aria-describedby="password-rules" type="password" autocomplete="new-password" required><button class="password-visibility" type="button" data-password-target="new-password" aria-controls="new-password" aria-label="Mostrar nova senha" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+      <label for="confirm-password">Repita a senha</label>
+      <div class="password-field"><input id="confirm-password" type="password" autocomplete="new-password" required><button class="password-visibility" type="button" data-password-target="confirm-password" aria-controls="confirm-password" aria-label="Mostrar confirmação da senha" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+      <button>Salvar senha e continuar</button>
+    </form>
+    <section id="passkey" hidden>
+      <h2>Confirme seu acesso</h2>
+      <p id="passkey-help">Use a biometria ou o desbloqueio do seu aparelho para entrar na livraria.</p>
+      <button id="passkey-button" type="button" aria-describedby="passkey-help">Confirmar no meu aparelho</button>
+    </section>
+    <section id="retry" hidden>
+      <h2>Concluir entrada</h2>
+      <p id="completion-help">Estamos finalizando sua entrada. Você não precisa repetir a biometria.</p>
+      <button id="retry-button" type="button">Tentar concluir entrada</button>
+    </section>
+    <section id="complete" hidden>
+      <h2>Identidade confirmada</h2>
+      <p id="identity-result"></p>
+      <nav class="complete-actions" aria-label="Acessar a livraria">
+        <a id="enter-app" class="action-link app-entry" href="/home-dev.html"><span>Entrar no app Livraria</span><span aria-hidden="true">→</span></a>
+        <a class="action-link secondary" href="/meu-perfil-dev.html">Meu perfil</a>
+        <span id="team-link" hidden><a class="action-link secondary" href="/equipe-dev.html">Gerenciar equipe</a></span>
+      </nav>
+    </section>
+    <button id="restart" type="button" class="secondary" hidden>Voltar ao início</button>
+    <details class="access-help"><summary>Precisa de ajuda ou suporte?</summary><p>Confira seu CPF ou e-mail cadastrado. Para recuperar o acesso ou atualizar seus dados, procure a administração da livraria. Nunca compartilhe sua senha ou os códigos recebidos.</p></details>
+  </main>
+</body>
+</html>

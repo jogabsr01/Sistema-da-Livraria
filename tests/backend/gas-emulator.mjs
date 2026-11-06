@@ -1,0 +1,117 @@
+// CONTRACT DOUBLE ONLY: no Google APIs, IAM, quotas or real Drive persistence.
+import vm from 'node:vm';
+import { readFileSync } from 'node:fs';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
+export function createGasEmulator(initialProperties = {}, {sourceMode = process.env.LIVRARIA_TEST_GAS_SOURCE || 'modules'} = {}) {
+  let counter = 0, backupCount = 0, writes = 0, owner = 'owner@example.invalid';
+  let failOnSheet = null, locked = false;
+  const iterator=list=>{let i=0;return {hasNext:()=>i<list.length,next:()=>list[i++]};};
+  const triggers=[];
+  const resources = new Map(), sheets = new Map(), props = { ...initialProperties }, outbox = [];
+  let mailQuota = 100, mailFailure = false, activeOwner=null;
+  // Faithful-enough ScriptCache double: in-memory, string-only, TTL-expiring.
+  // No quotas or cross-execution persistence are simulated; tests that need
+  // staleness drive the clock explicitly via cacheClock.
+  let cacheClock = () => Date.now();
+  const cacheStore = new Map();
+  const scriptCache = {
+    get(key) {
+      const entry = cacheStore.get(key);
+      if (!entry) return null;
+      if (entry.expiresAt <= cacheClock()) { cacheStore.delete(key); return null; }
+      return entry.value;
+    },
+    put(key, value, ttlSeconds) {
+      if (typeof value !== 'string') throw new Error('INVALID_CACHE_VALUE');
+      const ttl = Number.isSafeInteger(ttlSeconds) ? ttlSeconds : 600;
+      cacheStore.set(key, { value, expiresAt: cacheClock() + ttl * 1000 });
+    },
+    remove(key) { cacheStore.delete(key); },
+  };
+  class Sheet {
+    constructor(name) { this.name = name; this.rows = []; this.formats = []; }
+    getName(){return this.name;}
+    getLastRow() { let n = this.rows.length; while (n && !this.rows[n - 1].some(v => v !== '' && v !== undefined)) n--; return n; }
+    getLastColumn() { return Math.max(0, ...this.rows.map(r => r.length)); }
+    getMaxRows() { return 1000; }
+    setFrozenRows() { return this; }
+    getRange(row, col, height, width) {
+      return {
+        getValues: () => Array.from({ length: height }, (_, i) => Array.from({ length: width }, (_, j) => this.rows[row - 1 + i]?.[col - 1 + j] ?? '')),
+        setValues: values => { writes++; values.forEach((cells, i) => { this.rows[row - 1 + i] ||= []; cells.forEach((value, j) => this.rows[row - 1 + i][col - 1 + j] = value); }); },
+        clearContent: () => { writes++; for (let i = 0; i < height; i++) for (let j = 0; j < width; j++) if (this.rows[row - 1 + i]) this.rows[row - 1 + i][col - 1 + j] = ''; },
+        setNumberFormat: format => { this.formats.push({ row, col, height, width, format }); },
+      };
+    }
+    appendRow(values) { writes++; this.rows[this.getLastRow()] = [...values]; return this; }
+  }
+  class Resource {
+    constructor(kind, name) { this.id = `${kind}_${++counter}_${'x'.repeat(24)}`; this.kind = kind; this.name = name; this.description = ''; this.sharing = 'private'; resources.set(this.id, this); }
+    getId() { return this.id; }
+    getDescription() { return this.description; }
+    getSharingAccess() { return this.sharing; }
+    getName() { return this.name; }
+    getEditors(){return this.editors||[];}
+    getViewers(){return this.viewers||[];}
+    setContent(v){this.bytes=Buffer.from(v);writes++;return this;}
+    getFiles(){return iterator([...resources.values()].filter(r=>r.parent===this.id&&r.kind!=='folder'));}
+    getMimeType() { return this.mime || ''; }
+    getSize() { return this.bytes?.length || 0; }
+    getParents() { const list = this.parent ? [resources.get(this.parent)] : []; let i=0; return {hasNext:()=>i<list.length,next:()=>list[i++]}; }
+    getBlob() { return blob(this.bytes,this.mime,this.name); }
+    getFilesByName(name) { const list=[...resources.values()].filter(r=>r.parent===this.id&&r.name===name&&r.kind==='image');let i=0;return{hasNext:()=>i<list.length,next:()=>list[i++]}; }
+    createFile(value) { const file = new Resource('image',value.getName());file.bytes=Buffer.from(value.getBytes());file.mime=value.getContentType();file.parent=this.id;writes++;return file; }
+    setDescription(value) { writes++; this.description = value; return this; }
+    moveTo(folder) { this.parent = folder.id; return this; }
+    createFolder(name) { const r = new Resource('folder', name); r.parent = this.id; return r; }
+    makeCopy(name, folder) {
+      backupCount++;
+      const r = new Resource('backup', name); r.parent = folder.id; r.description=this.description; r.mime=this.mime; if(this.bytes)r.bytes=Buffer.from(this.bytes);
+      r.snapshot = sheets.has(this.id)?JSON.parse(JSON.stringify([...sheets.get(this.id).tables].map(([name, sheet]) => [name, sheet.rows]))):null;
+      if(r.snapshot){const ss=new Spreadsheet(r);for(const [n,rows]of r.snapshot){const sheet=new Sheet(n);sheet.rows=JSON.parse(JSON.stringify(rows));ss.tables.set(n,sheet);}sheets.set(r.id,ss);}
+      return r;
+    }
+  }
+  class Spreadsheet {
+    constructor(file) { this.file = file; this.tables = new Map(); }
+    getId() { return this.file.id; }
+    getSheets(){return [...this.tables.values()];}
+    deleteSheet(s){this.tables.delete(s.name);writes++;}
+    getSheetByName(name) { return this.tables.get(name) || null; }
+    insertSheet(name) {
+      if (name === failOnSheet) throw new Error('INJECTED_STORAGE_FAILURE');
+      writes++; const s = new Sheet(name); this.tables.set(name, s); return s;
+    }
+  }
+  const blob = (value,mime='',name='') => {
+    const bytes = Buffer.isBuffer(value) || Array.isArray(value) ? Buffer.from(value) : Buffer.from(String(value), 'utf8');
+    return { getBytes: () => [...bytes], getDataAsString: () => bytes.toString('utf8'),getContentType:()=>mime,getName:()=>name };
+  };
+  const context = vm.createContext({
+    Date, JSON, Object, Array, Number, String, Math, Error, Set, console: { info() {} },
+    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...props }), getProperty: key => props[key] || null, setProperty: (key, value) => { props[key] = value; }, setProperties: values => { Object.assign(props,values); }, deleteProperty:key=>{delete props[key];} }) },
+    Session: { getEffectiveUser: () => ({ getEmail: () => owner }), getActiveUser:()=>({getEmail:()=>activeOwner??owner}) },
+    LockService: { getScriptLock: () => ({ tryLock: () => { if (locked) return false; locked = true; return true; }, releaseLock: () => { locked = false; } }) },
+    DriveApp: { Access: { PRIVATE: 'private' }, createFolder: name => new Resource('folder', name), getFolderById: id => { const r = resources.get(id); if (r?.kind !== 'folder') throw new Error('UNKNOWN_FOLDER'); return r; }, getFileById: id => { const r = resources.get(id); if (!r) throw new Error('UNKNOWN_FILE'); return r; } },
+    SpreadsheetApp: { create: name => { const f = new Resource('sheet', name), ss = new Spreadsheet(f); sheets.set(f.id, ss); return ss; }, openById: id => { if (!sheets.has(id)) throw new Error('UNKNOWN_SHEET'); return sheets.get(id); }, flush() {} },
+    Utilities: { newBlob: blob, base64Encode: value => Buffer.from(value).toString('base64'), base64Decode: value => [...Buffer.from(value, 'base64')], computeHmacSha256Signature: (value, key) => [...createHmac('sha256', Buffer.from(key)).update(Buffer.from(value)).digest()], computeDigest: (_, value) => [...createHash('sha256').update(Array.isArray(value)?Buffer.from(value):value).digest()], DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF-8' } },
+    ContentService: { MimeType: { JSON: 'application/json' }, createTextOutput: text => ({ text, setMimeType() { return this; } }) },
+    ScriptApp:{getProjectTriggers:()=>[...triggers],deleteTrigger:t=>{triggers.splice(triggers.indexOf(t),1);},newTrigger:name=>{let hours;const builder={timeBased:()=>builder,everyHours:n=>{hours=n;return builder;},create:()=>{const id=randomUUID(),t={getUniqueId:()=>id,getHandlerFunction:()=>name,hours};triggers.push(t);return t;}};return builder;}},
+    MailApp: { getRemainingDailyQuota: () => mailQuota, sendEmail: value => { if (mailFailure) throw Error('FAKE_MAIL_FAILURE'); outbox.push(value); mailQuota--; } },
+    CacheService: { getScriptCache: () => scriptCache },
+  });
+  context.Utilities.getUuid = randomUUID;
+  if(sourceMode==='single') vm.runInContext(readFileSync(new URL('../../instalacao-google-dev/CodigoUnico.gs.txt',import.meta.url),'utf8'),context);
+  else if(sourceMode==='modules') {
+  for (const name of ['Schema.gs', 'Maintenance.gs', 'Code.gs', 'ConfigurationAudit.gs', 'Sales.gs', 'Stock.gs', 'Notifications.gs', 'SessionStore.gs', 'AuthControl.gs', 'PasskeyStore.gs','PasskeyManagement.gs', 'OwnerAccess.gs', 'Recovery.gs','EmergencyRecovery.gs', 'Profile.gs', 'EmailChange.gs','Niches.gs','Schedules.gs','Audit.gs','SecurityAudit.gs','Reports.gs','CustomerInsights.gs', 'Staff.gs', 'Customers.gs', 'Operations.gs', 'Catalog.gs', 'CoverPhotos.gs']) vm.runInContext(readFileSync(new URL(`../../google-apps-script/${name}`, import.meta.url), 'utf8'), context);
+  } else throw Error('INVALID_TEST_GAS_SOURCE_MODE');
+  return { context, props, resources, sheets, outbox,
+    call(name, ...args) { return context[name](...args); },
+    post(envelope) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(envelope) } }).text); },
+    get backupCount() { return backupCount; }, get writes() { return writes; },
+    set failOnSheet(value) { failOnSheet = value; }, set locked(value) { locked = value; }, set owner(value) { owner = value; },
+    set activeOwner(value){activeOwner=value;},
+    set mailQuota(value) { mailQuota = value; }, set mailFailure(value) { mailFailure = value; },
+    set cacheClock(fn) { cacheClock = fn; }, get cacheStore() { return cacheStore; },
+  };
+}
