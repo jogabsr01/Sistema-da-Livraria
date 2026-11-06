@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Production build / local dist
+dist/
+build/
+
+# Vercel & Netlify local cache
+.vercel/
+.netlify/
+
+# Environment variables
+.env*.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+firestore-debug.log
+
+# OS / Editor artifacts
+.DS_Store
+.agents/
+work/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.env.production

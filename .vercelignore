@@ -1,0 +1,7 @@
+node_modules
+.netlify
+dist
+dist.zip
+.git
+build
+.DS_Store
