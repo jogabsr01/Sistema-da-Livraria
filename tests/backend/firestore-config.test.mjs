@@ -75,6 +75,15 @@ test('service account parsing repairs literal PEM line breaks but rejects unrela
   }
 });
 
+test('service account accepts surrounding quotes and rejects malformed quoted input', () => {
+  const base = { WORKSPACE_STORAGE_MODE: 'firestore', WORKSPACE_FIRESTORE_PROJECT_ID: 'livraria-ipb-dev', WORKSPACE_FIRESTORE_LOCATION: 'southamerica-east1' };
+  const json = JSON.stringify({ project_id: 'livraria-ipb-dev', client_email: 'test@example.invalid', private_key: 'line1\nline2' });
+  for (const value of ["'" + json + "'", '"' + json + '"', JSON.stringify(json)]) {
+    assert.equal(loadFirestoreSettings({ ...base, WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: value }).credentials.private_key, 'line1\nline2');
+  }
+  assert.throws(() => loadFirestoreSettings({ ...base, WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: "'{invalid}'" }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+});
+
 test('deployed and production configurations refuse an emulator host', () => {
   const base={WORKSPACE_STORAGE_MODE:'firestore',WORKSPACE_FIRESTORE_PROJECT_ID:'livraria-ipb-dev',WORKSPACE_FIRESTORE_LOCATION:'southamerica-east1',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8080'};
   for(const env of [{...base,NETLIFY:'true'},{...base,APP_ENV:'prod'}]) assert.throws(()=>loadFirestoreSettings(env),{code:'FIRESTORE_CONFIGURATION_UNAVAILABLE'});

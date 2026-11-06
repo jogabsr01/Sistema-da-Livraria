@@ -20,7 +20,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { createFirestoreDb } from '../backend/firestore-client.mjs';
-import { loadFirestoreSettings } from '../backend/firestore-config.mjs';
+import { loadFirestoreSettings, parseServiceAccountJson } from '../backend/firestore-config.mjs';
 
 const INSTALLATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -100,7 +100,30 @@ function requiredEnv(name) {
   return value;
 }
 
+export function logBootstrapPreflight(env = process.env, log = console.log) {
+  for (const name of ['APP_ENV', 'WORKSPACE_STORAGE_MODE', 'WORKSPACE_INSTALLATION_ID', 'WORKSPACE_HMAC_SECRET',
+    'WORKSPACE_FIRESTORE_PROJECT_ID', 'WORKSPACE_FIREBASE_PROJECT_ID', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT',
+    'WORKSPACE_FIRESTORE_DATABASE', 'WORKSPACE_FIRESTORE_LOCATION', 'WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON',
+    'GOOGLE_APPLICATION_CREDENTIALS', 'FIRESTORE_EMULATOR_HOST', 'WORKSPACE_EMAIL_DELIVERY_KEY']) {
+    log(`[DEBUG] ${name} presente: ${typeof env[name] === 'string' && env[name].length > 0}`);
+  }
+  let account;
+  try { account = parseServiceAccountJson(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON); } catch {}
+  const hasProject = typeof account?.project_id === 'string' && account.project_id.length > 0;
+  const hasKey = typeof account?.private_key === 'string' && account.private_key.length > 0;
+  const projectIds = ['WORKSPACE_FIRESTORE_PROJECT_ID', 'WORKSPACE_FIREBASE_PROJECT_ID', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT']
+    .map(name => env[name]).filter(value => typeof value === 'string' && value.length > 0);
+  const matches = hasProject && projectIds.length > 0 && projectIds.every(value => value === account.project_id);
+  log(`[DEBUG] SERVICE_ACCOUNT_IS_VALID_JSON: ${!!account}`);
+  log(`[DEBUG] SERVICE_ACCOUNT_HAS_PROJECT_ID: ${hasProject}`);
+  log(`[DEBUG] SERVICE_ACCOUNT_HAS_PRIVATE_KEY: ${hasKey}`);
+  log(`[DEBUG] SERVICE_ACCOUNT_PROJECT_MATCHES_ENV: ${matches}`);
+  if (!account) log('[DEBUG] CONFIG_REJECTED_REASON: MALFORMED_JSON');
+  else if (hasProject && projectIds.length && !matches) log('[DEBUG] CONFIG_REJECTED_REASON: MISMATCHED_PROJECT_ID');
+}
+
 async function main() {
+  logBootstrapPreflight();
   const email = parseEmailArgument(process.argv.slice(2));
   if (!email) throw new Error('uso: node scripts/firestore-bootstrap-owner.mjs --email=dono@exemplo.com');
   const environment = requiredEnv('APP_ENV');

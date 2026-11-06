@@ -21,17 +21,29 @@ function storageMode(env) {
   return mode;
 }
 
+export function parseServiceAccountJson(value) {
+  if (!text(value)) throw new Error('MALFORMED_JSON');
+  let source = value.trim(), parsed;
+  try { parsed = JSON.parse(source); }
+  catch {
+    if ((source.startsWith("'") && source.endsWith("'")) || (source.startsWith('"{') && source.endsWith('}"'))) source = source.slice(1, -1);
+    // dotenv loaders can turn JSON-escaped newlines into literal line breaks
+    // inside the PEM string. Repair only that field; reject all other malformed JSON.
+    const repaired = source.replace(/("private_key"\s*:\s*")([^"\\]*(?:\\.[^"\\]*)*)(")/g,
+      (_match, prefix, key, suffix) => prefix + key.replace(/\r\n|\r|\n/g, '\\n') + suffix);
+    try { parsed = JSON.parse(repaired); } catch { throw new Error('MALFORMED_JSON'); }
+  }
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch { throw new Error('MALFORMED_JSON'); }
+  }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('MALFORMED_JSON');
+  return parsed;
+}
+
 function parseCredentials(value) {
   if (!text(value)) return null;
   let parsed;
-  try { parsed = JSON.parse(value); }
-  catch {
-    // dotenv loaders can turn JSON-escaped newlines into literal line breaks
-    // inside the PEM string. Repair only that field; reject all other malformed JSON.
-    const repaired = value.replace(/("private_key"\s*:\s*")([^"\\]*(?:\\.[^"\\]*)*)(")/g,
-      (_match, prefix, key, suffix) => prefix + key.replace(/\r\n|\r|\n/g, '\\n') + suffix);
-    try { parsed = JSON.parse(repaired); } catch { unavailable(); }
-  }
+  try { parsed = parseServiceAccountJson(value); } catch { unavailable(); }
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object' ||
       typeof parsed.client_email !== 'string' || !parsed.client_email ||
       typeof parsed.private_key !== 'string' || !parsed.private_key ||

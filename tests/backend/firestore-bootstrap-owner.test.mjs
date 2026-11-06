@@ -1,8 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bootstrapOwner, ownerEmailIndex } from '../../scripts/firestore-bootstrap-owner.mjs';
+import { bootstrapOwner, ownerEmailIndex, logBootstrapPreflight } from '../../scripts/firestore-bootstrap-owner.mjs';
 
 const identity = { environment: 'dev', installationId: '44444444-4444-4444-8444-444444444444', secret: 'ab'.repeat(32) };
+
+test('preflight logs presence only, never secret values', () => {
+  const lines = [];
+  logBootstrapPreflight({ WORKSPACE_HMAC_SECRET: 'secret-test-value' }, line => lines.push(line));
+  assert.ok(lines.includes('[DEBUG] WORKSPACE_HMAC_SECRET presente: true'));
+  assert.ok(lines.includes('[DEBUG] WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON presente: false'));
+  assert.ok(!lines.join('\n').includes('secret-test-value'));
+});
+
+test('preflight reports account parse and project mismatch without values', () => {
+  const account = JSON.stringify({ project_id: 'private-project', private_key: 'private-key' });
+  for (const [value, reason] of [[account, 'MISMATCHED_PROJECT_ID'], ['not-json-secret', 'MALFORMED_JSON']]) {
+    const lines = [];
+    logBootstrapPreflight({ WORKSPACE_FIRESTORE_PROJECT_ID: 'other-project', WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: value }, line => lines.push(line));
+    assert.ok(lines.includes(`[DEBUG] CONFIG_REJECTED_REASON: ${reason}`));
+    assert.ok(!lines.join('\n').includes('private-project'));
+    assert.ok(!lines.join('\n').includes('private-key'));
+    assert.ok(!lines.join('\n').includes('not-json-secret'));
+  }
+});
 
 function fakeDb(initial = {}) {
   const values = new Map(Object.entries(initial));
