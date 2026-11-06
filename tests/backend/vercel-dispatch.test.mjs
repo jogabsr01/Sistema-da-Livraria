@@ -43,6 +43,29 @@ test('Vercel production accepts its exact origin but rejects a foreign origin', 
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('Vercel owner access passes both origin checks after settings load', () => {
+  const script = `
+    const { createOwnerAccessHandler } = await import('./backend/owner-access.mjs');
+    let reachedClient = false;
+    const handler = createOwnerAccessHandler({
+      loadSettings: () => ({ config: { environment: 'prod' } }),
+      createClient: () => { reachedClient = true; throw new Error('STOP_AFTER_ORIGIN_CHECK'); },
+    });
+    const url = 'https://livrariaipjb.vercel.app/api/v1/access/state';
+    const response = await handler(new Request(url, { headers: { origin: 'https://livrariaipjb.vercel.app' } }));
+    if (!reachedClient || response.status === 403) throw new Error('production origin rejected');
+    reachedClient = false;
+    const rejected = await handler(new Request('https://attacker.example/api/v1/access/state'));
+    if (rejected.status !== 403 || reachedClient) throw new Error('foreign origin accepted');
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: new URL('../../', import.meta.url),
+    env: { ...process.env, APP_ENV: 'prod', VERCEL: '1', WORKSPACE_LOCAL_LAB: '' },
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test('health and unknown routes retain status and JSON responses', async () => {
   for (const [path, method, status, body] of [
     ['/api/v1/health', 'GET', 200, { ok: true }],

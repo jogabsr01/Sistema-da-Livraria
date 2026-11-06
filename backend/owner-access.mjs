@@ -333,7 +333,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       const method = operation === 'state' ? 'GET' : 'POST';
       if (request.method !== method) { const result = json({ error: { code: 'METHOD_NOT_ALLOWED', requestId } }, 405); result.headers.set('allow', method); return result; }
       const settings = (dependencies.loadSettings || loadOwnerAccessSettings)();
-      const accessOrigin = devOrigin(settings.config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
+      const accessOrigin = devOrigin(settings.config.environment === 'prod' ? { APP_ENV: 'prod', VERCEL: process.env.VERCEL } : process.env);
       if (new URL(request.url).origin !== accessOrigin) throw new ApiError(403, 'FORBIDDEN');
       settingsLoaded = true;
       client=(dependencies.createClient || createWorkspaceClient)(settings.config, { deadlineAt, ...(optionsRequest||completionRequest||loginRequest?{timeoutMs:COMPLETION_REQUEST_BUDGET_MS}:{}) });
