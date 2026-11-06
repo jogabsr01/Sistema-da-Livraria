@@ -86,8 +86,8 @@ body.page-access{min-height:100vh;min-height:100dvh;padding:16px;background:radi
 .page-access .first-access{margin-top:16px;padding-top:16px}
 .app-shell.page-access #first-access{background:transparent;border:1px solid #afc9b8;color:#205b43;box-shadow:none}
 .app-shell.page-access #first-access:hover{background:#f0f6f1}
-.app-shell.page-access .recovery-choice{text-align:center;margin:0 0 12px}
-.app-shell.page-access #login-form .forgot-password-link{display:block!important;visibility:visible!important;opacity:1!important;width:fit-content;min-height:44px;line-height:44px;margin:10px auto 16px!important;padding:0 4px;border:none!important;border-radius:0;background:transparent!important;box-shadow:none!important;color:#1b4d3e!important;font-size:.83rem;font-weight:500;text-align:center!important;text-decoration:underline!important;text-decoration-color:#1b4d3e!important;text-underline-offset:4px!important;cursor:pointer!important}
+.app-shell.page-access .recovery-choice{text-align:center;margin:0}
+.app-shell.page-access #login-form .forgot-password-link{display:block!important;visibility:visible!important;opacity:1!important;width:fit-content;min-height:44px;line-height:44px;margin:8px auto 12px auto!important;padding:0 4px;border:none!important;border-radius:0;background:transparent!important;box-shadow:none!important;color:#1b4d3e!important;font-size:.83rem;font-weight:500;text-align:center!important;text-decoration:underline!important;text-decoration-color:#1b4d3e!important;text-underline-offset:4px!important;cursor:pointer!important}
 .app-shell.page-access #login-form>label:not(.remember-choice){margin:18px 0 7px;font-size:.88rem;color:#294d3d}
 .app-shell.page-access #login-form>label:first-child{margin-top:0}
 .app-shell.page-access #login-form input:not([type=checkbox]){min-height:50px;border:1px solid #d5e2d9;border-radius:12px;background:#fff;box-shadow:none}
@@ -98,7 +98,7 @@ body.page-access{min-height:100vh;min-height:100dvh;padding:16px;background:radi
 .app-shell.page-access #biometric-login{min-height:50px;border-color:#dce8df;border-radius:12px;background:#f8fbf9;box-shadow:none}
 .app-shell.page-access #login-form>button[type=submit],.app-shell.page-access #login-form>button:not([type]){margin:0 0 4px;min-height:50px;border-radius:12px;box-shadow:0 5px 14px #173b301a}
 .app-shell.page-access #login-form .remember-choice{margin:16px 0 0;color:#52685b}
-.app-shell.page-access #login-form .first-access{margin-top:20px;padding-top:18px;border-top-color:#edf2ee}
+.app-shell.page-access #login-form .first-access{margin-top:12px;padding-top:12px;border-top-color:#edf2ee}
 .app-shell.page-access #first-access{margin:0;min-height:50px;border-color:#d5e2d9;border-radius:12px;font-weight:600}
 .page-access .access-help{margin-top:24px;text-align:center;border-top:1px solid #e4ece5}
 .page-access .access-help summary{display:inline-block;padding:20px 0 4px;color:#526f5e;font-size:.83rem;text-decoration:underline;text-underline-offset:3px}
