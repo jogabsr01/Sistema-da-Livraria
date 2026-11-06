@@ -98,7 +98,7 @@ export function createSessionService(settings, { client, now = () => Date.now() 
 // Read-only bootstrap handlers MUST validate the fresh signed Google principal
 // and requirePermission before disclosing their data.
 export function sessionTransportContext(request,settings){
-  if(!['dev','prod'].includes(settings.config.environment)||new URL(request.url).origin!==(settings.config.environment==='dev'?devOrigin():devOrigin({APP_ENV:settings.config.environment})))denied();
+  if(!['dev','prod'].includes(settings.config.environment)||new URL(request.url).origin!==(settings.config.environment==='dev'?devOrigin():devOrigin({APP_ENV:settings.config.environment,VERCEL:process.env.VERCEL})))denied();
   const rawToken=readSessionToken(request),tokens=createSessionTokens({...settings.config,tokenKey:settings.tokenKey});
   return {actor:{sessionTokenHash:tokens.hash(rawToken)},csrfToken:createHmac('sha256',settings.tokenKey).update(JSON.stringify(['csrf.v1',settings.config.environment,settings.config.installationId,rawToken])).digest('base64url')};
 }

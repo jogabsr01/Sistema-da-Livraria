@@ -14,10 +14,11 @@ export function loadLocalLabPolicy(env = process.env) {
 }
 
 export const PRODUCTION_ORIGIN = 'https://merry-chimera-49a1f3.netlify.app';
+export const VERCEL_PRODUCTION_ORIGIN = 'https://livrariaipjb.vercel.app';
 export const DEVELOPMENT_ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app';
 export function devOrigin(env = process.env) {
   if (env.WORKSPACE_LOCAL_LAB !== undefined && env.WORKSPACE_LOCAL_LAB !== '') return loadLocalLabPolicy(env).origin;
-  if (env.APP_ENV === 'prod') return PRODUCTION_ORIGIN;
+  if (env.APP_ENV === 'prod') return env.VERCEL === '1' ? VERCEL_PRODUCTION_ORIGIN : PRODUCTION_ORIGIN;
   if (env.APP_ENV === undefined || env.APP_ENV === '' || env.APP_ENV === 'dev') return DEVELOPMENT_ORIGIN;
   throw Error('ORIGIN_CONFIGURATION_INVALID');
 }

@@ -1,7 +1,7 @@
 import { ApiError } from './errors.mjs';
 import { deploymentMetadata } from './deployment-metadata.mjs';
 import { loadFirestoreSettings } from './firestore-config.mjs';
-import { loadLocalLabPolicy } from './local-lab-policy.mjs';
+import { loadLocalLabPolicy, devOrigin } from './local-lab-policy.mjs';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RESOURCE = /^[A-Za-z0-9_-]{20,160}$/;
 function invalid(env, fields = []) {
@@ -30,8 +30,8 @@ export function loadConfig(env = process.env, built = env === process.env ? depl
   }
   if (env.WORKSPACE_BACKEND_ENABLED !== 'true') throw new ApiError(503, 'SERVICE_NOT_ACTIVATED');
   const environment = env.APP_ENV;
-  const expectedHost = environment === 'dev' ? 'dev--merry-chimera-49a1f3.netlify.app' : 'merry-chimera-49a1f3.netlify.app';
   if (!['dev', 'prod'].includes(environment)) invalid(env, ['APP_ENV']);
+  const expectedHost = new URL(devOrigin({ APP_ENV: environment, VERCEL: env.VERCEL })).hostname;
   // Netlify build variables are not guaranteed in Functions. Missing context
   // and branch inherit the selected environment, never request-derived input.
   env = { ...env, CONTEXT: env.CONTEXT || (environment === 'prod' ? 'production' : 'branch-deploy'),

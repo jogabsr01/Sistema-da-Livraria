@@ -31,7 +31,7 @@ export function validatePasskeyResponse(value) {
 // permitting registration; login must verify PIN + durable rate limits first.
 export function createPasskeyService(settings, { client }) {
   if (!['dev', 'prod'].includes(settings?.config?.environment)) throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
-  const originEnv = settings.config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env;
+  const originEnv = settings.config.environment === 'prod' ? { APP_ENV: 'prod', VERCEL: process.env.VERCEL } : process.env;
   const ORIGIN = devOrigin(originEnv), RP_ID = devRpId(originEnv);
   return {
     async registrationOptions(input) {

@@ -65,7 +65,7 @@ function readCookie(request) {
 export function createOwnerAccessService(settings, { client, stagedCompletion = false, segmentedCompletion = false, passwordLogin = false, pinLogin = passwordLogin } = {}) {
   const { config, guardKey, tokenKey, pepper } = settings;
   if (!['dev', 'prod'].includes(config.environment) || ![guardKey, tokenKey, pepper].every(key => Buffer.isBuffer(key) && key.length === 32)) throw new ApiError(503, 'IDENTITY_CONFIGURATION_UNAVAILABLE');
-  const accessOrigin = devOrigin(config.environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
+  const accessOrigin = devOrigin(config.environment === 'prod' ? { APP_ENV: 'prod', VERCEL: process.env.VERCEL } : process.env);
   const vault=settings.cpfEnabled||settings.staffEnabled?createPersonalDataVault(settings):null;
   const identifier=value=>{if(typeof value!=='string')throw new ApiError(400,'INVALID_AUTH_REQUEST');if(value.includes('@'))return email(value);if(!vault)throw new ApiError(503,'ACCESS_CPF_NOT_AVAILABLE');return normalizeCpf(value);};
   async function staffLookup(value){

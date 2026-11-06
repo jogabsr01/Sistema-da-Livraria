@@ -3,9 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import {renderAppHeader} from './app-header.mjs';
-import { DEVELOPMENT_ORIGIN, PRODUCTION_ORIGIN } from '../backend/local-lab-policy.mjs';
+import { DEVELOPMENT_ORIGIN, PRODUCTION_ORIGIN, VERCEL_PRODUCTION_ORIGIN } from '../backend/local-lab-policy.mjs';
 
-export const originBootstrap = `globalThis.LivrariaOrigin=Object.freeze({development:${JSON.stringify(DEVELOPMENT_ORIGIN)},production:${JSON.stringify(PRODUCTION_ORIGIN)},current(origin){return origin===this.development||origin===this.production?origin:null;}});\n`;
+export const originBootstrap = `globalThis.LivrariaOrigin=Object.freeze({development:${JSON.stringify(DEVELOPMENT_ORIGIN)},production:${JSON.stringify(process.env.VERCEL === '1' ? VERCEL_PRODUCTION_ORIGIN : PRODUCTION_ORIGIN)},current(origin){return origin===this.development||origin===this.production?origin:null;}});\n`;
 
 export async function build(root = fileURLToPath(new URL('../', import.meta.url))) {
   const destination = resolve(root, 'dist');
