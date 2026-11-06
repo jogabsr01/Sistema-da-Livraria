@@ -15,6 +15,19 @@ test('preflight logs presence only, never secret values', () => {
   assert.ok(!lines.join('\n').includes('secret-test-value'));
 });
 
+test('production preflight reports key and configuration validity without exposing secrets', () => {
+  const lines = [];
+  logBootstrapPreflight({ APP_ENV: 'prod', WORKSPACE_FIRESTORE_PROJECT_ID: 'livraria-ipb-dev',
+    WORKSPACE_FIRESTORE_LOCATION: 'southamerica-east1', WORKSPACE_EMAIL_DELIVERY_KEY: 'private-invalid-key',
+    WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: JSON.stringify({ project_id: 'livraria-ipb-dev', client_email: 'invalid', private_key: 'private-key-value' }) }, line => lines.push(line));
+  assert.ok(lines.includes('[DEBUG] SERVICE_ACCOUNT_RSA_KEY_VALID: false'));
+  assert.ok(lines.includes('[DEBUG] SERVICE_ACCOUNT_EMAIL_VALID: false'));
+  assert.ok(lines.includes('[DEBUG] EMAIL_DELIVERY_KEY_FORMAT_VALID: false'));
+  assert.ok(lines.includes('[DEBUG] FIRESTORE_LOCATION_FORMAT_VALID: true'));
+  assert.ok(!lines.join('\n').includes('private-key-value'));
+  assert.ok(!lines.join('\n').includes('private-invalid-key'));
+});
+
 test('preflight reports account parse and project mismatch without values', () => {
   const account = JSON.stringify({ project_id: 'private-project', private_key: 'private-key' });
   for (const [value, reason] of [[account, 'MISMATCHED_PROJECT_ID'], ['not-json-secret', 'MALFORMED_JSON']]) {

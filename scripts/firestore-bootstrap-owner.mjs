@@ -17,7 +17,7 @@
 // WORKSPACE_FIRESTORE_DATABASE, WORKSPACE_FIRESTORE_LOCATION, and either
 // WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON (real project) or
 // FIRESTORE_EMULATOR_HOST (local emulator, for a dry run).
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, createPrivateKey, randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { createFirestoreDb } from '../backend/firestore-client.mjs';
 import { loadFirestoreSettings, parseServiceAccountJson, readServiceAccountSource } from '../backend/firestore-config.mjs';
@@ -123,6 +123,17 @@ export function logBootstrapPreflight(env = process.env, log = console.log) {
   log(`[DEBUG] SERVICE_ACCOUNT_PROJECT_MATCHES_ENV: ${matches}`);
   if (!account) log(`[DEBUG] CONFIG_REJECTED_REASON: ${reason || 'MISSING_CREDENTIALS'}`);
   else if (hasProject && projectIds.length && !matches) log('[DEBUG] CONFIG_REJECTED_REASON: MISMATCHED_PROJECT_ID');
+  if (account && env.APP_ENV === 'prod') {
+    const emailValid = typeof account.client_email === 'string' && /^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(account.client_email);
+    let keyValid = false;
+    try { keyValid = createPrivateKey(account.private_key.replace(/\\n/g, '\n')).asymmetricKeyType === 'rsa'; } catch {}
+    log(`[DEBUG] SERVICE_ACCOUNT_EMAIL_VALID: ${emailValid}`);
+    log(`[DEBUG] SERVICE_ACCOUNT_RSA_KEY_VALID: ${keyValid}`);
+  }
+  log(`[DEBUG] FIRESTORE_PROJECT_ID_FORMAT_VALID: ${projectIds.length > 0 && projectIds.every(value => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(value))}`);
+  log(`[DEBUG] FIRESTORE_LOCATION_FORMAT_VALID: ${/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(env.WORKSPACE_FIRESTORE_LOCATION || '')}`);
+  log(`[DEBUG] FIRESTORE_DATABASE_FORMAT_VALID: ${/^(?:\(default\)|[a-z][a-z0-9-]{0,61}[a-z0-9])$/.test(env.WORKSPACE_FIRESTORE_DATABASE || '(default)')}`);
+  log(`[DEBUG] EMAIL_DELIVERY_KEY_FORMAT_VALID: ${!env.WORKSPACE_EMAIL_DELIVERY_KEY || /^[a-f0-9]{64}$/i.test(env.WORKSPACE_EMAIL_DELIVERY_KEY)}`);
 }
 
 async function main() {
@@ -135,7 +146,14 @@ async function main() {
   const settings = loadFirestoreSettings(process.env);
   if (settings.mode === 'gas') throw new Error('defina WORKSPACE_STORAGE_MODE=firestore (ou shadow) antes de rodar este script');
 
-  const db = createFirestoreDb({ firestore: settings });
+  let db;
+  try { db = createFirestoreDb({ firestore: settings }); }
+  catch (error) {
+    // SDK messages can include credential paths or other sensitive configuration.
+    const code = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error.code : 'SDK_INITIALIZATION_FAILED';
+    console.error(JSON.stringify({ event: 'firestore_client_initialization_failed', code }));
+    throw new Error('FIRESTORE_CLIENT_INITIALIZATION_FAILED');
+  }
   const result = await bootstrapOwner({ db, email, environment, installationId, secret });
   console.log(result.created
     ? `Conta criada: ${result.id}. Use "Primeiro acesso" em acesso-dev.html com este e-mail.`
