@@ -1,5 +1,6 @@
 import { ApiError } from './errors.mjs';
 import { createPrivateKey } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 const STORAGE_MODES = new Set(['gas', 'shadow', 'firestore']);
 const PROJECT_ID = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
@@ -40,6 +41,13 @@ export function parseServiceAccountJson(value) {
   return parsed;
 }
 
+export function readServiceAccountSource(env = process.env) {
+  if (text(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON)) return env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON;
+  if (!text(env.GOOGLE_APPLICATION_CREDENTIALS)) return null;
+  try { return readFileSync(env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8'); }
+  catch { throw new Error('CREDENTIAL_FILE_UNAVAILABLE'); }
+}
+
 function parseCredentials(value) {
   if (!text(value)) return null;
   let parsed;
@@ -74,7 +82,9 @@ function readFirestoreSettings(env) {
   // Never direct a deployed or production process to an emulator, even when
   // credentials are also configured. Local test environments remain supported.
   if (emulatorHost && (env.NETLIFY === 'true' || env.APP_ENV === 'prod')) unavailable();
-  const credentials = parseCredentials(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON);
+  let source;
+  try { source = readServiceAccountSource(env); } catch { unavailable(); }
+  const credentials = parseCredentials(source);
   if (env.APP_ENV === 'prod' && credentials) {
     try {
       if (!/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(credentials.client_email) || createPrivateKey(credentials.private_key).asymmetricKeyType !== 'rsa') unavailable();

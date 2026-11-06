@@ -20,7 +20,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { createFirestoreDb } from '../backend/firestore-client.mjs';
-import { loadFirestoreSettings, parseServiceAccountJson } from '../backend/firestore-config.mjs';
+import { loadFirestoreSettings, parseServiceAccountJson, readServiceAccountSource } from '../backend/firestore-config.mjs';
 
 const INSTALLATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -107,8 +107,11 @@ export function logBootstrapPreflight(env = process.env, log = console.log) {
     'GOOGLE_APPLICATION_CREDENTIALS', 'FIRESTORE_EMULATOR_HOST', 'WORKSPACE_EMAIL_DELIVERY_KEY']) {
     log(`[DEBUG] ${name} presente: ${typeof env[name] === 'string' && env[name].length > 0}`);
   }
-  let account;
-  try { account = parseServiceAccountJson(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON); } catch {}
+  let account, reason;
+  try {
+    const source = readServiceAccountSource(env);
+    if (source) account = parseServiceAccountJson(source);
+  } catch (error) { reason = error.message === 'CREDENTIAL_FILE_UNAVAILABLE' ? 'CREDENTIAL_FILE_UNAVAILABLE' : 'MALFORMED_JSON'; }
   const hasProject = typeof account?.project_id === 'string' && account.project_id.length > 0;
   const hasKey = typeof account?.private_key === 'string' && account.private_key.length > 0;
   const projectIds = ['WORKSPACE_FIRESTORE_PROJECT_ID', 'WORKSPACE_FIREBASE_PROJECT_ID', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT']
@@ -118,7 +121,7 @@ export function logBootstrapPreflight(env = process.env, log = console.log) {
   log(`[DEBUG] SERVICE_ACCOUNT_HAS_PROJECT_ID: ${hasProject}`);
   log(`[DEBUG] SERVICE_ACCOUNT_HAS_PRIVATE_KEY: ${hasKey}`);
   log(`[DEBUG] SERVICE_ACCOUNT_PROJECT_MATCHES_ENV: ${matches}`);
-  if (!account) log('[DEBUG] CONFIG_REJECTED_REASON: MALFORMED_JSON');
+  if (!account) log(`[DEBUG] CONFIG_REJECTED_REASON: ${reason || 'MISSING_CREDENTIALS'}`);
   else if (hasProject && projectIds.length && !matches) log('[DEBUG] CONFIG_REJECTED_REASON: MISMATCHED_PROJECT_ID');
 }
 

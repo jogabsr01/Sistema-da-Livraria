@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { bootstrapOwner, ownerEmailIndex, logBootstrapPreflight } from '../../scripts/firestore-bootstrap-owner.mjs';
 
 const identity = { environment: 'dev', installationId: '44444444-4444-4444-8444-444444444444', secret: 'ab'.repeat(32) };
@@ -22,6 +25,18 @@ test('preflight reports account parse and project mismatch without values', () =
     assert.ok(!lines.join('\n').includes('private-key'));
     assert.ok(!lines.join('\n').includes('not-json-secret'));
   }
+});
+
+test('preflight reads application credentials file without exposing its contents or path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'livraria-preflight-')), path = join(dir, 'secret.json');
+  try {
+    writeFileSync(path, JSON.stringify({ project_id: 'private-project', private_key: 'private-key' }));
+    const lines = [];
+    logBootstrapPreflight({ WORKSPACE_FIRESTORE_PROJECT_ID: 'private-project', GOOGLE_APPLICATION_CREDENTIALS: path }, line => lines.push(line));
+    assert.ok(lines.includes('[DEBUG] SERVICE_ACCOUNT_IS_VALID_JSON: true'));
+    assert.ok(lines.includes('[DEBUG] SERVICE_ACCOUNT_PROJECT_MATCHES_ENV: true'));
+    assert.ok(!lines.some(line => line.includes('CONFIG_REJECTED_REASON') || line.includes('private-key') || line.includes(path)));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 function fakeDb(initial = {}) {
