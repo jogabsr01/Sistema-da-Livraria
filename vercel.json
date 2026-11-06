@@ -3,6 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/api/v1/:match*", "destination": "/api/v1/[...slug]" },
     { "source": "/((?!api(?:/|$)).*)", "destination": "/index.html" }
   ]
 }
