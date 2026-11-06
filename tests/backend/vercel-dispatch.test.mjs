@@ -6,13 +6,15 @@ import session from '../../netlify/functions/session.mjs';
 import logout from '../../netlify/functions/session-logout.mjs';
 import access from '../../netlify/functions/owner-access.mjs';
 import customers from '../../netlify/functions/customers.mjs';
+import catalog from '../../netlify/functions/catalog.mjs';
 import { spawnSync } from 'node:child_process';
 
 test('dispatcher resolves exact, parameterized and nested routes without exposing the outbox', () => {
   for (const [path, expected] of [
     ['/api/v1/health', health], ['/api/v1/session', session],
     ['/api/v1/session/logout', logout], ['/api/v1/access/state', access],
-    ['/api/v1/customers/find', customers], ['/api/v1/access/state/extra', null],
+    ['/api/v1/customers/find', customers], ['/api/v1/catalog/list', catalog],
+    ['/api/v1/customers/nested/example', customers], ['/api/v1/access/state/extra', null],
     ['/api/v1/firestore-outbox', null], ['/api/v1/unknown', null],
   ]) assert.equal(selectHandler(path), expected, path);
 });
@@ -22,7 +24,9 @@ test('Vercel production accepts its exact origin but rejects a foreign origin', 
     const { dispatch } = await import('./api/v1/[...slug].js');
     for (const [origin, expected] of [['https://livrariaipjb.vercel.app', 503], ['https://attacker.example', 403]]) {
       const response = await dispatch(new Request(origin + '/api/v1/access/state', { headers: { origin } }));
-      if (response.status !== expected) throw new Error(origin + ': ' + response.status);
+      const body = await response.json();
+      const code = origin === 'https://livrariaipjb.vercel.app' ? 'IDENTITY_NOT_ACTIVATED' : 'FORBIDDEN';
+      if (response.status !== expected || body.error?.code !== code) throw new Error(origin + ': ' + response.status + ' ' + body.error?.code);
     }
     const { requireSameOriginMutation } = await import('./backend/authorization.mjs');
     const origin = 'https://livrariaipjb.vercel.app';
