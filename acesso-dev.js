@@ -306,7 +306,8 @@
     if (state.stage === 'COMPLETE' && await current()) return;
     message({ INITIAL: '', EMAIL: 'Cole o código do e-mail mais recente para continuar.', PASSWORD: 'E-mail confirmado. Crie sua senha para continuar.', PASSKEY: 'A etapa anterior foi confirmada. Clique em “Confirmar no meu aparelho” para continuar.' }[state.stage] ?? 'A confirmação final ainda precisa ser conferida. Clique em “Conferir e concluir acesso”.');
   }));
-  $('recovery-open').addEventListener('click',()=>{if(busy)return;if(!recoveryEnabled){feedbackIn('login-form');message('A recuperação de senha está indisponível. Procure a administração da livraria.','error');return;}$('recovery-form').hidden=!$('recovery-form').hidden;$('recovery-open').setAttribute('aria-expanded',String(!$('recovery-form').hidden));if(!$('recovery-form').hidden){$('recovery-email').value=$('login-email').value;feedbackIn('recovery-form');$('status').hidden=true;$('recovery-email').focus();}});
+  $('recovery-open').addEventListener('click',event=>{event.preventDefault();if(busy)return;if(!recoveryEnabled){feedbackIn('login-form');message('A recuperação de senha está indisponível. Procure a administração da livraria.','error');return;}$('recovery-form').hidden=!$('recovery-form').hidden;$('recovery-open').setAttribute('aria-expanded',String(!$('recovery-form').hidden));if(!$('recovery-form').hidden){$('recovery-email').value=$('login-email').value;feedbackIn('recovery-form');$('status').hidden=true;$('recovery-email').focus();}});
+  $('recovery-open').addEventListener('keydown',event=>{if(event.key===' '){event.preventDefault();event.currentTarget.click();}});
   submit('recovery-form',async()=>{const data=await api('recover',{email:$('recovery-email').value});clearSecrets();show(data.stage);message(data.message);});
   $('first-access').addEventListener('click', () => {
     if(busy)return;feedbackIn('login-form');if(!validateAccessForm('start-form'))return;
