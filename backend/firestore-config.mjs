@@ -24,14 +24,21 @@ function storageMode(env) {
 function parseCredentials(value) {
   if (!text(value)) return null;
   let parsed;
-  try { parsed = JSON.parse(value); } catch { unavailable(); }
+  try { parsed = JSON.parse(value); }
+  catch {
+    // dotenv loaders can turn JSON-escaped newlines into literal line breaks
+    // inside the PEM string. Repair only that field; reject all other malformed JSON.
+    const repaired = value.replace(/("private_key"\s*:\s*")([^"\\]*(?:\\.[^"\\]*)*)(")/g,
+      (_match, prefix, key, suffix) => prefix + key.replace(/\r\n|\r|\n/g, '\\n') + suffix);
+    try { parsed = JSON.parse(repaired); } catch { unavailable(); }
+  }
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object' ||
       typeof parsed.client_email !== 'string' || !parsed.client_email ||
       typeof parsed.private_key !== 'string' || !parsed.private_key ||
       typeof parsed.project_id !== 'string' || !PROJECT_ID.test(parsed.project_id)) unavailable();
   return Object.freeze({
     client_email: parsed.client_email,
-    private_key: parsed.private_key,
+    private_key: parsed.private_key.replace(/\\n/g, '\n'),
     project_id: parsed.project_id,
   });
 }
