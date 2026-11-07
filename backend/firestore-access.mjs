@@ -118,6 +118,12 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
   async function start(payload, purpose = 'ACTIVATE') {
     const token = tokenHash(payload?.tokenHash); id(payload?.flowId);
     if (config.environment === 'prod' && (config.firestore?.emailProvider !== 'resend' || !config.firestore?.emailProviderKey || !config.firestore?.emailFrom)) {
+      console.error(JSON.stringify({ event: 'access_email_configuration_unavailable',
+        missing: [
+          ...(config.firestore?.emailProvider !== 'resend' ? ['WORKSPACE_EMAIL_PROVIDER'] : []),
+          ...(!config.firestore?.emailProviderKey ? ['WORKSPACE_EMAIL_PROVIDER_KEY'] : []),
+          ...(!config.firestore?.emailFrom ? ['WORKSPACE_EMAIL_FROM'] : []),
+        ] }));
       throw new ApiError(503, 'ACCESS_EMAIL_DELIVERY_UNAVAILABLE');
     }
     const staff = payload.staff === true;

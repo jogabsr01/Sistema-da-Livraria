@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadConfig } from '../../backend/config.mjs';
 import { loadFirestoreSettings } from '../../backend/firestore-config.mjs';
+import { createFirestoreDb } from '../../backend/firestore-client.mjs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { environment } from './fixtures.mjs';
 
 test('Firestore configuration preserves GAS as the default storage mode', () => {
@@ -10,6 +14,23 @@ test('Firestore configuration preserves GAS as the default storage mode', () => 
   assert.equal(config.storageMode, 'gas');
   assert.equal(config.firestore.mode, 'gas');
   assert.match(config.scriptUrl, /^https:\/\/script\.google\.com\//);
+});
+
+test('project aliases agree and application credential paths reach the Firestore client', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'livraria-credentials-'));
+  const path = join(dir, 'account.json');
+  writeFileSync(path, JSON.stringify({ project_id: 'livraria-ipb-dev', client_email: 'test@example.invalid', private_key: 'test-key' }));
+  try {
+  const base = { WORKSPACE_STORAGE_MODE: 'firestore', WORKSPACE_FIREBASE_PROJECT_ID: 'livraria-ipb-dev',
+    GOOGLE_CLOUD_PROJECT: 'livraria-ipb-dev', WORKSPACE_FIRESTORE_LOCATION: 'southamerica-east1',
+    GOOGLE_APPLICATION_CREDENTIALS: path };
+  const settings = loadFirestoreSettings(base);
+  assert.equal(settings.projectId, 'livraria-ipb-dev');
+  assert.equal(settings.credentials.project_id, 'livraria-ipb-dev');
+  assert.equal(createFirestoreDb(settings)._settings.credentials.client_email, 'test@example.invalid');
+  assert.throws(() => loadFirestoreSettings({ ...base, GCLOUD_PROJECT: 'other-project' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+  assert.throws(() => loadFirestoreSettings({ ...base, GOOGLE_APPLICATION_CREDENTIALS: path + '.missing' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('Firestore emulator mode does not require service-account credentials or Sheets', () => {

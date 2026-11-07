@@ -38,6 +38,7 @@ function createDefaultFirestore(settings) {
   if (!settings || !settings.projectId || !settings.databaseId) unavailable();
   const options = { projectId: settings.projectId, databaseId: settings.databaseId };
   if (settings.credentials) options.credentials = settings.credentials;
+  else if (settings.applicationCredentials) options.keyFilename = settings.applicationCredentials;
   if (settings.emulatorHost) {
     const separator = settings.emulatorHost.lastIndexOf(':');
     options.host = settings.emulatorHost.slice(0, separator);

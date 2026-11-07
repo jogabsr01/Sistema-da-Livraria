@@ -27,7 +27,7 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const SECRET = /^[a-f0-9]{64}$/i;
 
 export function ownerEmailIndex({ environment, installationId, secret }, email) {
-  if (typeof environment !== 'string' || !environment || !INSTALLATION_ID.test(installationId || '') || !SECRET.test(secret || '')) {
+  if (!['dev', 'prod'].includes(environment) || !INSTALLATION_ID.test(installationId || '') || !SECRET.test(secret || '')) {
     throw new Error('configuração inválida para calcular o índice de e-mail');
   }
   // Same domain-separated HMAC as ownerEmailIndex() in backend/firestore-access.mjs.
@@ -143,6 +143,9 @@ async function main() {
   const environment = requiredEnv('APP_ENV');
   const installationId = requiredEnv('WORKSPACE_INSTALLATION_ID');
   const secret = requiredEnv('WORKSPACE_HMAC_SECRET');
+  if (!['dev', 'prod'].includes(environment) || !INSTALLATION_ID.test(installationId) || !SECRET.test(secret)) {
+    throw new Error('configuração inválida para calcular o índice de e-mail');
+  }
   const settings = loadFirestoreSettings(process.env);
   if (settings.mode === 'gas') throw new Error('defina WORKSPACE_STORAGE_MODE=firestore (ou shadow) antes de rodar este script');
 

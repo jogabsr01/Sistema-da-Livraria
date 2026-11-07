@@ -34,3 +34,4 @@ work/
 __pycache__/
 *.py[cod]
 .env.production
+service-account-temp.json

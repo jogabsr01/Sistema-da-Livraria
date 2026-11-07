@@ -76,7 +76,10 @@ function readFirestoreSettings(env) {
   const mode = storageMode(env);
   if (mode === 'gas') return Object.freeze({ mode });
 
-  const projectId = text(env.WORKSPACE_FIRESTORE_PROJECT_ID);
+  const projectIds = ['WORKSPACE_FIRESTORE_PROJECT_ID', 'WORKSPACE_FIREBASE_PROJECT_ID', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT']
+    .map(name => text(env[name])).filter(Boolean);
+  if (new Set(projectIds).size > 1) unavailable('CONFLICTING_PROJECT_IDS');
+  const projectId = projectIds[0] || null;
   const databaseId = env.WORKSPACE_FIRESTORE_DATABASE || '(default)';
   const location = text(env.WORKSPACE_FIRESTORE_LOCATION);
   const emulatorHost = validateEmulator(env.FIRESTORE_EMULATOR_HOST);

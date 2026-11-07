@@ -60,6 +60,13 @@ test('owner first access finds a verified owner address after a legacy email ind
   assert.ok(db.values.get(`outbox/email:auth:${tokenHash}`));
 });
 
+test('first access for an unknown address never creates a user or queues a code', async () => {
+  const db = fakeDb(), service = createFirestoreAccessService({ db, config });
+  const result = await service.start({ email, flowId, tokenHash, codeHash: 'c'.repeat(64), code: 'ABCDEFG' });
+  assert.deepEqual(result, { accepted: true, outcome: 'NOT_FOUND' });
+  assert.equal(db.values.size, 0);
+});
+
 test('owner address fallback never authorizes a non-owner or conflicting records', async () => {
   const db = baseDb();
   db.values.set(`users/${userId}`, { ...db.values.get(`users/${userId}`), email, emailIndex: 'f'.repeat(64), owner: false, role: 'ADMIN' });
@@ -70,7 +77,14 @@ test('owner address fallback never authorizes a non-owner or conflicting records
 
 test('production first access refuses to queue undeliverable email when the provider is not configured', async () => {
   const db = baseDb(), service = createFirestoreAccessService({ db, config: { ...config, environment: 'prod' } });
-  await assert.rejects(service.start({ email, flowId, tokenHash, codeHash: 'c'.repeat(64), code: 'ABCDEFG' }), { code: 'ACCESS_EMAIL_DELIVERY_UNAVAILABLE' });
+  const original = console.error, messages = [];
+  console.error = message => messages.push(message);
+  try {
+    await assert.rejects(service.start({ email, flowId, tokenHash, codeHash: 'c'.repeat(64), code: 'ABCDEFG' }), { code: 'ACCESS_EMAIL_DELIVERY_UNAVAILABLE' });
+  } finally { console.error = original; }
+  assert.deepEqual(JSON.parse(messages[0]), { event: 'access_email_configuration_unavailable', missing: ['WORKSPACE_EMAIL_PROVIDER', 'WORKSPACE_EMAIL_PROVIDER_KEY', 'WORKSPACE_EMAIL_FROM'] });
+  assert.ok(!messages[0].includes(email));
+  assert.ok(!messages[0].includes('ABCDEFG'));
   assert.equal(db.values.has(`outbox/email:auth:${tokenHash}`), false);
 });
 

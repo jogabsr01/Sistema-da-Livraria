@@ -7,6 +7,13 @@ import { bootstrapOwner, ownerEmailIndex, logBootstrapPreflight } from '../../sc
 
 const identity = { environment: 'dev', installationId: '44444444-4444-4444-8444-444444444444', secret: 'ab'.repeat(32) };
 
+test('owner email index rejects unsupported environment names', () => {
+  for (const environment of ['production', 'development', '', undefined]) {
+    assert.throws(() => ownerEmailIndex({ ...identity, environment }, 'owner@example.com'), /configuração inválida/);
+  }
+  assert.match(ownerEmailIndex({ ...identity, environment: 'prod' }, 'owner@example.com'), /^[a-f0-9]{64}$/);
+});
+
 test('preflight logs presence only, never secret values', () => {
   const lines = [];
   logBootstrapPreflight({ WORKSPACE_HMAC_SECRET: 'secret-test-value' }, line => lines.push(line));
