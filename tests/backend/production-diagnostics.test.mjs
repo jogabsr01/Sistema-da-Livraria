@@ -28,6 +28,19 @@ test('production diagnostics log fixed missing and invalid variable names, never
     assert.equal(messages.length, 0);
   } finally { console.error = original; }
 });
+test('Firestore production diagnostics respect project aliases and report conflicts without values', () => {
+  const original = console.error, messages = [];
+  console.error = message => messages.push(JSON.parse(message));
+  try {
+    const base = { APP_ENV: 'prod', WORKSPACE_STORAGE_MODE: 'firestore', GOOGLE_CLOUD_PROJECT: 'valid-project', WORKSPACE_FIRESTORE_LOCATION: 'us-central1' };
+    assert.throws(() => loadFirestoreSettings(base), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+    assert.ok(!messages.some(entry => entry.variable === 'WORKSPACE_FIRESTORE_PROJECT_ID'));
+    messages.length = 0;
+    assert.throws(() => loadFirestoreSettings({ ...base, GCLOUD_PROJECT: 'different-project' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+    assert.deepEqual(messages.slice(0, 2).map(entry => entry.variable), ['GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT']);
+    assert.ok(!JSON.stringify(messages).includes('different-project'));
+  } finally { console.error = original; }
+});
 test('Linux sharp packages are pinned and explicitly included in functions', async () => {
   const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
   const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import.meta.url), 'utf8'));

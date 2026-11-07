@@ -3,6 +3,7 @@ import { createPrivateKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const STORAGE_MODES = new Set(['gas', 'shadow', 'firestore']);
+const PROJECT_VARIABLES = ['WORKSPACE_FIRESTORE_PROJECT_ID', 'WORKSPACE_FIREBASE_PROJECT_ID', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT'];
 const PROJECT_ID = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 const DATABASE_ID = /^(?:\(default\)|[a-z][a-z0-9-]{0,61}[a-z0-9])$/;
 const LOCATION = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
@@ -76,8 +77,7 @@ function readFirestoreSettings(env) {
   const mode = storageMode(env);
   if (mode === 'gas') return Object.freeze({ mode });
 
-  const projectIds = ['WORKSPACE_FIRESTORE_PROJECT_ID', 'WORKSPACE_FIREBASE_PROJECT_ID', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT']
-    .map(name => text(env[name])).filter(Boolean);
+  const projectIds = PROJECT_VARIABLES.map(name => text(env[name])).filter(Boolean);
   if (new Set(projectIds).size > 1) unavailable('CONFLICTING_PROJECT_IDS');
   const projectId = projectIds[0] || null;
   const databaseId = env.WORKSPACE_FIRESTORE_DATABASE || '(default)';
@@ -131,7 +131,10 @@ export function loadFirestoreSettings(env = process.env) {
       const fields = [];
       if (!STORAGE_MODES.has(env.WORKSPACE_STORAGE_MODE ?? 'gas')) fields.push('WORKSPACE_STORAGE_MODE');
       if (env.WORKSPACE_STORAGE_MODE !== 'gas') {
-        if (!PROJECT_ID.test(env.WORKSPACE_FIRESTORE_PROJECT_ID || '')) fields.push('WORKSPACE_FIRESTORE_PROJECT_ID');
+        const presentProjects = PROJECT_VARIABLES.filter(name => text(env[name]));
+        if (!presentProjects.length) fields.push('WORKSPACE_FIRESTORE_PROJECT_ID');
+        else if (new Set(presentProjects.map(name => env[name])).size > 1) fields.push(...presentProjects);
+        else fields.push(...presentProjects.filter(name => !PROJECT_ID.test(env[name])));
         if (!LOCATION.test(env.WORKSPACE_FIRESTORE_LOCATION || '')) fields.push('WORKSPACE_FIRESTORE_LOCATION');
         if (env.WORKSPACE_FIRESTORE_DATABASE && !DATABASE_ID.test(env.WORKSPACE_FIRESTORE_DATABASE)) fields.push('WORKSPACE_FIRESTORE_DATABASE');
         if (env.FIRESTORE_EMULATOR_HOST) fields.push('FIRESTORE_EMULATOR_HOST');
@@ -139,7 +142,8 @@ export function loadFirestoreSettings(env = process.env) {
         else if (env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON) {
           try {
             const c = parseCredentials(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON);
-            if (!c || c.project_id !== env.WORKSPACE_FIRESTORE_PROJECT_ID || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(c.client_email) || createPrivateKey(c.private_key).asymmetricKeyType !== 'rsa') fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON');
+            const projectId = presentProjects.length ? env[presentProjects[0]] : null;
+            if (!c || c.project_id !== projectId || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(c.client_email) || createPrivateKey(c.private_key).asymmetricKeyType !== 'rsa') fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON');
           } catch { fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON'); }
         }
         if (env.WORKSPACE_EMAIL_DELIVERY_KEY && !/^[a-f0-9]{64}$/i.test(env.WORKSPACE_EMAIL_DELIVERY_KEY)) fields.push('WORKSPACE_EMAIL_DELIVERY_KEY');
