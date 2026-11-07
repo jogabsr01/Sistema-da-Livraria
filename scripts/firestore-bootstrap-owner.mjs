@@ -37,8 +37,17 @@ export function ownerEmailIndex({ environment, installationId, secret }, email) 
     .digest('hex');
 }
 
+export function validateBootstrapIdentity({ environment, installationId, secret }) {
+  const invalid = [];
+  if (!['dev', 'prod'].includes(environment)) invalid.push('APP_ENV (use dev ou prod)');
+  if (typeof installationId !== 'string' || !INSTALLATION_ID.test(installationId)) invalid.push('WORKSPACE_INSTALLATION_ID (UUID v4)');
+  if (typeof secret !== 'string' || !SECRET.test(secret)) invalid.push('WORKSPACE_HMAC_SECRET (64 caracteres hexadecimais)');
+  if (invalid.length) throw new Error(`configuração inválida para calcular o índice de e-mail: ${invalid.join(', ')}`);
+}
+
 export async function bootstrapOwner({ db, email, environment, installationId, secret }) {
   if (typeof email !== 'string' || email.length > 254 || !EMAIL.test(email)) throw new Error('e-mail inválido');
+  validateBootstrapIdentity({ environment, installationId, secret });
   const normalizedEmail = email.toLowerCase();
   const index = ownerEmailIndex({ environment, installationId, secret }, normalizedEmail);
 
@@ -143,9 +152,7 @@ async function main() {
   const environment = requiredEnv('APP_ENV');
   const installationId = requiredEnv('WORKSPACE_INSTALLATION_ID');
   const secret = requiredEnv('WORKSPACE_HMAC_SECRET');
-  if (!['dev', 'prod'].includes(environment) || !INSTALLATION_ID.test(installationId) || !SECRET.test(secret)) {
-    throw new Error('configuração inválida para calcular o índice de e-mail');
-  }
+  validateBootstrapIdentity({ environment, installationId, secret });
   const settings = loadFirestoreSettings(process.env);
   if (settings.mode === 'gas') throw new Error('defina WORKSPACE_STORAGE_MODE=firestore (ou shadow) antes de rodar este script');
 

@@ -14,6 +14,21 @@ test('owner email index rejects unsupported environment names', () => {
   assert.match(ownerEmailIndex({ ...identity, environment: 'prod' }, 'owner@example.com'), /^[a-f0-9]{64}$/);
 });
 
+test('bootstrap reports invalid identity variable names without revealing values or accessing Firestore', async () => {
+  const db = { runTransaction() { throw new Error('database touched'); } };
+  for (const [change, expected, value] of [
+    [{ environment: 'production' }, 'APP_ENV', 'production'],
+    [{ installationId: undefined }, 'WORKSPACE_INSTALLATION_ID', undefined],
+    [{ secret: 'private-invalid-secret' }, 'WORKSPACE_HMAC_SECRET', 'private-invalid-secret'],
+  ]) {
+    await assert.rejects(bootstrapOwner({ db, email: 'owner@example.com', ...identity, ...change }), error => {
+      assert.ok(error.message.includes(expected));
+      if (value) assert.ok(!error.message.includes(value));
+      return true;
+    });
+  }
+});
+
 test('preflight logs presence only, never secret values', () => {
   const lines = [];
   logBootstrapPreflight({ WORKSPACE_HMAC_SECRET: 'secret-test-value' }, line => lines.push(line));
