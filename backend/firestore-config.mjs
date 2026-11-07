@@ -8,7 +8,8 @@ const DATABASE_ID = /^(?:\(default\)|[a-z][a-z0-9-]{0,61}[a-z0-9])$/;
 const LOCATION = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 const EMULATOR_HOST = /^(?:\[[0-9a-f:]+\]|[A-Za-z0-9.-]+):\d{1,5}$/i;
 
-function unavailable() {
+function unavailable(reason) {
+  console.log('REJECTION REASON:', reason);
   throw new ApiError(503, 'FIRESTORE_CONFIGURATION_UNAVAILABLE');
 }
 
@@ -18,7 +19,7 @@ function text(value) {
 
 function storageMode(env) {
   const mode = env.WORKSPACE_STORAGE_MODE ?? 'gas';
-  if (!STORAGE_MODES.has(mode)) unavailable();
+  if (!STORAGE_MODES.has(mode)) unavailable('INVALID_STORAGE_MODE');
   return mode;
 }
 
@@ -51,11 +52,11 @@ export function readServiceAccountSource(env = process.env) {
 function parseCredentials(value) {
   if (!text(value)) return null;
   let parsed;
-  try { parsed = parseServiceAccountJson(value); } catch { unavailable(); }
+  try { parsed = parseServiceAccountJson(value); } catch { unavailable('MALFORMED_SERVICE_ACCOUNT_JSON'); }
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object' ||
       typeof parsed.client_email !== 'string' || !parsed.client_email ||
       typeof parsed.private_key !== 'string' || !parsed.private_key ||
-      typeof parsed.project_id !== 'string' || !PROJECT_ID.test(parsed.project_id)) unavailable();
+      typeof parsed.project_id !== 'string' || !PROJECT_ID.test(parsed.project_id)) unavailable('INVALID_SERVICE_ACCOUNT_FIELDS');
   return Object.freeze({
     client_email: parsed.client_email,
     private_key: parsed.private_key.replace(/\\n/g, '\n'),
@@ -65,9 +66,9 @@ function parseCredentials(value) {
 
 function validateEmulator(value) {
   if (!text(value)) return null;
-  if (!EMULATOR_HOST.test(value)) unavailable();
+  if (!EMULATOR_HOST.test(value)) unavailable('INVALID_EMULATOR_HOST');
   const port = Number(value.slice(value.lastIndexOf(':') + 1));
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) unavailable();
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) unavailable('INVALID_EMULATOR_PORT');
   return value;
 }
 
@@ -81,26 +82,29 @@ function readFirestoreSettings(env) {
   const emulatorHost = validateEmulator(env.FIRESTORE_EMULATOR_HOST);
   // Never direct a deployed or production process to an emulator, even when
   // credentials are also configured. Local test environments remain supported.
-  if (emulatorHost && (env.NETLIFY === 'true' || env.APP_ENV === 'prod')) unavailable();
+  if (emulatorHost && (env.NETLIFY === 'true' || env.APP_ENV === 'prod')) unavailable('EMULATOR_FORBIDDEN');
   let source;
-  try { source = readServiceAccountSource(env); } catch { unavailable(); }
+  try { source = readServiceAccountSource(env); } catch { unavailable('CREDENTIAL_FILE_UNAVAILABLE'); }
   const credentials = parseCredentials(source);
   if (env.APP_ENV === 'prod' && credentials) {
     try {
-      if (!/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(credentials.client_email) || createPrivateKey(credentials.private_key).asymmetricKeyType !== 'rsa') unavailable();
-    } catch { unavailable(); }
+      if (!/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(credentials.client_email)) unavailable('INVALID_SERVICE_ACCOUNT_EMAIL');
+      if (createPrivateKey(credentials.private_key).asymmetricKeyType !== 'rsa') unavailable('INVALID_SERVICE_ACCOUNT_KEY');
+    } catch (error) { if (error instanceof ApiError) throw error; unavailable('INVALID_SERVICE_ACCOUNT_KEY'); }
   }
   const applicationCredentials = text(env.GOOGLE_APPLICATION_CREDENTIALS);
   const emailProvider = text(env.WORKSPACE_EMAIL_PROVIDER);
   const emailProviderKey = text(env.WORKSPACE_EMAIL_PROVIDER_KEY);
   const emailFrom = text(env.WORKSPACE_EMAIL_FROM) || (emailProvider === 'resend' ? 'Livraria IPB <onboarding@resend.dev>' : null);
   const emailDeliveryKeyValue = text(env.WORKSPACE_EMAIL_DELIVERY_KEY);
-  if (emailDeliveryKeyValue && !/^[a-f0-9]{64}$/i.test(emailDeliveryKeyValue)) unavailable();
+  if (emailDeliveryKeyValue && !/^[a-f0-9]{64}$/i.test(emailDeliveryKeyValue)) unavailable('INVALID_EMAIL_DELIVERY_KEY');
   const emailDeliveryKey = emailDeliveryKeyValue ? Buffer.from(emailDeliveryKeyValue, 'hex') : null;
 
-  if (!projectId || !PROJECT_ID.test(projectId) || !DATABASE_ID.test(databaseId) ||
-      !location || !LOCATION.test(location) || credentials && credentials.project_id !== projectId ||
-      !emulatorHost && !credentials && !applicationCredentials) unavailable();
+  if (!projectId || !PROJECT_ID.test(projectId)) unavailable('INVALID_PROJECT_ID');
+  if (!DATABASE_ID.test(databaseId)) unavailable('INVALID_DATABASE_ID');
+  if (!location || !LOCATION.test(location)) unavailable('INVALID_LOCATION');
+  if (credentials && credentials.project_id !== projectId) unavailable('MISMATCHED_PROJECT_ID');
+  if (!emulatorHost && !credentials && !applicationCredentials) unavailable('MISSING_CREDENTIALS');
 
   return Object.freeze({
     mode,
