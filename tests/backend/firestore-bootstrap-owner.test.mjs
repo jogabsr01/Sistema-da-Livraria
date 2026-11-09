@@ -50,15 +50,27 @@ test('production preflight reports key and configuration validity without exposi
   assert.ok(!lines.join('\n').includes('private-invalid-key'));
 });
 
-test('preflight reports account parse and project mismatch without values', () => {
+test('preflight reports account parse and project mismatch without claiming a rejection or exposing values', () => {
   const account = JSON.stringify({ project_id: 'private-project', private_key: 'private-key' });
-  for (const [value, reason] of [[account, 'MISMATCHED_PROJECT_ID'], ['not-json-secret', 'MALFORMED_JSON']]) {
+  for (const [value, status] of [[account, null], ['not-json-secret', 'MALFORMED_JSON']]) {
     const lines = [];
     logBootstrapPreflight({ WORKSPACE_FIRESTORE_PROJECT_ID: 'other-project', WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: value }, line => lines.push(line));
-    assert.ok(lines.includes(`[DEBUG] CONFIG_REJECTED_REASON: ${reason}`));
+    if (status) assert.ok(lines.includes(`[DEBUG] SERVICE_ACCOUNT_STATUS: ${status}`));
+    else assert.ok(lines.includes('[DEBUG] SERVICE_ACCOUNT_PROJECT_MATCHES_ENV: false'));
+    assert.ok(!lines.some(line => line.includes('CONFIG_REJECTED_REASON')));
     assert.ok(!lines.join('\n').includes('private-project'));
     assert.ok(!lines.join('\n').includes('private-key'));
     assert.ok(!lines.join('\n').includes('not-json-secret'));
+  }
+});
+
+test('preflight distinguishes valid storage defaults from invalid values and does not reject emulator credentials', () => {
+  for (const [mode, valid] of [[undefined, true], ['firestore', true], ['production', false], ['', false]]) {
+    const lines = [];
+    logBootstrapPreflight({ WORKSPACE_STORAGE_MODE: mode, FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080' }, line => lines.push(line));
+    assert.ok(lines.includes(`[DEBUG] STORAGE_MODE_FORMAT_VALID: ${valid}`));
+    assert.ok(lines.includes('[DEBUG] SERVICE_ACCOUNT_STATUS: NOT_PROVIDED'));
+    assert.ok(!lines.some(line => line.includes('CONFIG_REJECTED_REASON')));
   }
 });
 

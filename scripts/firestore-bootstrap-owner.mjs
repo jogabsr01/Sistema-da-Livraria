@@ -116,6 +116,7 @@ export function logBootstrapPreflight(env = process.env, log = console.log) {
     'GOOGLE_APPLICATION_CREDENTIALS', 'FIRESTORE_EMULATOR_HOST', 'WORKSPACE_EMAIL_DELIVERY_KEY']) {
     log(`[DEBUG] ${name} presente: ${typeof env[name] === 'string' && env[name].length > 0}`);
   }
+  log(`[DEBUG] STORAGE_MODE_FORMAT_VALID: ${['gas', 'shadow', 'firestore'].includes(env.WORKSPACE_STORAGE_MODE ?? 'gas')}`);
   let account, reason;
   try {
     const source = readServiceAccountSource(env);
@@ -130,8 +131,7 @@ export function logBootstrapPreflight(env = process.env, log = console.log) {
   log(`[DEBUG] SERVICE_ACCOUNT_HAS_PROJECT_ID: ${hasProject}`);
   log(`[DEBUG] SERVICE_ACCOUNT_HAS_PRIVATE_KEY: ${hasKey}`);
   log(`[DEBUG] SERVICE_ACCOUNT_PROJECT_MATCHES_ENV: ${matches}`);
-  if (!account) log(`[DEBUG] CONFIG_REJECTED_REASON: ${reason || 'MISSING_CREDENTIALS'}`);
-  else if (hasProject && projectIds.length && !matches) log('[DEBUG] CONFIG_REJECTED_REASON: MISMATCHED_PROJECT_ID');
+  if (!account) log(`[DEBUG] SERVICE_ACCOUNT_STATUS: ${reason || 'NOT_PROVIDED'}`);
   if (account && env.APP_ENV === 'prod') {
     const emailValid = typeof account.client_email === 'string' && /^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(account.client_email);
     let keyValid = false;
