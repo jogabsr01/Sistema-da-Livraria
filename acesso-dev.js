@@ -370,24 +370,25 @@
     if (data.kind === 'create') { options.user.id = decode(options.user.id); options.excludeCredentials = (options.excludeCredentials || []).map(key => ({ ...key, id: decode(key.id) })); }
     else options.allowCredentials = (options.allowCredentials || []).map(key => ({ ...key, id: decode(key.id) }));
     preparedDevice = {kind:data.kind, options}; preparedAt = performance.now();
-    $('passkey-button').textContent = 'Confirmar no meu aparelho';
+    $('passkey-button').textContent = data.kind === 'create' ? 'Cadastrar Biometria' : 'Confirmar no meu aparelho';
   }
   $('passkey-button').addEventListener('click', () => run(async () => {
     // The Google round trip happens before this button is enabled. Call the
     // native browser API in the click turn, before any await loses activation.
     if (!preparedDevice || performance.now() - preparedAt > 120000) {
       preparedDevice = null; await prepareDevice();
-      message('Tudo pronto. Clique em “Confirmar no meu aparelho” para continuar.'); return;
+      message(preparedDevice.kind === 'create' ? 'Tudo pronto. Clique em “Cadastrar Biometria” para continuar.' : 'Tudo pronto. Clique em “Confirmar no meu aparelho” para continuar.'); return;
     }
     const prepared = preparedDevice; preparedDevice = null; accessPhase = 'DEVICE';
     let credential;
     try { credential = await navigator.credentials[prepared.kind]({ publicKey: prepared.options }); }
     catch (error) {
       const code = {NotAllowedError:'DEVICE_NOT_ALLOWED',NotSupportedError:'DEVICE_NOT_SUPPORTED',SecurityError:'DEVICE_SECURITY_ERROR',InvalidStateError:'DEVICE_ALREADY_REGISTERED',AbortError:'DEVICE_ABORTED'}[error?.name];
-      // Retain an unconsumed challenge for a new explicit click; no automatic
-      // retry of a ceremony or mutation, and never expose browser error text.
-      preparedDevice = prepared;
-      throw unavailable(code || 'DEVICE_RESPONSE_INVALID');
+      // Se a biometria falhar ou for recusada, permitimos que o usuário prossiga sem ela
+      message('Biometria indisponível ou cancelada. Insira sua senha novamente para entrar sem biometria.');
+      preparedDevice = null;
+      accessPhase = 'LOGIN';
+      return;
     }
     if (!credential) { preparedDevice = prepared; throw unavailable('DEVICE_RESPONSE_INVALID'); }
     pendingResponse = serialize(credential);

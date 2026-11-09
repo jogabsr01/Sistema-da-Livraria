@@ -33,6 +33,15 @@ test('project aliases agree and application credential paths reach the Firestore
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('Firebase service-account alias is accepted and conflicting inline credentials fail closed', () => {
+  const account = JSON.stringify({ project_id: 'livraria-ipb-dev', client_email: 'test@example.invalid', private_key: 'test-key' });
+  const base = { WORKSPACE_STORAGE_MODE: 'firestore', WORKSPACE_FIREBASE_PROJECT_ID: 'livraria-ipb-dev',
+    WORKSPACE_FIRESTORE_LOCATION: 'southamerica-east1', WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON: account };
+  assert.equal(loadFirestoreSettings(base).credentials.project_id, 'livraria-ipb-dev');
+  assert.equal(loadFirestoreSettings({ ...base, WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: account }).credentials.project_id, 'livraria-ipb-dev');
+  assert.throws(() => loadFirestoreSettings({ ...base, WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: '{}' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+});
+
 test('Firestore emulator mode does not require service-account credentials or Sheets', () => {
   const env = environment({
     WORKSPACE_STORAGE_MODE: 'firestore',

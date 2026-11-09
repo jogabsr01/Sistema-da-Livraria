@@ -1,7 +1,7 @@
 // Explicit opt-in is always validated; invalid laboratory configurations fail closed.
 export function loadLocalLabPolicy(env = process.env) {
   const forbidden = ['NETLIFY', 'NETLIFY_LOCAL', 'SITE_ID', 'SITE_NAME', 'CONTEXT', 'BRANCH', 'DEPLOY_ID', 'DEPLOY_URL', 'DEPLOY_PRIME_URL', 'URL',
-    'GOOGLE_APPLICATION_CREDENTIALS', 'WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON', 'WORKSPACE_EMAIL_PROVIDER', 'WORKSPACE_EMAIL_PROVIDER_KEY'];
+    'GOOGLE_APPLICATION_CREDENTIALS', 'WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON', 'WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON', 'WORKSPACE_EMAIL_PROVIDER', 'WORKSPACE_EMAIL_PROVIDER_KEY'];
   const project = env.WORKSPACE_FIRESTORE_PROJECT_ID;
   if (env.WORKSPACE_LOCAL_LAB !== 'YES' || env.APP_ENV !== 'dev' || env.WORKSPACE_STORAGE_MODE !== 'firestore' ||
       env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8080' || typeof project !== 'string' ||

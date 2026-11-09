@@ -44,7 +44,10 @@ export function parseServiceAccountJson(value) {
 }
 
 export function readServiceAccountSource(env = process.env) {
-  if (text(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON)) return env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON;
+  const firestore = text(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON);
+  const firebase = text(env.WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON);
+  if (firestore && firebase && firestore !== firebase) throw new Error('CONFLICTING_SERVICE_ACCOUNT_SOURCES');
+  if (firestore || firebase) return firestore || firebase;
   if (!text(env.GOOGLE_APPLICATION_CREDENTIALS)) return null;
   try { return readFileSync(env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8'); }
   catch { throw new Error('CREDENTIAL_FILE_UNAVAILABLE'); }
@@ -87,7 +90,9 @@ function readFirestoreSettings(env) {
   // credentials are also configured. Local test environments remain supported.
   if (emulatorHost && (env.NETLIFY === 'true' || env.APP_ENV === 'prod')) unavailable('EMULATOR_FORBIDDEN');
   let source;
-  try { source = readServiceAccountSource(env); } catch { unavailable('CREDENTIAL_FILE_UNAVAILABLE'); }
+  try { source = readServiceAccountSource(env); } catch (error) {
+    unavailable(error.message === 'CONFLICTING_SERVICE_ACCOUNT_SOURCES' ? 'CONFLICTING_SERVICE_ACCOUNT_SOURCES' : 'CREDENTIAL_FILE_UNAVAILABLE');
+  }
   const credentials = parseCredentials(source);
   if (env.APP_ENV === 'prod' && credentials) {
     try {
@@ -138,13 +143,16 @@ export function loadFirestoreSettings(env = process.env) {
         if (!LOCATION.test(env.WORKSPACE_FIRESTORE_LOCATION || '')) fields.push('WORKSPACE_FIRESTORE_LOCATION');
         if (env.WORKSPACE_FIRESTORE_DATABASE && !DATABASE_ID.test(env.WORKSPACE_FIRESTORE_DATABASE)) fields.push('WORKSPACE_FIRESTORE_DATABASE');
         if (env.FIRESTORE_EMULATOR_HOST) fields.push('FIRESTORE_EMULATOR_HOST');
-        if (!env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON && !env.GOOGLE_APPLICATION_CREDENTIALS) fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON', 'GOOGLE_APPLICATION_CREDENTIALS');
-        else if (env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON) {
+        if (!env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON && !env.WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON && !env.GOOGLE_APPLICATION_CREDENTIALS) fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON', 'GOOGLE_APPLICATION_CREDENTIALS');
+        else if (env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON && env.WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON && env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON !== env.WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON) {
+          fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON', 'WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON');
+        } else if (env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON || env.WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON) {
+          const credentialField = env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON ? 'WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON' : 'WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON';
           try {
-            const c = parseCredentials(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON);
+            const c = parseCredentials(env[credentialField]);
             const projectId = presentProjects.length ? env[presentProjects[0]] : null;
-            if (!c || c.project_id !== projectId || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(c.client_email) || createPrivateKey(c.private_key).asymmetricKeyType !== 'rsa') fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON');
-          } catch { fields.push('WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON'); }
+            if (!c || c.project_id !== projectId || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(c.client_email) || createPrivateKey(c.private_key).asymmetricKeyType !== 'rsa') fields.push(credentialField);
+          } catch { fields.push(credentialField); }
         }
         if (env.WORKSPACE_EMAIL_DELIVERY_KEY && !/^[a-f0-9]{64}$/i.test(env.WORKSPACE_EMAIL_DELIVERY_KEY)) fields.push('WORKSPACE_EMAIL_DELIVERY_KEY');
       }

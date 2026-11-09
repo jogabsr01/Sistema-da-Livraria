@@ -3,9 +3,17 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { bootstrapOwner, ownerEmailIndex, logBootstrapPreflight } from '../../scripts/firestore-bootstrap-owner.mjs';
 
 const identity = { environment: 'dev', installationId: '44444444-4444-4444-8444-444444444444', secret: 'ab'.repeat(32) };
+
+test('module can be imported when node has no script argument', () => {
+  const moduleUrl = new URL('../../scripts/firestore-bootstrap-owner.mjs', import.meta.url).href;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(moduleUrl)})`], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '');
+});
 
 test('owner email index rejects unsupported environment names', () => {
   for (const environment of ['production', 'development', '', undefined]) {

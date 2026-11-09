@@ -174,7 +174,7 @@ async function main() {
 // a space (this project's own root folder has one): import.meta.url
 // percent-encodes it, the template string does not, so main() would
 // silently never run. pathToFileURL() encodes both sides the same way.
-const isDirectRun = import.meta.url === pathToFileURL(process.argv[1]).href;
+const isDirectRun = typeof process.argv[1] === 'string' && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
   main().catch(error => {
     console.error(`FALHA: ${error.message || error}`);

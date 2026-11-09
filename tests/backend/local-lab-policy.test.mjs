@@ -28,7 +28,7 @@ test('local laboratory policy rejects remote, deployed and credential-bearing co
     { FIRESTORE_EMULATOR_HOST: 'localhost:8080' }, { FIRESTORE_EMULATOR_HOST: '127.0.0.1:8081' },
     { WORKSPACE_FIRESTORE_PROJECT_ID: 'production-project' }, { WORKSPACE_FIRESTORE_PROJECT_ID: 'demo-bad/' },
     { NETLIFY: 'true' }, { NETLIFY_LOCAL: 'true' }, { CONTEXT: 'production' }, { BRANCH: 'dev' }, { SITE_ID: 'x' }, { DEPLOY_URL: 'https://example.test' }, { URL: 'https://example.test' },
-    { GOOGLE_APPLICATION_CREDENTIALS: '/private' }, { WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: '{}' },
+    { GOOGLE_APPLICATION_CREDENTIALS: '/private' }, { WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: '{}' }, { WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON: '{}' },
     { WORKSPACE_EMAIL_PROVIDER: 'resend' }, { WORKSPACE_EMAIL_PROVIDER_KEY: 'secret' }]) {
     assert.throws(() => loadLocalLabPolicy({ ...good(), ...change }), { message: 'LOCAL_LAB_DENIED' });
   }
