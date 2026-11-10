@@ -6,6 +6,16 @@ from playwright.sync_api import expect
 spec=importlib.util.spec_from_file_location('checkout_qa',Path(__file__).with_name('test-checkout.py'));qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 ROOT,ORIGIN=qa.qa.ROOT,qa.qa.ORIGIN
 class Home(qa.Checkout):
+    def test_home_does_not_flash_public_welcome_while_session_is_pending(self):
+        def delayed(route):
+            import time
+            time.sleep(1)
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({'data': {'user': {'role': 'SUPER_ADMIN'}}}))
+        self.page.route('**/api/v1/session', delayed)
+        self.page.goto(ORIGIN+'/home-dev.html', wait_until='domcontentloaded')
+        expect(self.page.locator('#welcome')).to_be_hidden()
+        expect(self.page.locator('#home')).to_be_visible()
+        self.page.unroute('**/api/v1/session', delayed)
     def relay(self,route):
         path=urlsplit(route.request.url).path
         if path in ['/home-dev.html','/home-dev.js','/home-dev.css','/account-menu.js','/account-menu.css','/notification-badge.js','/vendor/zxing-0.21.3.min.js']:

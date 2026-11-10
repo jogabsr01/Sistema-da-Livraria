@@ -63,7 +63,7 @@
     }
   });
   async function load(){
-    if(checking)return;const started=performance.now();let http=0;checking=true;authenticated=false;$('entry-failure').hidden=true;$('sign-in').hidden=recentEntry;$('retry').textContent='Tentar novamente';$('home').hidden=true;$('welcome').hidden=recentEntry;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
+    if(checking)return;const started=performance.now();let http=0;checking=true;authenticated=false;$('entry-failure').hidden=true;$('sign-in').hidden=true;$('retry').textContent='Tentar novamente';$('home').hidden=true;$('welcome').hidden=true;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
     document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=true);
     if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço da livraria para continuar.';checking=false;return;}
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
@@ -72,7 +72,7 @@
       const response=await fetch('/api/v1/session',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
       http=response.status;
       if((response.headers.get('content-type')||'').includes('text/html')){failedEntry(http,'SESSION_RESPONSE_HTML',Math.round(performance.now()-started));return;}
-      if(response.status===401||response.status===403){if(recentEntry){let code='SESSION_REJECTED';try{const failure=await response.json();if(['UNAUTHENTICATED','WORKSPACE_UNAUTHENTICATED','FORBIDDEN','WORKSPACE_FORBIDDEN','REAUTHENTICATION_REQUIRED'].includes(failure?.error?.code))code=failure.error.code;}catch{}failedEntry(http,code,Math.round(performance.now()-started));return;}$('status').textContent='Entre na sua conta para abrir a livraria.';$('sign-in').hidden=false;return;}
+      if(response.status===401||response.status===403){if(recentEntry){let code='SESSION_REJECTED';try{const failure=await response.json();if(['UNAUTHENTICATED','WORKSPACE_UNAUTHENTICATED','FORBIDDEN','WORKSPACE_FORBIDDEN','REAUTHENTICATION_REQUIRED'].includes(failure?.error?.code))code=failure.error.code;}catch{}failedEntry(http,code,Math.round(performance.now()-started));return;}$('status').textContent='Entre na sua conta para abrir a livraria.';$('welcome').hidden=false;$('sign-in').hidden=false;return;}
       if(!response.ok)throw Error('UNAVAILABLE');
       const {data}=await response.json();
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role))throw Error('INVALID_SESSION');
