@@ -87,7 +87,7 @@ export function createPasskeyService(settings, { client }) {
 
 // The challenge and binding have already been durably stored by one signed RPC.
 export async function preparedAccessOptions(input, environment = 'dev') {
-  const RP_ID = devRpId(environment === 'prod' ? { APP_ENV: 'prod' } : process.env);
+  const RP_ID = devRpId(environment === 'prod' ? { APP_ENV: 'prod', VERCEL: process.env.VERCEL } : process.env);
   const user = subject(input);
   if (!['create','get'].includes(input.kind) || !Array.isArray(input.credentials) || input.credentials.length > 5 ||
       input.kind === 'get' && !input.credentials.length) rejected();

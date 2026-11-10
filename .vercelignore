@@ -5,3 +5,5 @@ dist.zip
 .git
 build
 .DS_Store
+.env*
+service-account*.json

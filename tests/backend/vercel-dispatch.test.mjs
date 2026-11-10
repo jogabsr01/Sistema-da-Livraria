@@ -66,6 +66,24 @@ test('Vercel owner access passes both origin checks after settings load', () => 
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('prepared production WebAuthn registration uses the hosting provider rpId', () => {
+  const script = `
+    const { preparedAccessOptions } = await import('./backend/passkey-service.mjs');
+    const input = { subjectId: '11111111-1111-4111-8111-111111111111', authorizationVersion: 1,
+      kind: 'create', credentials: [], challenge: 'A'.repeat(43) };
+    const result = await preparedAccessOptions(input, 'prod');
+    if (result.options.rp.id !== process.env.EXPECTED_RP_ID) throw Error('Unexpected rpId: ' + result.options.rp.id);
+  `;
+  for (const [vercel, expected] of [['1', 'livrariaipjb.vercel.app'], ['', 'merry-chimera-49a1f3.netlify.app']]) {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: new URL('../../', import.meta.url),
+      env: { ...process.env, APP_ENV: 'prod', VERCEL: vercel, WORKSPACE_LOCAL_LAB: '', EXPECTED_RP_ID: expected },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+  }
+});
+
 test('health and unknown routes retain status and JSON responses', async () => {
   for (const [path, method, status, body] of [
     ['/api/v1/health', 'GET', 200, { ok: true }],
