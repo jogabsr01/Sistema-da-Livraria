@@ -12,6 +12,20 @@ qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 class Staff(qa.Catalog):
     def setUp(self):
         super().setUp();self.lose_staff=False;self.commands=[]
+    def test_staff_bootstrap_failure_stops_automatic_retries_until_manual_refresh(self):
+        calls=[]
+        def fail(route):
+            calls.append(route.request.url)
+            route.fulfill(status=400, content_type='application/json', body=json.dumps({'error': {'code': 'INVALID_STAFF'}}))
+        self.page.route('**/api/v1/staff/bootstrap?*', fail)
+        self.page.goto(qa.ORIGIN+'/equipe-dev.html')
+        expect(self.page.locator('#status')).not_to_have_text('Conferindo seu acesso…')
+        self.page.evaluate("window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('focus'))")
+        self.page.wait_for_timeout(500)
+        self.assertEqual(len(calls),1)
+        self.page.locator('main [data-staff-refresh]').click()
+        self.page.wait_for_timeout(500)
+        self.assertEqual(len(calls),2)
     def relay(self,route):
         path=urlsplit(route.request.url).path
         if path in ['/equipe-dev.html','/equipe-dev.js','/equipe-dev.css']:

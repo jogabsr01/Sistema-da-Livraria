@@ -19,6 +19,13 @@ function fakeDb(values) {
 }
 function makeService(values = {}) { const db = fakeDb({ [`sessionTokenIndex/${tokenHash}`]: { sessionId, userId: adminId }, [`sessions/${sessionId}`]: { sessionId, userId: adminId, assurance: 'passkey', authorizationVersion: 2, authenticatedAt: new Date('2026-01-01T11:59:00.000Z'), expiresAt: new Date('2026-01-02T11:00:00.000Z') }, [`users/${adminId}`]: { id: adminId, role: 'ADMIN', status: 'ATIVO', owner: true, authorizationVersion: 2 }, ...values }); const identity = createFirestoreIdentityService({ db, now: () => now }); return { db, service: createFirestoreStaffService({ db, identityService: identity, config: {}, now: () => now }) }; }
 
+test('staff bootstrap returns an empty page for an owner without employees', async () => {
+  const { service } = makeService();
+  const result = await service.execute('bootstrap', { sessionTokenHash: tokenHash }, { offset: 0 });
+  assert.equal(result.principal.id, adminId);
+  assert.deepEqual({ users: result.users, total: result.total, nextOffset: result.nextOffset }, { users: [], total: 0, nextOffset: null });
+});
+
 test('Firestore staff lists and saves versioned encrypted contact metadata', async () => {
   const { db, service } = makeService();
   const payload = { commandId, id: employeeId, expectedRevision: 0, role: 'ATENDENTE', status: 'ATIVO', contact: 'ciphertext', emailIndex, cpfIndex, fingerprint: 'd'.repeat(64), reason: 'Cadastro' };
