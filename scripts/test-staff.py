@@ -26,6 +26,17 @@ class Staff(qa.Catalog):
         self.page.locator('main [data-staff-refresh]').click()
         self.page.wait_for_timeout(500)
         self.assertEqual(len(calls),2)
+    def test_staff_bootstrap_includes_session_cookie(self):
+        self.context.add_cookies([{'name': '__Host-livraria_session', 'value': 'test-session', 'url': qa.ORIGIN, 'secure': True, 'httpOnly': True}])
+        observed=[]
+        def inspect(route):
+            observed.append(route.request.headers.get('cookie',''))
+            route.fulfill(status=401, content_type='application/json', body=json.dumps({'error': {'code': 'UNAUTHENTICATED'}}))
+        self.page.route('**/api/v1/staff/bootstrap?*', inspect)
+        self.page.goto(qa.ORIGIN+'/equipe-dev.html')
+        expect(self.page.locator('#access-help')).to_be_visible()
+        self.assertEqual(len(observed),1)
+        self.assertIn('__Host-livraria_session=test-session',observed[0])
     def relay(self,route):
         path=urlsplit(route.request.url).path
         if path in ['/equipe-dev.html','/equipe-dev.js','/equipe-dev.css']:
