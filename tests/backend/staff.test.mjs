@@ -11,6 +11,19 @@ const rows=s=>s.main.getSheetByName('Usuarios');
 const emailCode=s=>s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1];
 function hash(s){const f=s.priv.getSheetByName('_Identity_Flows');return f.rows.at(-1)[f.rows[0].indexOf('Token_Hash')];}
 
+test('Vercel rewrite routing parameter is accepted only for the exact staff path', async () => {
+ const s=staffFixture(), previous=process.env.VERCEL;process.env.VERCEL='1';
+ try {
+  const base=STAFF_ORIGIN+'/api/v1/staff/bootstrap?offset=0';
+  const request=url=>new Request(url,{headers:{cookie:s.master.cookie}});
+  const good=await s.handler(request(base+'&match=staff%2Fbootstrap'));
+  assert.equal(good.status,200,await good.clone().text());
+  for(const query of ['&match=staff%2Fother','&match=staff%2Fbootstrap&match=staff%2Fbootstrap','&unknown=value','&offset=1']){
+   const response=await s.handler(request(base+query));assert.equal(response.status,400);assert.equal((await response.json()).error.code,'INVALID_STAFF');
+  }
+ } finally {if(previous===undefined)delete process.env.VERCEL;else process.env.VERCEL=previous;}
+});
+
 test('personal data uses scoped authenticated encryption, keyed indexes, fresh IVs, independent keys and valid CPF',()=>{
  const s=staffFixture(),id=randomUUID(),v={name:'Pessoa fictícia'},one=s.vault.seal('users',id,v),two=s.vault.seal('users',id,v);
  assert.notEqual(one,two);assert.deepEqual(s.vault.open('users',id,one),v);assert.ok(!one.includes(v.name));

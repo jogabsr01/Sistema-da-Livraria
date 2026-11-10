@@ -37,6 +37,15 @@ class Staff(qa.Catalog):
         expect(self.page.locator('#access-help')).to_be_visible()
         self.assertEqual(len(observed),1)
         self.assertIn('__Host-livraria_session=test-session',observed[0])
+    def test_admin_menu_uses_session_when_staff_bootstrap_fails(self):
+        self.page.route('**/account-menu.js', lambda route: route.fulfill(status=200, content_type='application/javascript', body=(qa.ROOT/'dist/account-menu.js').read_bytes()))
+        self.page.route('**/account-menu.css', lambda route: route.fulfill(status=200, content_type='text/css', body=(qa.ROOT/'dist/account-menu.css').read_bytes()))
+        self.page.route('**/api/v1/staff/bootstrap?*', lambda route: route.fulfill(status=400, content_type='application/json', body=json.dumps({'error': {'code': 'INVALID_STAFF'}})))
+        self.page.route('**/api/v1/session', lambda route: route.fulfill(status=200, content_type='application/json', body=json.dumps({'data': {'user': {'id': '11111111-1111-4111-8111-111111111111', 'role': 'SUPER_ADMIN'}}})))
+        self.page.goto(qa.ORIGIN+'/equipe-dev.html')
+        self.page.locator('.account-menu summary').click()
+        expect(self.page.get_by_role('link', name='Gerenciar equipe')).to_be_visible()
+        expect(self.page.get_by_role('link', name='Relatórios', exact=True)).to_be_visible()
     def relay(self,route):
         path=urlsplit(route.request.url).path
         if path in ['/equipe-dev.html','/equipe-dev.js','/equipe-dev.css']:

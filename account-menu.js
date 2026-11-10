@@ -6,12 +6,13 @@
  const toggle=header.querySelector('.app-menu-toggle');
  function closeMobile(){if(!toggle)return;toggle.setAttribute('aria-expanded','false');header.classList.remove('mobile-menu-open');}
  if(toggle)toggle.addEventListener('click',()=>{const open=toggle.getAttribute('aria-expanded')!=='true';toggle.setAttribute('aria-expanded',String(open));header.classList.toggle('mobile-menu-open',open);if(!open)closeMenus();});
- let identity='',role='',loggingOut=false,profileRequest=0,profileLoaded=false;
+ let identity='',role='',loggingOut=false,profileRequest=0,profileLoaded=false,sessionRequest=0;
  const administrative=()=>['ADMIN','SUPER_ADMIN'].includes(role);
  function synchronize(){role=document.body.dataset.sessionRole||'';header.querySelectorAll('[data-navigation-admin]').forEach(a=>a.hidden=!administrative());if(document.body.classList.contains('page-home'))nav.hidden=!['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(role);else nav.hidden=false;if(toggle)toggle.hidden=nav.hidden;if(nav.hidden)closeMobile();}
- function clearPersonal(){profileRequest++;profileLoaded=false;identity='';avatar.replaceChildren(document.createTextNode('Conta'));account.querySelector('summary').setAttribute('aria-label','Abrir menu da conta');}
+ function clearPersonal(){profileRequest++;sessionRequest++;profileLoaded=false;identity='';avatar.replaceChildren(document.createTextNode('Conta'));account.querySelector('summary').setAttribute('aria-label','Abrir menu da conta');}
  function showProfile(p){if(!p||typeof p.id!=='string'||typeof p.name!=='string'||p.name.length>160||!['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(p.role))return;profileLoaded=true;identity=p.id;document.body.dataset.sessionRole=p.role;synchronize();account.querySelector('summary').setAttribute('aria-label','Abrir menu de '+p.name);avatar.replaceChildren(document.createTextNode(p.name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase()));if(p.photoUrl&&/^\/api\/v1\/profile\/photo\?v=\d+$/.test(p.photoUrl)){const photo=document.createElement('img');photo.alt='';photo.src=p.photoUrl;avatar.replaceChildren(photo);}}
  async function refreshProfile(){if(document.hidden||navigator.onLine===false||document.body.classList.contains('page-meu-perfil'))return;const ticket=++profileRequest;try{const response=await fetch('/api/v1/profile/get',{credentials:'same-origin',cache:'no-store'});if(!response.ok)return;const {data}=await response.json();if(ticket===profileRequest&&!document.hidden)showProfile(data);}catch{}}
+ async function refreshNavigationSession(){const ticket=++sessionRequest;try{const response=await fetch('/api/v1/session',{credentials:'same-origin',cache:'no-store'});if(!response.ok)return;const {data}=await response.json();if(ticket!==sessionRequest||document.hidden||!['ADMIN','SUPER_ADMIN','ATENDENTE'].includes(data?.user?.role))return;document.body.dataset.sessionRole=data.user.role;synchronize();if(!profileLoaded)refreshProfile();}catch{}}
  function closeMenus(except=null){header.querySelectorAll('details[open]').forEach(menu=>{if(menu!==except)menu.open=false;});}
  const lightbox=document.createElement('dialog'),lightboxImage=document.createElement('img'),lightboxClose=document.createElement('button');
  lightbox.className='avatar-lightbox';lightbox.setAttribute('aria-label','Foto de perfil ampliada');lightboxClose.type='button';lightboxClose.className='avatar-lightbox-close';lightboxClose.setAttribute('aria-label','Fechar foto');lightboxClose.textContent='×';lightboxImage.alt='Foto de perfil ampliada';lightbox.append(lightboxClose,lightboxImage);document.body.append(lightbox);
@@ -22,7 +23,7 @@
  window.addEventListener('livraria:profile-invalidated',closePhoto);window.addEventListener('pagehide',closePhoto);
  header.querySelectorAll('details').forEach(menu=>menu.addEventListener('toggle',()=>{if(menu.open){closeMenus(menu);menu.style.setProperty('--module-menu-top',Math.min(menu.querySelector('summary').getBoundingClientRect().bottom+8,innerHeight-90)+'px');}}));
  // Menu opening is local and immediate. Page bootstraps own the only data reads.
- window.addEventListener('livraria:session-ready',()=>{synchronize();if(!profileLoaded)refreshProfile();});
+ window.addEventListener('livraria:session-ready',()=>{sessionRequest++;synchronize();if(!profileLoaded)refreshProfile();});
  window.addEventListener('livraria:profile-loaded',event=>{profileRequest++;showProfile(event.detail?.profile);});
  window.addEventListener('livraria:profile-changed',()=>{profileLoaded=false;refreshProfile();});
  window.addEventListener('livraria:profile-invalidated',()=>{clearPersonal();});
@@ -41,5 +42,5 @@
  }
  logoutButton.addEventListener('click',attemptLogout);
  retryLogoutButton.addEventListener('click',attemptLogout);
- synchronize();if(document.body.dataset.sessionRole)refreshProfile();
+ synchronize();if(document.body.dataset.sessionRole)refreshProfile();else refreshNavigationSession();
 })();

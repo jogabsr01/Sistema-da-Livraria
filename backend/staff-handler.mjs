@@ -13,6 +13,9 @@ export function loadStaffSettings(env=process.env){if(env.WORKSPACE_STAFF_ENABLE
 export function createStaffHandler(dependencies={}){
  return async request=>{const requestId=randomUUID();try{
   const url=new URL(request.url),op=url.pathname.split('/').at(-1);if(url.origin!==STAFF_ORIGIN)throw new ApiError(403,'FORBIDDEN');
+  // Vercel's named rewrite adds its path capture as a query parameter. Accept
+  // only the exact routing value; all other parameters remain strictly checked.
+  if(process.env.VERCEL==='1'&&url.searchParams.getAll('match').length===1&&url.searchParams.get('match')===`staff/${op}`)url.searchParams.delete('match');
   if(!['bootstrap','list','save'].includes(op))throw new ApiError(404,'NOT_FOUND');const method=op==='save'?'POST':'GET';
   if(request.method!==method){const r=json({error:{code:'METHOD_NOT_ALLOWED',requestId}},405);r.headers.set('allow',method);return r;}
   const settings=(dependencies.loadSettings||loadStaffSettings)(),client=(dependencies.createClient||createWorkspaceClient)(settings.config),vault=createPersonalDataVault(settings),sessions=createSessionService(settings,{client});
