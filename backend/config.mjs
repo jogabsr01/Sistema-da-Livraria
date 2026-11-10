@@ -51,8 +51,9 @@ export function loadConfig(env = process.env, built = env === process.env ? depl
   if (invalidBindings.length) invalid(env, invalidBindings);
   const passwordPolicy=env.WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED ?? env.WORKSPACE_ADMIN_PIN_LOGIN_ENABLED;
   if(passwordPolicy!==undefined&&!['true','false'].includes(passwordPolicy))invalid(env, [env.WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED !== undefined ? 'WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED' : 'WORKSPACE_ADMIN_PIN_LOGIN_ENABLED']);
-  const adminPasswordLogin=environment==='dev'&&passwordPolicy!=='false';
-  return Object.freeze({ environment, storageMode: firestore.mode, firestore, localLab: !!local, adminPasswordLogin, adminPinLogin: adminPasswordLogin,
+  const adminPasswordLogin=environment==='dev' ? passwordPolicy!=='false' : firestore.mode==='firestore' && env.WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED==='true';
+  const adminPinLogin=environment==='dev'&&passwordPolicy!=='false';
+  return Object.freeze({ environment, storageMode: firestore.mode, firestore, localLab: !!local, adminPasswordLogin, adminPinLogin,
     keyManagementEnabled: env.WORKSPACE_KEY_MANAGEMENT_ENABLED === 'true',
     emergencyRecoveryEnabled: env.WORKSPACE_EMERGENCY_RECOVERY_ENABLED === 'true' && env.WORKSPACE_RECOVERY_ENABLED === 'true',
     installationId: env.WORKSPACE_INSTALLATION_ID,
