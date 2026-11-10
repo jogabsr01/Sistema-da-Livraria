@@ -47,7 +47,7 @@ export function createSessionService(settings, { client, now = () => Date.now() 
   // Only principals created by this service instance can derive CSRF without
   // repeating the same session RPC. No cache of authorization across requests.
   const authenticated = new WeakMap();
-  const origin = config.environment === 'dev' ? devOrigin() : devOrigin({ APP_ENV: config.environment });
+  const origin = config.environment === 'dev' ? devOrigin() : devOrigin({ APP_ENV: config.environment, VERCEL: process.env.VERCEL });
   function csrf(rawToken) {
     return createHmac('sha256', csrfKey).update(JSON.stringify(['csrf.v1', config.environment, config.installationId, rawToken])).digest('base64url');
   }

@@ -84,6 +84,30 @@ test('prepared production WebAuthn registration uses the hosting provider rpId',
   }
 });
 
+test('Vercel session service accepts its origin and rejects other origins for reads and mutations', () => {
+  const script = `
+    const { createSessionService, sessionCookie } = await import('./backend/session-service.mjs');
+    const { randomBytes } = await import('node:crypto');
+    const raw = randomBytes(32).toString('base64url'), now = Date.now();
+    const principal = { id: '11111111-1111-4111-8111-111111111111', sessionId: '22222222-2222-4222-8222-222222222222', role: 'SUPER_ADMIN', assurance: 'passkey', authenticatedAt: now - 1000, expiresAt: now + 60000, authorizationVersion: 1 };
+    let reads = 0, revocations = 0;
+    const service = createSessionService({ config: { environment: 'prod', installationId: '33333333-3333-4333-8333-333333333333' }, tokenKey: randomBytes(32) }, { client: { readSession: async () => { reads++; return principal; }, revokeOtherSessions: async () => { revocations++; } } });
+    const cookie = sessionCookie(raw).split(';')[0], host = 'https://livrariaipjb.vercel.app';
+    const session = await service.current(new Request(host + '/api/v1/session', { headers: { cookie } }));
+    const response = await service.revokeOthers(new Request(host + '/api/v1/session/revoke-others', { method: 'POST', headers: { cookie, origin: host, 'content-type': 'application/json', 'x-csrf-token': session.csrfToken } }));
+    if (!response.revoked || reads !== 2 || revocations !== 1) throw Error('Vercel session failed');
+    try { await service.current(new Request('https://attacker.example/api/v1/session', { headers: { cookie } })); throw Error('Foreign host accepted'); }
+    catch (error) { if (error.code !== 'UNAUTHENTICATED') throw error; }
+    try { await service.revokeOthers(new Request(host + '/api/v1/session/revoke-others', { method: 'POST', headers: { cookie, origin: 'https://attacker.example', 'content-type': 'application/json', 'x-csrf-token': session.csrfToken } })); throw Error('Foreign origin accepted'); }
+    catch (error) { if (error.code !== 'CSRF_REJECTED') throw error; }
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: new URL('../../', import.meta.url),
+    env: { ...process.env, APP_ENV: 'prod', VERCEL: '1', WORKSPACE_LOCAL_LAB: '' }, encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test('health and unknown routes retain status and JSON responses', async () => {
   for (const [path, method, status, body] of [
     ['/api/v1/health', 'GET', 200, { ok: true }],
