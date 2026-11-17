@@ -56,7 +56,7 @@ export function createFirestoreReportService({ db, identityService, config, now 
     if (!['source', 'record'].includes(operation)) throw new ApiError(400, 'INVALID_REPORT');
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'reports.read', { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'reports.commercial.read', { now: currentTime });
       if (operation === 'record') return record(transaction, { repositories, principal, config, payload, currentTime });
       const productsSnapshot = await transaction.get(db.collection('products')), salesSnapshot = await transaction.get(db.collection('sales')),
         movementsSnapshot = await transaction.get(db.collection('stockMovements')), peopleSnapshot = await transaction.get(db.collection('users')),

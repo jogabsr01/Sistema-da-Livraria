@@ -8,7 +8,7 @@ import {build} from '../../scripts/build-public.mjs';
 const manifest=JSON.parse(await readFile(new URL('../../data/editorial-covers.json',import.meta.url),'utf8'));
 async function fixture(t){
  const root=await mkdtemp(join(tmpdir(),'editorial-build-'));t.after(()=>rm(root,{recursive:true,force:true}));
- await mkdir(join(root,'public/brand'),{recursive:true});await writeFile(join(root,'public/brand/ipb-jardim-bonfiglioli.png'),await readFile(new URL('../../public/brand/ipb-jardim-bonfiglioli.png',import.meta.url)));
+ await mkdir(join(root,'public/brand'),{recursive:true});for(const name of ['ipb-jardim-bonfiglioli.png','favicon.png','social-preview.png'])await writeFile(join(root,'public/brand',name),await readFile(new URL('../../public/brand/'+name,import.meta.url)));
  await mkdir(join(root,'data'));await mkdir(join(root,'public/covers'),{recursive:true});await writeFile(join(root,'index.html'),'<html>test public output</html>');await writeFile(join(root,'acesso-dev.html'),'<html>login</html>');
  const refs=structuredClone(manifest);await writeFile(join(root,'data/editorial-covers.json'),JSON.stringify(refs));
  for(const ref of refs)await writeFile(join(root,'public',ref.path),await readFile(new URL('../../public'+ref.path,import.meta.url)));

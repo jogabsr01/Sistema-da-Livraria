@@ -130,6 +130,11 @@ function readFirestoreSettings(env) {
 }
 
 export function loadFirestoreSettings(env = process.env) {
+  if (env.WORKSPACE_FIRESTORE_DIAGNOSTICS === 'true') {
+    console.info(JSON.stringify({ event: 'firestore_environment_presence',
+      serviceAccountJsonPresent: !!text(env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON),
+      projectIdPresent: !!text(env.WORKSPACE_FIRESTORE_PROJECT_ID) }));
+  }
   try { return readFirestoreSettings(env); }
   catch (error) {
     if (env.APP_ENV === 'prod' && error?.code === 'FIRESTORE_CONFIGURATION_UNAVAILABLE') {
@@ -149,9 +154,9 @@ export function loadFirestoreSettings(env = process.env) {
         } else if (env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON || env.WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON) {
           const credentialField = env.WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON ? 'WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON' : 'WORKSPACE_FIREBASE_SERVICE_ACCOUNT_JSON';
           try {
-            const c = parseCredentials(env[credentialField]);
+            const c = parseServiceAccountJson(env[credentialField]);
             const projectId = presentProjects.length ? env[presentProjects[0]] : null;
-            if (!c || c.project_id !== projectId || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(c.client_email) || createPrivateKey(c.private_key).asymmetricKeyType !== 'rsa') fields.push(credentialField);
+            if (!c || c.project_id !== projectId || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(c.client_email) || typeof c.private_key !== 'string' || createPrivateKey(c.private_key.replace(/\\n/g, '\n')).asymmetricKeyType !== 'rsa') fields.push(credentialField);
           } catch { fields.push(credentialField); }
         }
         if (env.WORKSPACE_EMAIL_DELIVERY_KEY && !/^[a-f0-9]{64}$/i.test(env.WORKSPACE_EMAIL_DELIVERY_KEY)) fields.push('WORKSPACE_EMAIL_DELIVERY_KEY');

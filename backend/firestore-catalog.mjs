@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ApiError } from './errors.mjs';
 import { requirePermission } from './authorization.mjs';
-import { catalogUuid, normalizeProduct, productFields } from './catalog-model.mjs';
+import { catalogUuid, normalizeProduct, normalizedIsbn, productFields } from './catalog-model.mjs';
 import { assertFirestoreDocumentSize, createFirestoreRepositories } from './firestore-repositories.mjs';
 import { commandDocumentId, commandRetention, commitCommand, createCommandFingerprint, createCommandMetadata, createPendingCommand, inspectCommand } from './firestore-commands.mjs';
 import { enqueueStockAlertProjection } from './firestore-outbox.mjs';
@@ -72,6 +72,7 @@ function product(snapshot, detailed = false) {
     version: value.version,
     updatedAt: date(value.updatedAt),
     hasPhoto: value.hasPhoto,
+    photoUrl: value.hasPhoto ? `/api/v1/catalog/cover?id=${id}&v=${value.version}` : '',
   };
   if (!detailed) {
     delete result.supplier;
@@ -137,7 +138,7 @@ function productSummary(record, version, stock, hasPhoto) {
 
 function reservationKeys(record) {
   const result = [];
-  if (record.active && record.isbn) result.push({ id: `active-isbn:${record.isbn}`, kind: 'ISBN', value: record.isbn });
+  if (record.isbn) result.push({ id: `active-isbn:${record.isbn}`, kind: 'ISBN', value: record.isbn });
   if (record.active && record.internalCode) result.push({ id: `active-code:${record.internalCode}`, kind: 'CODE', value: record.internalCode });
   if (record.active && record.sku) result.push({ id: `active-sku:${record.sku.toUpperCase()}`, kind: 'SKU', value: record.sku.toUpperCase() });
   return result;
@@ -208,9 +209,18 @@ async function executeCatalogMutation({ db, repositories, identityService, confi
       const oldNiches = existing?.nicheIds || [];
       if (record.nicheIds.some(id => !nicheMap.has(id) || !nicheMap.get(id).active && !oldNiches.includes(id))) throw new ApiError(400, 'CATALOG_INVALID');
     }
-    if (!existing) {
+    if (!existing || operation === 'save' && record.isbn) {
       const products = await transaction.get(db.collection('products'));
-      if (!products || !Array.isArray(products.docs) || products.docs.length >= PRODUCT_LIMIT) unavailable();
+      if (!products || !Array.isArray(products.docs) || products.docs.length > PRODUCT_LIMIT || !existing && products.docs.length >= PRODUCT_LIMIT) unavailable();
+      if (operation === 'save' && record.isbn) {
+        for (const item of products.docs) {
+          if (item.id === payload.id) continue;
+          const raw = data(item);
+          if (!raw.isbn) continue;
+          let isbn; try { isbn = normalizedIsbn(raw.isbn); } catch { unavailable(); }
+          if (isbn === record.isbn) throw new ApiError(409, 'CATALOG_DUPLICATE');
+        }
+      }
     }
     const oldKeys = existing ? reservationKeys(existing) : [];
     const newKeys = operation === 'receive' ? oldKeys : reservationKeys(record);

@@ -8,6 +8,33 @@ import { environment } from './fixtures.mjs';
 const result=async r=>({status:r.status,...await r.json()});
 const photo=async()=> (await sharp({create:{width:600,height:500,channels:3,background:'#54927a'}}).jpeg().toBuffer()).toString('base64');
 
+test('owner profile accepts omitted, null and blank CPF without removing the existing CPF',async()=>{
+ const s=profileFixture();let revision=0;
+ for(const cpf of [undefined,null,'']){
+  const body={commandId:randomUUID(),expectedRevision:revision,phone:'11988887777',...(cpf===undefined?{}:{cpf})};
+  const response=await s.profileHttp('save',body);assert.equal(response.status,200,await response.clone().text());revision++;
+  const profile=(await result(await s.profileHttp('get'))).data;assert.equal(profile.phone,'11988887777');assert.equal(profile.cpfMasked,'');
+ }
+ assert.equal((await s.profileHttp('save',{commandId:randomUUID(),expectedRevision:revision,phone:'',cpf:'123'})).status,400);
+});
+
+test('Vercel profile rewrite accepts only its exact routing capture and retains session isolation',async()=>{
+ const previous=process.env.VERCEL;process.env.VERCEL='1';
+ try{
+  const s=profileFixture(),base='https://dev--merry-chimera-49a1f3.netlify.app/api/v1/profile/';
+  const request=(path,cookie=s.master.cookie)=>s.profileHandler(new Request(base+path,{headers:{cookie}}));
+  const owner=await result(await request('bootstrap?match=profile%2Fbootstrap'));
+  assert.equal(owner.status,200);assert.equal(owner.data.user.id,s.master.id);assert.equal(owner.data.id,s.master.id);assert.equal(owner.data.email,'owner@example.invalid');
+  const c=s.command();await s.http('save',c);const worker=s.session(c.id);
+  const own=await result(await request('bootstrap?match=profile%2Fbootstrap',worker.cookie));
+  assert.equal(own.status,200);assert.equal(own.data.id,c.id);assert.equal(own.data.email,c.contact.email);
+  assert.equal((await request('bootstrap?match=profile%2Fget')).status,400);
+  assert.equal((await request('bootstrap?match=profile%2Fbootstrap&match=profile%2Fbootstrap')).status,400);
+  assert.equal((await request('bootstrap?match=profile%2Fbootstrap&extra=1')).status,400);
+  assert.notEqual((await request('bootstrap?match=profile%2Fbootstrap','')).status,200);
+ }finally{if(previous===undefined)delete process.env.VERCEL;else process.env.VERCEL=previous;}
+});
+
 test('self profile returns own masked identity, allows phone changes, and never accepts role/CPF/another user fields',async()=>{
  const s=profileFixture(),c=s.command();await s.http('save',c);const worker=s.session(c.id),get=await result(await s.profileHttp('get',null,worker));assert.equal(get.data.cpfMasked,'***.982.247-**');assert.equal(get.data.cpf,undefined);
  const p={commandId:randomUUID(),expectedRevision:1,phone:'(11) 98888-7777'};assert.equal((await s.profileHttp('save',p,worker)).status,200);assert.equal((await s.profileHttp('save',p,worker)).status,200);

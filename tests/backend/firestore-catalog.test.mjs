@@ -105,6 +105,16 @@ test('Firestore catalog bootstrap supports creation mode and returns principal/n
   assert.equal(result.nextOffset, null);
 });
 
+test('ISBN duplicates are rejected even for inactive legacy records without reservations', async () => {
+  const existing = { ...product(productB, 'Inativo', false), isbn: '9788535902778', internalCode: '' };
+  const { db, service } = makeService({ [`products/${productB}`]: existing });
+  const id = randomUUID(), commandId = randomUUID();
+  const record = { ...product(id, 'Novo'), isbn: '85-359-0277-5', internalCode: '' };
+  for (const key of ['stock', 'version', 'updatedAt', 'hasPhoto']) delete record[key];
+  await assert.rejects(service.execute('save', { sessionTokenHash: tokenHash }, { commandId, id, expectedVersion: 0, record }), { code: 'CATALOG_DUPLICATE', status: 409 });
+  assert.equal(db.values.has(`products/${id}`), false);
+});
+
 test('extended product and initial stock persist atomically and replay safely', async () => {
   const { service, db } = makeService();
   const id = randomUUID(), commandId = randomUUID();
@@ -155,6 +165,10 @@ test('saving a photo stores it in its own document and the product only keeps ha
   const saved = await service.execute('save', { sessionTokenHash: tokenHash }, { commandId: productA, id: productA, expectedVersion: 1, record, photo: photo() });
   assert.deepEqual(saved, { id: productA, version: 2 });
   assert.equal(db.values.get(`products/${productA}`).hasPhoto, true);
+  const listed = await service.execute('list', { sessionTokenHash: tokenHash }, { search:'', offset:0, nicheId:'', includeInactive:false });
+  assert.equal(listed.products.find(item => item.id === productA).photoUrl, `/api/v1/catalog/cover?id=${productA}&v=2`);
+  const detail = await service.execute('get', { sessionTokenHash: tokenHash }, { id: productA });
+  assert.equal(detail.product.photoUrl, `/api/v1/catalog/cover?id=${productA}&v=2`);
   assert.equal(Object.hasOwn(db.values.get(`products/${productA}`), 'photo'), false);
   assert.deepEqual(db.values.get(`products/${productA}/media/cover`), { ...photo(), updatedAt: db.values.get(`products/${productA}/media/cover`).updatedAt });
 });

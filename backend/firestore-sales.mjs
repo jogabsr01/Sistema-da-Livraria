@@ -82,7 +82,7 @@ export function createFirestoreSalesService({ db, identityService, config, now =
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now();
       const principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'sales.create', { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'sales.create', { now: currentTime });
       const command = createCommandMetadata({ domain: 'sales', commandId: commandInput.idempotencyKey, operation: 'checkout', actor: principal.id,
         payloadHash: createCommandFingerprint(commandInput), now: new Date(currentTime), retentionMs: commandRetention(365) });
       const commandRef = repositories.ref('commands', commandDocumentId('sales', commandInput.idempotencyKey));

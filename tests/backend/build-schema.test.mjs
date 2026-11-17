@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { build } from '../../scripts/build-public.mjs';
 import { gasSchema } from '../../scripts/generate-gas-schema.mjs';
 
-async function copyBrand(root){await mkdir(join(root,'public/brand'),{recursive:true});await writeFile(join(root,'public/brand/ipb-jardim-bonfiglioli.png'),await readFile(new URL('../../public/brand/ipb-jardim-bonfiglioli.png',import.meta.url)));}
+async function copyBrand(root){await mkdir(join(root,'public/brand'),{recursive:true});for(const name of ['ipb-jardim-bonfiglioli.png','favicon.png','social-preview.png'])await writeFile(join(root,'public/brand',name),await readFile(new URL('../../public/brand/'+name,import.meta.url)));}
 
 test('public build publishes access at root, preserves the demo and excludes private configuration', async t => {
   const root = await mkdtemp(join(tmpdir(), 'livraria-build-')); t.after(() => rm(root, { recursive: true, force: true }));await copyBrand(root);

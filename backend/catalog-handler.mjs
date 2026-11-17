@@ -20,6 +20,9 @@ export function loadIsbnLookupSettings(env = process.env) {
   if (env.WORKSPACE_ISBN_LOOKUP_ENABLED !== 'true') throw new ApiError(503,'ISBN_LOOKUP_NOT_ACTIVATED');
   return loadLoginGuardSettings(env);
 }
+export function validateIsbnLookupBinding(catalog, lookup) {
+  if (lookup.installationId !== catalog.installationId || lookup.environment !== catalog.environment) throw new ApiError(503,'ISBN_LOOKUP_NOT_ACTIVATED');
+}
 export function createCatalogHandler(dependencies = {}) {
   const lookupService = dependencies.lookupService || createIsbnLookupService();
   return async request => {
@@ -32,6 +35,7 @@ export function createCatalogHandler(dependencies = {}) {
       const settings = (dependencies.loadSettings || loadCatalogSettings)(), client = (dependencies.createClient || createWorkspaceClient)(settings.config);
       if(operation==='bootstrap'){
         const query=new URL(request.url).searchParams;
+        if(process.env.VERCEL==='1'&&query.getAll('match').length===1&&query.get('match')==='catalog/bootstrap')query.delete('match');
         if([...query.keys()].some(k=>!['q','offset','niche','inactive','create'].includes(k)||query.getAll(k).length!==1))throw new ApiError(400,'INVALID_PRODUCT');
         const offset=query.get('offset')||'0',search=(query.get('q')||'').trim(),nicheId=query.get('niche')||'';
         if(!/^\d{1,5}$/.test(offset)||Number(offset)>5000||search.length>100||nicheId&&!catalogUuid(nicheId)||['inactive','create'].some(k=>query.has(k)&&!['true','false'].includes(query.get(k))))throw new ApiError(400,'INVALID_PRODUCT');
@@ -51,6 +55,7 @@ export function createCatalogHandler(dependencies = {}) {
       const actor = { sessionTokenHash: principal.sessionTokenHash };
       let payload;
       const query = new URL(request.url).searchParams;
+      if(process.env.VERCEL==='1'&&query.getAll('match').length===1&&query.get('match')===`catalog/${operation}`)query.delete('match');
       if (['get','cover'].includes(operation)) { if ([...query.keys()].some(key => !['id', ...(operation === 'cover' ? ['v']:[])].includes(key) || query.getAll(key).length !== 1) || query.getAll('id').length !== 1 || !catalogUuid(query.get('id')) || query.has('v') && !/^[1-9]\d{0,9}$/.test(query.get('v'))) throw new ApiError(400, 'INVALID_PRODUCT'); payload = { id: query.get('id') }; }
       if (operation === 'cover' && !settings.photosEnabled) throw new ApiError(503, 'COVER_PHOTOS_NOT_ACTIVATED');
       if (operation === 'niches') { if (query.size) throw new ApiError(400, 'INVALID_PRODUCT'); payload = {}; }
@@ -79,7 +84,7 @@ export function createCatalogHandler(dependencies = {}) {
           if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1 || !Object.hasOwn(input,'isbn')) throw new ApiError(400,'INVALID_ISBN');
           let isbn;try { isbn=normalizedIsbn(input.isbn); } catch { throw new ApiError(400,'INVALID_ISBN'); } if (!isbn) throw new ApiError(400,'INVALID_ISBN');
           const lookupSettings=(dependencies.loadLookupSettings || loadIsbnLookupSettings)();
-          if (lookupSettings.config.installationId !== settings.config.installationId || lookupSettings.config.environment !== 'dev') throw new ApiError(503,'ISBN_LOOKUP_NOT_ACTIVATED');
+          validateIsbnLookupBinding(settings.config,lookupSettings.config);
           // Existing durable counters, with separate HMAC domains. Bibliographic
           // requests never consume a user's login bucket or disclose the user.
           const digest=(kind,value)=>createHmac('sha256',lookupSettings.guardKey).update(JSON.stringify(['catalog.isbn.v1',settings.config.installationId,kind,value])).digest('hex');

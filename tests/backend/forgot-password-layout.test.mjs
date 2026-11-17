@@ -14,3 +14,11 @@ test('password recovery control remains isolated between the password row and su
   assert.doesNotMatch(js, /\$\('recovery-choice'\)\.hidden\s*=/);
   assert.match(js, /if\(!recoveryEnabled\)/);
 });
+
+test('passkey view provides a direct return to password without claiming a session', async () => {
+  const html = await readFile(new URL('../../acesso-dev.html', import.meta.url), 'utf8');
+  const js = await readFile(new URL('../../acesso-dev.js', import.meta.url), 'utf8');
+  assert.match(html, /id="password-fallback"[^>]*>Voltar para entrar com senha<\/button>/);
+  assert.match(js, /\$\('password-fallback'\)\.addEventListener\('click'/);
+  assert.match(js, /primeiro acesso ainda não foi concluído/);
+});

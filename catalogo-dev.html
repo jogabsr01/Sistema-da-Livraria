@@ -4,6 +4,13 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer">
   <title>Catálogo — Livraria IPB</title>
+  <link rel="icon" type="image/png" href="/brand/favicon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Catálogo — Livraria IPB">
+  <meta property="og:description" content="Livraria IPB Jardim Bonfiglioli: livros, catálogo e acesso à livraria.">
+  <meta property="og:image" content="https://livraria.ipbjb.com.br/brand/social-preview.png">
+  <meta property="og:image:alt" content="Logo da Igreja Presbiteriana Jardim Bonfiglioli">
+
   <link rel="stylesheet" href="/catalogo-dev.css"><script src="/vendor/zxing-0.21.3.min.js" defer></script><script src="/catalogo-dev.js" defer></script><script src="/notification-badge.js" defer></script>
 <link rel="stylesheet" href="/account-menu.css"><script src="/account-menu.js" defer></script><link rel="stylesheet" href="/app-theme.css">
 </head>
@@ -27,15 +34,14 @@
       <div class="toolbar editor-heading"><h2 id="editor-title">Cadastrar produto</h2><button id="close" type="button" class="secondary">Fechar</button></div>
       <p id="form-status" role="status" aria-live="polite"></p>
       <section class="identifier-card" aria-labelledby="identifier-heading">
-        <div class="identifier-heading"><span class="identifier-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6V4h4M16 4h4v2M4 18v2h4m8 0h4v-2M7 8v8m3-8v8m3-8v8m4-8v8"/></svg></span><div><h3 id="identifier-heading">Identificação do produto</h3><p>Leia o código ou preencha manualmente.</p></div></div>
+        <div class="identifier-heading"><span class="identifier-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6V4h4M16 4h4v2M4 18v2h4m8 0h4v-2M7 8v8m3-8v8m3-8v8m4-8v8"/></svg></span><div><h3 id="identifier-heading">Identificação do produto</h3></div></div>
         <label for="isbn">ISBN ou código de barras</label>
         <div class="identifier-controls"><input id="isbn" maxlength="30" inputmode="numeric" autocomplete="off" placeholder="Digite o ISBN"><button id="barcode-open" type="button" class="secondary icon-action"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3"/></svg><span>Escanear com a câmera</span></button><div id="isbn-tools" class="isbn-actions" hidden><button id="isbn-lookup" type="button" class="secondary icon-action"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>Consultar ISBN</span></button><button id="isbn-cancel" type="button" class="secondary" hidden>Cancelar consulta</button></div></div>
         <div class="identifier-next"><button id="identifier-confirm" type="button">Continuar</button><button id="manual-product" type="button" class="manual-product"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>Cadastrar manualmente</button></div>
         <button id="barcode-stop" type="button" class="secondary scanner-stop" hidden>Fechar scanner</button>
         <div id="barcode-panel" hidden><video id="barcode-video" autoplay muted playsinline aria-label="Prévia do scanner de código de barras"></video><span class="scanner-frame" aria-hidden="true"></span></div>
         <p id="barcode-status" role="status" aria-live="polite"></p>
-        <p id="isbn-status" role="status" aria-live="polite">A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.</p>
-      <p class="identifier-hint">Sem ISBN? Deixe em branco: o produto receberá um código interno.</p>
+        <p id="isbn-status" role="status" aria-live="polite"></p>
       </section>
       <div id="product-details" hidden>
       <label id="product-type-label" hidden>Tipo de produto<select id="product-type"><option value="LIVRO">Livro</option><option value="PAPELARIA">Papelaria</option><option value="ACESSORIO">Acessório</option><option value="OUTROS">Outros</option></select></label>
@@ -46,18 +52,17 @@
       <div class="columns"><label>Preço de venda (R$) *<input id="price" inputmode="decimal" placeholder="0,00" required></label><label>Estoque mínimo<input id="minimum-stock" type="number" min="0" max="1000000" step="1" value="0" required></label></div>
       <p id="stock-info">Estoque inicial: 0. Após salvar, use Adicionar unidades para registrar uma entrada.</p>
       <label>Categoria<input id="category" maxlength="80"></label>
-      <fieldset><legend>Nichos *</legend><div id="niche-choices"></div></fieldset>
+      <fieldset><legend>Nichos *</legend><div id="niche-choices"></div><p id="niche-help" role="status" hidden></p><a id="niche-manage" href="/nichos-dev.html" target="_blank" rel="noopener" hidden>Gerenciar nichos</a></fieldset>
       <fieldset id="photo-controls" hidden><legend>Foto da capa</legend>
-        <div class="toolbar"><button id="camera-open" type="button">Tirar foto</button><button id="gallery-open" type="button" class="secondary">Escolher da galeria</button><button id="photo-remove" type="button" class="secondary">Remover foto</button></div>
+        <div class="toolbar"><button id="photo-change" type="button" class="secondary" hidden>Trocar foto</button><button id="camera-open" type="button">Tirar foto</button><button id="gallery-open" type="button" class="secondary">Escolher da galeria</button><button id="photo-remove" type="button" class="secondary" hidden>Remover foto</button></div>
         <input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
-        <p id="photo-status" role="status" aria-live="polite">Use a câmera do celular ou a webcam do computador, ou escolha uma imagem.</p>
+        <p id="photo-status" role="status" aria-live="polite"></p>
         <div id="camera-panel" hidden><video id="camera-video" autoplay muted playsinline aria-label="Prévia da câmera"></video>
           <div class="toolbar"><button id="camera-capture" type="button">Usar foto</button><button id="camera-cancel" type="button" class="secondary">Cancelar câmera</button></div>
         </div>
       </fieldset>
       <label>Link HTTPS da capa<input id="cover" type="url" maxlength="2000" placeholder="https://…"></label>
       <div class="cover-heading"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 18 5-5 3 3 3-4 5 6"/></svg><span>Prévia da capa</span></div><div id="cover-preview" class="cover-preview"><span>Capa não informada</span></div>
-      <p>A foto será enviada somente ao salvar. Para usar um link, informe um endereço HTTPS. A capa aparece quando o endereço permite carregar a imagem. Se falhar, confira o link ou a edição do livro.</p>
       <div class="columns" data-book-only><label>Ano<input id="year" type="number" min="1000" max="3000" step="1"></label><label>Páginas<input id="pages" type="number" min="0" max="100000" step="1"></label></div>
       <label>Descrição / sinopse<textarea id="synopsis" maxlength="5000" rows="4"></textarea></label>
       <label class="check"><input id="active" type="checkbox" checked> Produto ativo</label>

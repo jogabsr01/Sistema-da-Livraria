@@ -11,13 +11,13 @@ const attendant = new Set([
   'notifications.self.read', 'sessions.self.revoke',
 ]);
 const admin = new Set([
-  ...attendant, 'reports.read', 'audit.read', 'niches.write', 'schedule.write',
+  ...attendant, 'reports.read', 'reports.commercial.read', 'audit.read', 'sales.all.read', 'niches.write', 'schedule.write',
   'stock.adjust', 'sales.reverse', 'users.attendant.read', 'users.attendant.manage', 'products.delete', 'notifications.manage', 'schedule.all.read',
 ]);
 const superAdmin = new Set([...admin, 'users.admin.manage', 'config.manage']);
 const recent = new Set([
-  'credentials.self.manage', 'schedule.write', 'niches.write', 'reports.read', 'audit.read', 'stock.adjust', 'sales.reverse', 'users.attendant.manage',
-  'users.admin.manage', 'config.manage', 'profile.self.write',
+  'credentials.self.manage', 'schedule.write', 'reports.read', 'audit.read', 'stock.adjust', 'sales.reverse',
+  'config.manage', 'profile.self.write',
 ]);
 const selfOperations = new Set([
   'profile.self.read', 'profile.self.write', 'credentials.self.manage', 'schedule.self.read',
@@ -29,7 +29,7 @@ function isUuid(value) { return typeof value === 'string' && UUID.test(value); }
 
 // Only call after the session was resolved from the authoritative server store.
 // This policy never authenticates caller-provided role/user fields or creates users.
-export function requirePermission(principal, operation, { targetUserId, targetRole, now = Date.now(), localProfileWrite = false, localStaffWrite = false } = {}) {
+export function requirePermission(principal, operation, { targetUserId, targetRole, now = Date.now(), localProfileWrite = false, basicProfileWrite = false, localStaffWrite = false } = {}) {
   if (!Number.isSafeInteger(now) || now < 0 || !principal ||
       !isUuid(principal.id) || !isUuid(principal.sessionId) ||
       !Number.isSafeInteger(principal.authenticatedAt) || principal.authenticatedAt < 0 ||
@@ -43,9 +43,10 @@ export function requirePermission(principal, operation, { targetUserId, targetRo
       typeof operation !== 'string' || !permissions[principal.role].has(operation)) denied();
   const businessPassword=principal.assurance==='password'&&principal.adminPasswordLogin===true;
   const businessPin=principal.assurance==='pin'&&principal.adminPinLogin===true;
-  const localSelfProfile = localProfileWrite === true && operation === 'profile.self.write';
+  const localSelfProfile = (localProfileWrite === true || basicProfileWrite === true) && operation === 'profile.self.write';
   const localStaff = localStaffWrite === true && ['users.attendant.manage', 'users.admin.manage'].includes(operation);
-  if (!localSelfProfile && !localStaff && principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPassword&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
+  const sessionManagement = ['reports.commercial.read', 'sales.all.read', 'niches.write', 'users.attendant.read', 'users.attendant.manage', 'users.admin.manage'].includes(operation);
+  if (!localSelfProfile && !localStaff && !sessionManagement && principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPassword&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
   if (!localSelfProfile && !localStaff && recent.has(operation) && ((!strong.has(principal.assurance)&&!((businessPassword||businessPin)&&operation!=='credentials.self.manage')) || now - principal.authenticatedAt > 300_000)) {
     denied(401, 'REAUTHENTICATION_REQUIRED');
   }

@@ -99,7 +99,7 @@ class Notifications(qa.Stock):
         self.page.goto(ORIGIN+'/notificacoes-dev.html');expect(self.page.locator('#notifications')).to_be_hidden()
         self.start();self.local('/test/disable-notifications',{});self.page.goto(ORIGIN+'/notificacoes-dev.html');expect(self.page.locator('#status')).to_contain_text('ainda não foram habilitadas')
         expect(self.page.locator('#report-tools')).to_be_hidden()
-        self.page.goto('https://merry-chimera-49a1f3.netlify.app/notificacoes-dev.html');expect(self.page.locator('#status')).to_contain_text('exclusivamente no endereço DEV')
+        self.page.goto('https://merry-chimera-49a1f3.netlify.app/notificacoes-dev.html');expect(self.page.locator('#notifications')).to_be_hidden()
 
 
 if __name__=='__main__':

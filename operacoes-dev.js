@@ -12,7 +12,7 @@
   const fresh = () => ready && online() && accessValid && recent(checkedAt);
   function describe(error) {
     if(error.code==='OFFLINE')return 'Sem conexão. Mantenha esta aba aberta e confira novamente ao reconectar.';
-    if(error.status===401)return 'Confirme novamente seu acesso com PIN e confirmação pelo aparelho para continuar.';
+    if(error.status===401)return 'Sua sessão não pôde ser confirmada. Entre novamente para continuar.';
     if(error.status===403)return 'Seu perfil não permite esta operação.';
     if(error.code?.includes('CONFLICT')||error.code?.includes('NO_CHANGE'))return 'O registro mudou ou a operação já foi realizada. Atualize a consulta e confira o resultado.';
     if(error.code?.includes('NOT_ACTIVATED')||error.code?.includes('UNAVAILABLE'))return 'Este módulo ainda não está disponível nesta instalação.';
@@ -91,6 +91,7 @@
         if(version===generation&&online())showReceipt(data.sale);
       }));card.append(button);return card;
     }));
+    if(!data.sales.length)$('sales').append(el('p','Nenhuma venda encontrada neste período.'));
   }
   async function read(action) {
     if(loading||busy||pending||!fresh())return;

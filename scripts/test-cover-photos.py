@@ -37,7 +37,8 @@ class Photos(qa.Catalog):
     def test_photos_mobile_camera_captures_stops_tracks_and_saves(self):
         self.prepare();self.context.grant_permissions(['camera'],origin=qa.ORIGIN)
         self.page.locator('#camera-open').click();expect(self.page.locator('#photo-status')).to_contain_text('Posicione a capa')
-        self.page.evaluate('window.capturedStream=document.querySelector("video").srcObject')
+        self.page.evaluate('window.capturedStream=document.querySelector("#camera-video").srcObject')
+        self.assertTrue(self.page.evaluate('capturedStream instanceof MediaStream'))
         self.page.locator('#camera-capture').click();expect(self.page.locator('#photo-status')).to_contain_text('Foto pronta')
         self.assertTrue(self.page.evaluate('capturedStream.getTracks().every(track=>track.readyState==="ended")'))
         expect(self.page.locator('#camera-panel')).to_be_hidden();self.save();expect(self.page.locator('.book img')).to_be_visible()

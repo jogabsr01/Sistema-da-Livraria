@@ -45,7 +45,7 @@ export function mapProductDocuments({ id, actorId, timestamp, version, record, s
   if (photo && product.coverUrl) fail();
   const documents = [{ path: `products/${id}`, data: { ...product, ...meta, stock, hasPhoto: photo !== null } },
     { path: `productSearch/${id}`, data: { productId: id, active: product.active, nicheIds: product.nicheIds, tokens: tokens(product), updatedAt: timestamp, version } }];
-  if (product.active && (product.isbn || product.internalCode)) {
+  if (product.isbn || product.active && product.internalCode) {
     const kind = product.isbn ? 'ISBN' : 'CODE', value = product.isbn || product.internalCode;
     documents.push({ path: `uniqueness/active-${product.isbn ? 'isbn' : 'code'}:${value}`, data: { ownerId: id, kind, value, version, active: true } });
   }

@@ -26,7 +26,8 @@ test('navigation action icons are distinct and home shortcuts retain their conte
 test('rotation menu contains its destinations and restricts niche administration',async()=>{
  const source=await readFile(new URL('../../home-dev.html',import.meta.url),'utf8'),html=renderAppHeader(source,'home-dev.html');
  const menus=[...html.matchAll(/<details class="module-menu"><summary>(.*?)<\/summary><div class="account-options">([\s\S]*?)<\/div><\/details>/g)];
- const catalog=menus.find(m=>m[1].endsWith('Catálogo'))[2],routine=menus.find(m=>m[1].endsWith('Rotina'))[2];
+ const catalog=menus.find(m=>m[1].endsWith('Catálogo'))[2],routineMenu=menus.find(m=>m[1].includes('Rotina')),routine=routineMenu[2];
+ assert.match(routineMenu[1],/data-notification-count/);
  assert.doesNotMatch(catalog,/nichos-dev/);
  for(const path of ['caixa-dev.html','operacoes-dev.html','notificacoes-dev.html','escalas-dev.html','nichos-dev.html'])assert.ok(routine.includes('/'+path));
  assert.match(routine,/<a href="\/nichos-dev.html" data-navigation-admin hidden>/);

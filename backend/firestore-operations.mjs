@@ -71,8 +71,8 @@ async function readOperations({ db, repositories, identityService, config, opera
   return runFirestoreTransaction(db, async transaction => {
     const currentTime = now();
     const principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-    const permission = principal.role === 'ATENDENTE' ? 'sales.self.read' : 'audit.read';
-    requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permission, { now: currentTime });
+    const permission = principal.role === 'ATENDENTE' ? 'sales.self.read' : 'sales.all.read';
+    requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, permission, { now: currentTime });
     if (operation === 'get') {
       if (!catalogUuid(payload?.id)) invalid();
       const saleRef = repositories.ref('sales', payload.id);
@@ -148,7 +148,7 @@ export function createFirestoreOperationsService({ db, identityService, config, 
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now();
       const principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, operation === 'adjust' ? 'stock.adjust' : 'sales.reverse', { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, operation === 'adjust' ? 'stock.adjust' : 'sales.reverse', { now: currentTime });
       const metadata = createCommandMetadata({ domain: 'operations', commandId: input.commandId, operation, actor: principal.id,
         payloadHash: createCommandFingerprint(input), now: new Date(currentTime), retentionMs: commandRetention(365) });
       const commandRef = repositories.ref('commands', commandDocumentId('operations', input.commandId));

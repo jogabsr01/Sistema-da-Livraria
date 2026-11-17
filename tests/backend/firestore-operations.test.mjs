@@ -104,6 +104,33 @@ test('Firestore operations lists sales and returns item details with current sta
   assert.deepEqual((await service.execute('get', { sessionTokenHash: tokenHash }, { id: saleId })).sale.items[0], { productId, title: 'Livro', quantity: 1, unitPriceCents: 1200, subtotalCents: 1200 });
 });
 
+test('history accepts valid administrator sessions and confines attendants to their own sales', async () => {
+  const otherId = '22222222-2222-4222-8222-222222222222';
+  const sale = { id:saleId, status:'CONFIRMADA', totalCents:1200, paymentMethod:'PIX', customerId:null, attendantId:otherId, createdAt:new Date('2026-01-01T11:30:00.000Z') };
+  const range = { from:'2026-01-01T00:00:00.000Z', to:'2026-01-01T23:59:59.000Z', offset:0 };
+  for (const role of ['ADMIN','SUPER_ADMIN','ATENDENTE']) {
+    const {db,service} = makeService({ [`sales/${saleId}`]:sale });
+    db.values.set(`users/${userId}`, {role,status:'ATIVO',authorizationVersion:2});
+    db.values.set(`sessions/${sessionId}`, {...db.values.get(`sessions/${sessionId}`),authenticatedAt:new Date('2026-01-01T11:00:00.000Z')});
+    const result = await service.execute('list',{sessionTokenHash:tokenHash},range);
+    assert.equal(result.total,role==='ATENDENTE'?0:1);
+    if(role==='ATENDENTE')await assert.rejects(service.execute('get',{sessionTokenHash:tokenHash},{id:saleId}),{code:'SALE_NOT_FOUND'});
+  }
+});
+
+test('Firestore operations accepts configured administrator password sessions for authorized mutations', async () => {
+  const db = fakeDb({
+    [`sessionTokenIndex/${tokenHash}`]: {sessionId,userId},
+    [`sessions/${sessionId}`]: {sessionId,userId,assurance:'password',authorizationVersion:2,authenticatedAt:new Date(now-1000),expiresAt:new Date(now+3600000)},
+    [`users/${userId}`]: {role:'ADMIN',status:'ATIVO',authorizationVersion:2},
+    [`products/${productId}`]: product(),
+  });
+  const identity=createFirestoreIdentityService({db,now:()=>now,config:{adminPasswordLogin:true}});
+  const service=createFirestoreOperationsService({db,identityService:identity,config:{adminPasswordLogin:true},now:()=>now});
+  const result=await service.execute('adjust',{sessionTokenHash:tokenHash},{commandId:adjustId,id:productId,expectedVersion:1,newStock:3,reason:'Contagem'});
+  assert.equal(result.stockAfter,3);
+});
+
 test('Firestore stock reconciliation detects a broken movement chain', async () => {
   const changed = product(2); changed.version = 2;
   const { db } = makeService({

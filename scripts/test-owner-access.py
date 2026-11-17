@@ -106,13 +106,12 @@ class OwnerAccess(unittest.TestCase):
     def open(self):
         self.page.goto(ORIGIN + '/acesso-dev.html?verificar=1'); expect(self.page.locator('#initial')).to_be_visible()
     def activation_until_passkey(self):
-        self.open(); self.page.get_by_text('É meu primeiro acesso', exact=True).click(); self.page.locator('#activation-email').fill('owner@example.invalid')
-        self.page.get_by_role('button', name='Receber código por e-mail').click()
+        self.open(); self.page.locator('#login-email').fill('owner@example.invalid'); self.page.locator('#first-access').click()
         expect(self.page.locator('#email-form')).to_be_visible()
         self.page.locator('#email-code').fill(self.local('/test/code')['code']); self.page.get_by_role('button', name='Confirmar código').click()
-        expect(self.page.locator('#pin-form')).to_be_visible()
-        self.page.locator('#new-pin').fill('8274'); self.page.locator('#confirm-pin').fill('8274')
-        self.page.get_by_role('button', name='Salvar PIN e continuar').click(); expect(self.page.locator('#passkey')).to_be_visible(); expect(self.page.locator('#passkey-button')).to_be_enabled()
+        expect(self.page.locator('#password-form')).to_be_visible()
+        self.page.locator('#new-password').fill('Senha 8274'); self.page.locator('#confirm-password').fill('Senha 8274')
+        self.page.get_by_role('button', name='Salvar senha e continuar').click(); expect(self.page.locator('#passkey')).to_be_visible(); expect(self.page.locator('#passkey-button')).to_be_enabled()
     def activate(self):
         self.activation_until_passkey(); self.page.locator('#passkey-button').click(); expect(self.page.locator('#complete')).to_be_visible()
     def logout(self):
@@ -124,8 +123,8 @@ class OwnerAccess(unittest.TestCase):
         }""")
         self.assertEqual(status, 200)
         self.page.reload(); expect(self.page.locator('#initial')).to_be_visible()
-    def begin_login(self, pin='8274'):
-        self.page.locator('#login-email').fill('owner@example.invalid'); self.page.locator('#login-pin').fill(pin)
+    def begin_login(self, pin='Senha 8274'):
+        self.page.locator('#login-email').fill('owner@example.invalid'); self.page.locator('#login-password').fill(pin)
         self.page.get_by_role('button', name='Entrar na minha conta', exact=True).first.click()
     def assert_no_secrets_in_browser_storage(self):
         state = self.page.evaluate('({local: {...localStorage}, session: {...sessionStorage}, cookie: document.cookie})')

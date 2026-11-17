@@ -39,7 +39,8 @@ export function normalizeProduct(record, id) {
   for (const [key, max] of [['priceCents', 100_000_000], ['minimumStock', 1_000_000], ['year', 3000], ['pages', 100000]]) {
     const value = record[key] ?? 0; if (!Number.isSafeInteger(value) || value < 0 || value > max || key === 'year' && value !== 0 && value < 1000) fail(key);
   }
-  if (!Array.isArray(record.nicheIds) || !record.nicheIds.length || record.nicheIds.length > 20 || record.nicheIds.some(id => !catalogUuid(id)) || new Set(record.nicheIds).size !== record.nicheIds.length || typeof record.active !== 'boolean') fail();
+  if (!Array.isArray(record.nicheIds) || !record.nicheIds.length || record.nicheIds.length > 20 || record.nicheIds.some(id => !catalogUuid(id)) || new Set(record.nicheIds).size !== record.nicheIds.length) fail('nicheIds');
+  if (typeof record.active !== 'boolean') fail();
   if (record.costCents !== undefined && (!Number.isSafeInteger(record.costCents) || record.costCents < 0 || record.costCents > 100_000_000)) fail('costCents');
   const sku = text(record.sku, 80, false, 'sku');
   if (sku && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(sku)) fail('sku');

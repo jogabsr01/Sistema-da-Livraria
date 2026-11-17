@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createIsbnLookupService } from '../../backend/isbn-lookup.mjs';
-import { createCatalogHandler,loadIsbnLookupSettings } from '../../backend/catalog-handler.mjs';
+import { createCatalogHandler,loadIsbnLookupSettings,validateIsbnLookupBinding } from '../../backend/catalog-handler.mjs';
 import { createLoginGuard } from '../../backend/login-guard.mjs';
 import { catalogFixture,CATALOG_ORIGIN } from '../helpers/catalog-fixture.mjs';
 import { isbnProviderFixture } from '../helpers/isbn-provider-fixtures.mjs';
@@ -73,6 +73,12 @@ test('lookup HTTP is authenticated, origin/CSRF protected, strict and cannot acc
   assert.equal((await s.handler(new Request(CATALOG_ORIGIN+'/api/v1/catalog/isbn',{method:'POST',headers:{origin:CATALOG_ORIGIN,'content-type':'application/json'},body:JSON.stringify({isbn:ISBN})}))).status,401);
   assert.equal((await s.handler(new Request('https://merry-chimera-49a1f3.netlify.app/api/v1/catalog/isbn',{method:'POST'}))).status,403);
   assert.equal(s.calls.length,0);assert.equal((await s.post(a)).status,200);assert.equal(s.calls.length,5);assert.equal(s.main.getSheetByName('Produtos').getLastRow(),1);
+});
+test('ISBN lookup accepts matching production bindings and rejects mismatches',()=>{
+  const catalog={installationId:'installation',environment:'prod'};
+  assert.doesNotThrow(()=>validateIsbnLookupBinding(catalog,{...catalog}));
+  assert.throws(()=>validateIsbnLookupBinding(catalog,{...catalog,environment:'dev'}),{code:'ISBN_LOOKUP_NOT_ACTIVATED'});
+  assert.throws(()=>validateIsbnLookupBinding(catalog,{...catalog,installationId:'other'}),{code:'ISBN_LOOKUP_NOT_ACTIVATED'});
 });
 test('lookup quotas persist across handler instances and use buckets independent from login',async()=>{
   const s=fixture(),a=s.session();for(let i=0;i<5;i++)assert.equal((await s.post(a)).status,200);

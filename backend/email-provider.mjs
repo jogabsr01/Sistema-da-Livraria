@@ -29,9 +29,18 @@ export async function sendResendEmail({ apiKey, from, to, subject, text, idempot
       body: JSON.stringify({ from: input.from, to: [input.to], subject: input.subject, text: input.text }), signal: AbortSignal.timeout(10000) });
   } catch {
     // A network failure does not prove that the provider rejected the request.
+    console.error(JSON.stringify({event:'email_provider_result',provider:'resend',operation:'send',outcome:'NETWORK_UNCERTAIN'}));
     uncertain();
   }
   if (!response) uncertain();
+  console.info(JSON.stringify({event:'email_provider_result',provider:'resend',operation:'send',httpStatus:response.status,outcome:response.ok?'ACCEPTED':response.status===401||response.status===403?'AUTH_OR_SENDER_REJECTED':response.status===429?'RATE_LIMITED':response.status>=500||response.status===408?'UNCERTAIN':'REJECTED'}));
+  if (!response.ok) {
+    // Only retain known provider error categories; the response message may
+    // contain the destination, sender or other private data.
+    let name; try { name = (await response.json())?.name; } catch {}
+    const allowed = new Set(['validation_error','invalid_api_key','restricted_api_key','invalid_access','missing_api_key','rate_limit_exceeded','daily_quota_exceeded','monthly_quota_exceeded']);
+    console.error(JSON.stringify({ event:'email_provider_rejection', provider:'resend', httpStatus:response.status, category:allowed.has(name)?name:'OTHER' }));
+  }
   if (response.status === 429) quota();
   if (response.status === 408 || response.status >= 500) uncertain();
   if (!response.ok) unavailable();

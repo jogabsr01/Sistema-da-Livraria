@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {catalogFixture,CATALOG_ORIGIN} from '../helpers/catalog-fixture.mjs';
 const request=(cookie,query='')=>new Request(CATALOG_ORIGIN+'/api/v1/catalog/bootstrap'+query,{headers:{cookie}});
+test('Vercel rewrite permits only the exact catalog capture',async()=>{
+ const previous=process.env.VERCEL;process.env.VERCEL='1';
+ try{const s=catalogFixture(),session=s.session('ADMIN');
+ assert.equal((await s.handler(request(session.cookie,'?create=true&match=catalog%2Fbootstrap'))).status,200);
+ assert.equal((await s.handler(request(session.cookie,'?match=catalog%2Fsave'))).status,400);
+ assert.equal((await s.handler(request(session.cookie,'?match=catalog%2Fbootstrap&match=catalog%2Fbootstrap'))).status,400);
+ }finally{if(previous===undefined)delete process.env.VERCEL;else process.env.VERCEL=previous;}
+});
 test('catalog opening authenticates and returns niches, first page and CSRF in one signed RPC',async()=>{
  const s=catalogFixture(),session=s.session('ADMIN'),command=s.command();await s.client.catalog('save',session.actor,command);
  const expected=await s.sessionService.current(new Request(CATALOG_ORIGIN+'/api/v1/session',{headers:{cookie:session.cookie}}));

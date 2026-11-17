@@ -92,8 +92,11 @@ class Checkout(qa.Catalog):
         expect(self.page.locator('#sale-status')).to_contain_text('Não foi possível confirmar o resultado')
         self.fail_stock=True; self.page.locator('#refresh').click()
         expect(self.page.locator('#connection')).to_have_attribute('data-state','stale')
-        expect(self.page.locator('#confirm')).to_be_enabled(); self.confirm()
+        expect(self.page.locator('#pending-sale')).to_be_visible()
+        expect(self.page.locator('#verify-pending-sale')).to_be_enabled()
+        self.page.locator('#verify-pending-sale').click();expect(self.page.locator('#receipt')).to_be_visible()
         self.assertEqual(self.local('/test/checkout-state')['sales'],1)
+        expect(self.page.locator('#pending-sale')).to_be_hidden()
 
     def test_checkout_late_response_cannot_unlock_after_disconnect(self):
         self.checkout(); self.add(); self.hold_stock=True; self.page.locator('#refresh').click()
@@ -245,7 +248,7 @@ class Checkout(qa.Catalog):
         self.page.evaluate("const key=Object.keys(sessionStorage)[0];sessionStorage.setItem('checkout.pending.other-account',sessionStorage.getItem(key));sessionStorage.removeItem(key)")
         self.page.reload();expect(self.page.locator('#checkout')).to_be_visible();expect(self.page.locator('.cart-line')).to_have_count(0)
         self.local('/test/disable-checkout',{});self.page.reload();expect(self.page.locator('#checkout')).to_be_hidden();expect(self.page.locator('#status')).to_contain_text('ainda não está disponível')
-        self.page.goto('https://merry-chimera-49a1f3.netlify.app/caixa-dev.html');expect(self.page.locator('#status')).to_contain_text('exclusivamente no endereço DEV')
+        self.page.goto('https://merry-chimera-49a1f3.netlify.app/caixa-dev.html');expect(self.page.locator('#checkout')).to_be_hidden()
 
     def test_checkout_two_independent_sessions_refresh_stock_on_focus(self):
         self.checkout(); other=self.browser.new_context();other.route('**/*',self.relay)
@@ -254,7 +257,7 @@ class Checkout(qa.Catalog):
         for key in self.cdp.send('WebAuthn.getCredentials',{'authenticatorId':self.authenticator})['credentials']:cdp.send('WebAuthn.addCredential',{'authenticatorId':auth,'credential':key})
         try:
             page.goto(qa.ORIGIN+'/acesso-dev.html?verificar=1');expect(page.locator('#initial')).to_be_visible()
-            page.locator('#login-email').fill('owner@example.invalid');page.locator('#login-pin').fill('8274')
+            page.locator('#login-email').fill('owner@example.invalid');page.locator('#login-password').fill('Senha 8274')
             page.get_by_role('button',name='Entrar na minha conta',exact=True).first.click();expect(page.locator('#passkey')).to_be_visible()
             page.locator('#passkey-button').click();expect(page.locator('#complete')).to_be_visible()
             page.goto(qa.ORIGIN+'/caixa-dev.html');expect(page.locator('.book')).to_have_count(2)

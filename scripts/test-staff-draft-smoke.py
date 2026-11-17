@@ -36,5 +36,19 @@ with sync_playwright() as p:
     expect(page.locator('#editor')).to_be_visible()
     expect(page.locator('#staff-name')).to_have_value('Rascunho preservado')
     assert writes[0]['contact']['cpf'] == '' and writes[0]['contact']['phone'] == person['phone']
+    page.unroute(origin + '/**', route)
+    def success_route(req):
+        path = req.request.url.removeprefix(origin).split('?')[0]
+        if path == '/api/v1/staff/save':
+            person['name'] = req.request.post_data_json['contact']['name']
+            person['revision'] = 2
+            req.fulfill(json={'data': {'id': person['id'], 'revision': 2, 'reenrollmentRequired': False}})
+        else:
+            route(req)
+    page.route(origin + '/**', success_route)
+    page.locator('#save-user').click()
+    expect(page.locator('#editor')).not_to_be_visible()
+    expect(page.locator('.person h3')).to_have_text('Rascunho preservado')
+    expect(page.locator('#status')).to_contain_text('atualizados')
     browser.close()
 print('STAFF_DRAFT_SMOKE_OK')

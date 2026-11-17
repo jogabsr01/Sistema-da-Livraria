@@ -29,6 +29,9 @@ test('ISBN-10 and formatted ISBN normalize to the same real edition; invalid ISB
   const s=catalogFixture(),base=s.command();
   for(const record of [{isbn:'9788543303933'},{priceCents:32.9},{stock:999},{role:'SUPER_ADMIN'},{title:'=IMPORTXML("https://evil")'},{nicheIds:[]},...['http://covers.example.org/a','https://localhost/a','https://127.0.0.1/a','https://a.local./a','https://user:pass@covers.example.org/a','data:image/png;base64,x'].map(coverUrl=>({coverUrl}))]) assert.throws(()=>normalizeProduct({...base.record,...record},base.id));
 });
+test('missing niches return a precise validation field',()=>{
+ const s=catalogFixture(),c=s.command();assert.throws(()=>normalizeProduct({...c.record,nicheIds:[]},c.id),{code:'INVALID_PRODUCT',field:'nicheIds'});
+});
 test('manual no-barcode books receive stable internal identifiers without a fabricated ISBN',async()=>{
   const s=catalogFixture(),actor=s.session(),c=s.command({record:{isbn:''}}); await s.client.catalog('save',actor.actor,c);
   const p=(await s.client.catalog('get',actor.actor,{id:c.id})).product; assert.equal(p.isbn,''); assert.match(p.internalCode,/^INT[A-Z0-9]{12}$/);

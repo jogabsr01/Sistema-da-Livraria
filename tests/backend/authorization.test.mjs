@@ -13,6 +13,26 @@ const forbidden = { status: 403, code: 'FORBIDDEN' };
 const unauthenticated = { status: 401, code: 'UNAUTHENTICATED' };
 const reauthenticate = { status: 401, code: 'REAUTHENTICATION_REQUIRED' };
 
+test('reports accept valid administrator sessions without renewed authentication', () => {
+  for (const role of ['ADMIN','SUPER_ADMIN']) for (const assurance of ['password','pin','passkey']) {
+    const actor=principal({role,assurance,authenticatedAt:now-600_000});
+    assert.equal(check(actor,'reports.commercial.read'),actor);
+    assert.throws(()=>check({...actor,expiresAt:now},'reports.commercial.read'),unauthenticated);
+  }
+  assert.throws(()=>check(principal(),'reports.commercial.read'),forbidden);
+});
+
+test('valid administrator sessions manage niches and staff without renewed authentication', () => {
+  for (const assurance of ['password', 'pin', 'passkey']) {
+    const actor = principal({ role: 'ADMIN', assurance, authenticatedAt: now - 600_000 });
+    assert.equal(check(actor, 'niches.write'), actor);
+    assert.equal(check(actor, 'users.attendant.read', { targetRole: 'ATENDENTE' }), actor);
+    assert.equal(check(actor, 'users.attendant.manage', { targetRole: 'ATENDENTE' }), actor);
+    assert.throws(() => check(actor, 'users.admin.manage', { targetRole: 'ADMIN' }), forbidden);
+    assert.throws(() => check({ ...actor, expiresAt: now }, 'niches.write'), unauthenticated);
+  }
+});
+
 test('attendant capability matrix permits operations but rejects management and reports', () => {
   const actor = principal();
   for (const action of ['products.read', 'products.write', 'stock.receive', 'sales.create', 'profile.self.read',
@@ -42,12 +62,22 @@ test('administrative access and sensitive changes require genuine strong and rec
   for (const role of ['ADMIN', 'SUPER_ADMIN']) {
     assert.throws(() => check(principal({ role }), 'products.read'), reauthenticate);
     assert.equal(check(principal({ role, assurance: 'mfa', authenticatedAt: now - 600_000 }), 'products.read').role, role);
-    for (const action of ['reports.read', 'audit.read', 'stock.adjust', 'users.attendant.manage']) {
+    for (const action of ['reports.read', 'audit.read', 'stock.adjust']) {
       assert.throws(() => check(principal({ role, assurance: 'mfa', authenticatedAt: now - 300_001 }), action, { targetRole: 'ATENDENTE' }), reauthenticate);
       assert.equal(check(principal({ role, assurance: 'passkey', authenticatedAt: now - 300_000 }), action, { targetRole: 'ATENDENTE' }).role, role);
     }
   }
+  assert.equal(check(principal({role:'ADMIN',assurance:'passkey',authenticatedAt:now-600_000}), 'users.attendant.manage', {targetRole:'ATENDENTE'}).role, 'ADMIN');
+  assert.equal(check(principal({role:'ADMIN',assurance:'passkey',authenticatedAt:now-600_000}), 'niches.write').role, 'ADMIN');
+  assert.throws(()=>check(principal({role:'ATENDENTE',assurance:'passkey'}), 'niches.write'), forbidden);
+  assert.throws(()=>check(principal({role:'ADMIN',assurance:'passkey',expiresAt:now}), 'niches.write'), unauthenticated);
+  assert.equal(check(principal({role:'SUPER_ADMIN',assurance:'passkey',authenticatedAt:now-600_000}), 'users.admin.manage', {targetRole:'ADMIN'}).role, 'SUPER_ADMIN');
+  assert.throws(()=>check(principal({role:'ATENDENTE',assurance:'passkey'}), 'users.attendant.manage', {targetRole:'ATENDENTE'}), forbidden);
+  assert.throws(()=>check(principal({role:'ADMIN',assurance:'passkey',expiresAt:now}), 'users.attendant.manage', {targetRole:'ATENDENTE'}), unauthenticated);
   assert.throws(() => check(principal(), 'profile.self.write'), reauthenticate);
+  assert.equal(check(principal({role:'SUPER_ADMIN',authenticatedAt:now-600_000}), 'profile.self.write', {localProfileWrite:true}).role, 'SUPER_ADMIN');
+  assert.throws(() => check(principal({role:'SUPER_ADMIN',expiresAt:now}), 'profile.self.write', {localProfileWrite:true}), unauthenticated);
+  assert.throws(() => check(principal({role:'SUPER_ADMIN'}), 'profile.self.write', {localProfileWrite:true,targetUserId:randomUUID()}), forbidden);
   assert.equal(check(principal({ assurance: 'mfa' }), 'profile.self.write').role, 'ATENDENTE');
   assert.equal(check(principal({ role: 'ADMIN', assurance: 'passkey', authenticatedAt: now - 600_000 }), 'sessions.self.revoke').role, 'ADMIN', 'logout does not require recent MFA');
 });

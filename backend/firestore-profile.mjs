@@ -144,8 +144,7 @@ export function createFirestoreProfileService({ db, identityService, config, now
     else if (payload.cpf !== undefined) invalid();
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'profile.self.write', { targetUserId: principal.id, now: currentTime, localProfileWrite: config?.localLab === true });
-      if (config?.localLab !== true && payload.ownerCpfIndex && !['passkey', 'mfa'].includes(principal.assurance)) throw new ApiError(401, 'REAUTHENTICATION_REQUIRED');
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'profile.self.write', { targetUserId: principal.id, now: currentTime, localProfileWrite: config?.localLab === true, basicProfileWrite: true });
       const command = createCommandMetadata({ domain: 'profile', commandId: payload.commandId, operation: 'save', actor: principal.id, payloadHash: payload.fingerprint,
         now: new Date(currentTime), retentionMs: commandRetention(90) });
       const commandRef = repositories.ref('commands', commandDocumentId('profile', payload.commandId));
@@ -153,10 +152,9 @@ export function createFirestoreProfileService({ db, identityService, config, now
       if (state.status === 'COMMITTED') return state.result;
       const currentSnapshot = await repositories.transaction.get(transaction, 'users', principal.id), current = profile(currentSnapshot);
       if (current.revision !== payload.expectedRevision) throw new ApiError(409, 'PROFILE_CONFLICT');
-      if (payload.ownerCpfIndex && !current.owner && config?.localLab !== true) invalid();
       let cpfRef, oldCpfRef, oldCpf;
       if (payload.ownerCpfIndex) {
-        if (config?.localLab !== true && current.owner && current.cpfIndex && current.cpfIndex !== payload.ownerCpfIndex) throw new ApiError(409, 'PROFILE_CPF_LOCKED');
+        if (config?.localLab !== true && current.cpfIndex && current.cpfIndex !== payload.ownerCpfIndex) throw new ApiError(409, 'PROFILE_CPF_LOCKED');
         if (current.cpfIndex && current.cpfIndex !== payload.ownerCpfIndex) {
           oldCpfRef = repositories.ref('uniqueness', `staff-cpf:${current.cpfIndex}`);
           oldCpf = snapshotValue(await transaction.get(oldCpfRef));

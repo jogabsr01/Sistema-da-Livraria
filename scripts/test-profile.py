@@ -95,6 +95,14 @@ class Profile(qa.Catalog):
         image=io.BytesIO();Image.new('RGB',(300,300),'#205b43').save(image,format='JPEG');self.page.locator('#photo').set_input_files({'name':'avatar.jpg','mimeType':'image/jpeg','buffer':image.getvalue()});expect(self.page.locator('#form-status')).to_contain_text('Foto preparada');self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_have_text('Alterações salvas.');expect(self.page.locator('#identity-heading')).to_have_text('Responsável de teste');expect(self.page.locator('#avatar-preview')).to_be_visible();expect(self.page.locator('.account-menu img')).to_have_count(1)
         self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth<=innerWidth'));self.assertEqual(self.page.evaluate('Object.keys(sessionStorage)'),[]);self.assert_no_secrets_in_browser_storage();self.assertEqual(self.errors,[])
         target=Path(os.environ.get('QA_ARTIFACTS','work/qa-profile'));target.mkdir(parents=True,exist_ok=True);self.page.screenshot(path=str(target/'perfil-celular.png'),full_page=True)
+    def test_profile_saved_fields_survive_full_reload(self):
+        self.profile();self.page.locator('#display-name').fill('Responsável de teste');self.page.locator('#phone').fill('11988887777');self.page.locator('#save').click()
+        expect(self.page.locator('#form-status')).to_have_text('Alterações salvas.')
+        self.page.reload();expect(self.page.locator('#profile')).to_be_visible()
+        expect(self.page.locator('#identity-heading')).to_have_text('Responsável de teste')
+        expect(self.page.locator('#display-name')).to_have_value('Responsável de teste')
+        expect(self.page.locator('#phone')).to_have_value('11988887777')
+        expect(self.page.locator('#email')).to_have_text('owner@example.invalid')
     def test_profile_lost_ack_retries_exact_command_and_edit_opens_picker(self):
         self.profile();self.page.locator('#phone').fill('11988887777');self.lose_profile=True;self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_contain_text('tente novamente');expect(self.page.locator('#phone')).to_be_disabled();self.page.locator('#save').click();expect(self.page.locator('#form-status')).to_have_text('Alterações salvas.');self.assertEqual(self.commands[0],self.commands[1])
         with self.page.expect_file_chooser() as chooser:self.page.get_by_role('button',name='Editar foto').click()

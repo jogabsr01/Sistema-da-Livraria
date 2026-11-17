@@ -65,7 +65,19 @@ test('Firestore notifications lists stock alerts, summary and personal read over
   assert.deepEqual(await service.execute('read', { sessionTokenHash: tokenHash }, { id: notificationId }), { read: true });
   assert.ok(db.values.get(`notificationRecipients/${notificationId}:${userId}`).readAt);
   const after = await service.execute('summary', { sessionTokenHash: tokenHash }, {});
-  assert.deepEqual(after, { total: 1, unread: 0 });
+  assert.deepEqual(after, { total: 0, unread: 0 });
+  assert.equal((await service.execute('list', { sessionTokenHash: tokenHash }, { offset: 0, history: false })).total, 0);
+  assert.equal((await service.execute('list', { sessionTokenHash: tokenHash }, { offset: 0, history: true })).items[0].read, true);
+});
+
+test('existing unread recipient is updated without losing confirmation metadata', async () => {
+  const { db, service } = makeService();
+  const path = `notificationRecipients/${notificationId}:${userId}`;
+  db.values.set(path, { notificationId, userId, readAt: null, confirmedAt: 'preserved' });
+  await service.execute('read', { sessionTokenHash: tokenHash }, { id: notificationId });
+  assert.ok(db.values.get(path).readAt);
+  assert.equal(db.values.get(path).confirmedAt, 'preserved');
+  assert.equal((await service.execute('summary', { sessionTokenHash: tokenHash })).unread, 0);
 });
 
 test('Firestore notification state is an idempotent administrative transaction', async () => {
@@ -82,4 +94,16 @@ test('Firestore notification visibility blocks maintenance from attendants', asy
   const result = await service.execute('list', { sessionTokenHash: tokenHash }, { offset: 0, history: true });
   assert.equal(result.total, 1);
   assert.equal(result.items[0].type, 'STOCK_ZERO');
+});
+
+test('configured administrator password session can read and manage alerts', async () => {
+  const {db}=makeService('ADMIN');
+  db.values.set(`sessions/${sessionId}`, {...db.values.get(`sessions/${sessionId}`),assurance:'password'});
+  const identity=createFirestoreIdentityService({db,now:()=>now,config:{adminPasswordLogin:true}});
+  const service=createFirestoreNotificationService({db,identityService:identity,config:{adminPasswordLogin:true},now:()=>now});
+  const actor={sessionTokenHash:tokenHash};
+  assert.equal((await service.execute('bootstrap',actor,{offset:0,history:false})).summary.unread,1);
+  assert.deepEqual(await service.execute('read',actor,{id:notificationId}),{read:true});
+  assert.equal((await service.execute('summary',actor)).unread,0);
+  assert.deepEqual(await service.execute('state',actor,{commandId,id:notificationId,state:'EM_ATENDIMENTO'}),{accepted:true});
 });

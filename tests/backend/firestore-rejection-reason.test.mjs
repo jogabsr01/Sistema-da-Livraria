@@ -20,3 +20,17 @@ test('configuration rejection logs the exact fixed rule without values', () => {
     }
   } finally { console.log = original; }
 });
+
+test('production diagnostics do not emit a second rejection while inspecting malformed credentials', () => {
+  const log = console.log, error = console.error, reasons = [], diagnostics = [];
+  console.log = (...args) => reasons.push(args);
+  console.error = message => diagnostics.push(JSON.parse(message));
+  try {
+    assert.throws(() => loadFirestoreSettings({ APP_ENV: 'prod', WORKSPACE_STORAGE_MODE: 'production',
+      WORKSPACE_FIRESTORE_PROJECT_ID: 'livraria-ipb-dev', WORKSPACE_FIRESTORE_LOCATION: 'southamerica-east1',
+      WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: '{private-invalid' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+    assert.deepEqual(reasons, [['REJECTION REASON:', 'INVALID_STORAGE_MODE']]);
+    assert.deepEqual(diagnostics.map(entry => entry.variable), ['WORKSPACE_STORAGE_MODE', 'WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON']);
+    assert.ok(!JSON.stringify(diagnostics).includes('private-invalid'));
+  } finally { console.log = log; console.error = error; }
+});

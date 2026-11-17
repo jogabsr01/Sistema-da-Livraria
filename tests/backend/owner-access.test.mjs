@@ -8,6 +8,20 @@ import {ApiError} from '../../backend/errors.mjs';
 import { ACCESS_COOKIE, ACCESS_ORIGIN, accessCookie, createOwnerAccessHandler, createOwnerAccessService, loadOwnerAccessSettings } from '../../backend/owner-access.mjs';
 import { forwardToHandler } from '../../api/v1/[...slug].js';
 
+test('state resets only rejected access flows and propagates storage failures', async () => {
+  const s = ownerFixture(), token = randomBytes(32).toString('base64url');
+  for (const code of ['ACCESS_REJECTED', 'WORKSPACE_ACCESS_REJECTED']) {
+    const client = { ...s.client, access: async () => { throw new ApiError(401, code); } };
+    const service = createOwnerAccessService(s.settings, { client });
+    assert.deepEqual(await service.state(token), { stage: 'INITIAL' });
+  }
+  for (const code of ['FIRESTORE_UNAVAILABLE', 'IDENTITY_UNAVAILABLE']) {
+    const client = { ...s.client, access: async () => { throw new ApiError(503, code); } };
+    const service = createOwnerAccessService(s.settings, { client });
+    await assert.rejects(service.state(token), { status: 503, code });
+  }
+});
+
 const fakePassword = 'Senha 8274';
 function code(s) { return s.gas.outbox.at(-1).body.match(/\n([A-Za-z0-9_-]{7}|[A-Za-z0-9_-]{43})\n/)[1]; }
 function flowHash(s) { const sheet = s.priv.getSheetByName('_Identity_Flows'); return sheet.rows.at(-1)[sheet.rows[0].indexOf('Token_Hash')]; }
@@ -264,6 +278,21 @@ test('default and partial flags, wrong context and reused keys keep real identit
   assert.throws(() => accessCookie('invalid'));
 });
 
+test('state returns service unavailable before creating a client when an identity flag is disabled', async () => {
+  const s = ownerFixture();
+  for (const flag of ['WORKSPACE_IDENTITY_ACCESS_ENABLED', 'WORKSPACE_IDENTITY_SESSIONS_ENABLED', 'WORKSPACE_IDENTITY_GUARDS_ENABLED', 'WORKSPACE_IDENTITY_PASSKEYS_ENABLED']) {
+    let clientCreated = false;
+    const handler = createOwnerAccessHandler({
+      loadSettings: () => loadOwnerAccessSettings({ ...s.env, [flag]: 'false' }),
+      createClient: () => { clientCreated = true; throw new Error('unexpected client'); },
+    });
+    const response = await handler(new Request(ACCESS_ORIGIN + '/api/v1/access/state'));
+    assert.equal(response.status, 503, flag);
+    assert.equal((await response.json()).error.code, 'IDENTITY_NOT_ACTIVATED', flag);
+    assert.equal(clientCreated, false, flag);
+  }
+});
+
 test('failed email codes consume a shared durable budget before verification; rate response includes retry time', async () => {
   const s = ownerFixture(), token = randomBytes(32).toString('base64url'), csrfToken = s.service().csrf(token);
   for (let i = 0; i < 5; i++) await call(s, 'email', { token, csrfToken, body: { code: randomBytes(32).toString('base64url') } });
@@ -318,7 +347,7 @@ test('fresh context after a preflight rejection still requires its new CSRF and 
  const state=await call(s,'state',{method:'GET'});
  assert.equal(calls,0);assert.equal(state.data.data.stage,'INITIAL');
  const cookie=state.response.headers.get('set-cookie'),token=cookie.split('=')[1].split(';')[0];
- assert.match(cookie,/Secure; HttpOnly; SameSite=Strict; Max-Age=600/);
+ assert.match(cookie,/Secure; HttpOnly; SameSite=Strict; Max-Age=900/);
  const r=await call(s,'start',{body:{email:properties.OWNER_EMAIL},token,csrfToken:state.data.data.csrfToken});
  assert.equal(r.response.status,202);assert.equal(calls,1);
  assert.equal(s.gas.outbox.length,1);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),1);

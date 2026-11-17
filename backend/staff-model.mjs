@@ -9,10 +9,12 @@ export function normalizeCpf(value){
  for(let n=9;n<11;n++){let sum=0;for(let i=0;i<n;i++)sum+=Number(cpf[i])*(n+1-i);if(Number(cpf[n])!==((sum*10)%11)%10)staffInvalid('cpf');}
  return cpf;
 }
-export function normalizeStaffContact(input){
- if(!input||typeof input!=='object'||Array.isArray(input)||JSON.stringify(Object.keys(input).sort())!==JSON.stringify(['cpf','email','name','phone']))staffInvalid();
+export function normalizeStaffContact(input,{optionalCpf=false}={}){
+ if(!input||typeof input!=='object'||Array.isArray(input))staffInvalid();
+ if(optionalCpf&&!Object.hasOwn(input,'cpf'))input={...input,cpf:''};
+ if(JSON.stringify(Object.keys(input).sort())!==JSON.stringify(['cpf','email','name','phone']))staffInvalid();
  let name;try{name=staffText(input.name,160,true);}catch{staffInvalid('name');}
- const cpf=normalizeCpf(input.cpf);
+ const cpf=optionalCpf&&(input.cpf===''||input.cpf===null)?'':normalizeCpf(input.cpf);
  let email;try{email=staffText(input.email,254,true).toLowerCase();}catch{staffInvalid('email');}
  let phone;try{phone=staffText(input.phone,20).replace(/[\s()+-]/g,'');}catch{staffInvalid('phone');}
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))staffInvalid('email');

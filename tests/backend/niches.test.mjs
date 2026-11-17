@@ -33,11 +33,11 @@ test('private sanitized background is bound to niche, shared to authenticated re
  const update={...p,commandId:randomUUID(),expectedRevision:2,image:null};assert.equal((await s.nicheHttp('save',update)).status,200);assert.equal((await s.nicheHttp('image?id='+p.id)).status,404);assert.equal(files.length,1);
 });
 
-test('role, recent strong authentication, exact CSRF/origin/input and independent default-off flags protect niche writes',async()=>{
+test('role, valid session, exact CSRF/origin/input and independent default-off flags protect niche writes',async()=>{
  assert.throws(()=>loadNicheSettings(environment()),{code:'NICHES_NOT_ACTIVATED'});const s=nicheFixture(),p=s.nicheCommand();assert.equal((await s.nicheHttp('save',p,s.session())).status,403);assert.equal((await s.nicheHttp('list',null,s.session())).status,403);
  for(const h of [{origin:'https://evil.invalid'},{'x-csrf-token':''},{'content-type':'text/plain'}])assert.equal((await s.nicheHttp('save',p,undefined,h)).status,403);
  for(const k of ['role','stock','createdBy'])assert.equal((await s.nicheHttp('save',{...p,[k]:'forged'})).status,400);assert.equal((await s.nicheHttp('save',{...p,record:{...p.record,color:'url(evil)'}})).status,400);assert.equal((await s.nicheHttp('save',{...p,image:'a'.repeat(100001)})).status,413);
- const t=s.main.getSheetByName('Sessoes'),r=t.rows.find(r=>r[t.rows[0].indexOf('Token_Hash')]===s.admin.tokenHash);r[t.rows[0].indexOf('Criado_Em')]=new Date(Date.now()-301000).toISOString();assert.equal((await s.nicheHttp('save',p)).status,401);
+ const t=s.main.getSheetByName('Sessoes'),r=t.rows.find(r=>r[t.rows[0].indexOf('Token_Hash')]===s.admin.tokenHash);r[t.rows[0].indexOf('Criado_Em')]=new Date(Date.now()-301000).toISOString();assert.equal((await s.nicheHttp('save',p)).status,200);
 });
 
 

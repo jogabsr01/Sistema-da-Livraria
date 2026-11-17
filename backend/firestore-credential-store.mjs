@@ -30,6 +30,7 @@ export function createFirestoreCredentialStore({ db, transactionOptions, config 
   async function getPrimary(transaction, subjectId) {
     if (!catalogUuid(subjectId)) unavailable();
     const snapshot = await transaction.get(repositories.subref('users', subjectId, 'credentials', 'primary'));
+    if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_credential_read', found: snapshot?.exists === true }));
     return record(snapshotValue(snapshot));
   }
   async function lookup({ email = '', emailIndex = '', cpfIndex = '', staffLookup = false } = {}) {
@@ -38,15 +39,18 @@ export function createFirestoreCredentialStore({ db, transactionOptions, config 
     return runFirestoreTransaction(db, async transaction => {
       const field = resolvedEmailIndex ? 'emailIndex' : 'cpfIndex', index = resolvedEmailIndex || cpfIndex;
       const result = await transaction.get(db.collection('users').where(field, '==', index));
+      if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_credential_index_lookup', field, matches: Array.isArray(result?.docs) ? result.docs.length : null }));
       if (!result || !Array.isArray(result.docs) || result.docs.length > 1) unavailable();
       let snapshot = result.docs[0];
       if (!staffLookup && email) {
         const byEmail = await transaction.get(db.collection('users').where('email', '==', email.toLowerCase()));
+        if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_credential_email_fallback', matches: Array.isArray(byEmail?.docs) ? byEmail.docs.length : null }));
         if (!byEmail || !Array.isArray(byEmail.docs) || byEmail.docs.length > 1 || snapshot && byEmail.docs[0] && snapshot.id !== byEmail.docs[0].id) unavailable();
         snapshot ||= byEmail.docs[0];
       }
       if (!snapshot) return null;
       const value = snapshotValue(snapshot), subjectId = value.id || snapshot.id;
+      if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_credential_user_read', found: true, userId: subjectId, status: value.status ?? null, role: value.role ?? null, owner: value.owner ?? null, authorizationVersion: value.authorizationVersion ?? null }));
       if (!catalogUuid(subjectId)) unavailable();
       if (staffLookup ? value.owner === true : value.owner !== true) return null;
       if (!staffLookup && email && (value.role !== 'SUPER_ADMIN' || value.email !== undefined && value.email !== email.toLowerCase())) unavailable();

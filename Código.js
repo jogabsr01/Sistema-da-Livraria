@@ -2616,7 +2616,7 @@ function recoverNiches_(c){var ss=storage_(c,false).spreadsheet,pending=nicheCom
 function nichesOperation_(request,c){
  if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');var ss=storage_(c,false).spreadsheet,principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal,p=request.payload,table=catalogNiches_(ss);recoverCatalog_(c);recoverSales_(ss);
  if(request.action==='niches.image'){authControlExact_(p,['id']);if(!identityUuid_(p.id))nicheFail_();var row=table.rows.filter(function(r){return r.ID_Nicho===p.id;})[0];if(!row||!row.Imagem_Drive_ID||!row.Ativo&&!['ADMIN','SUPER_ADMIN'].includes(principal.role))nicheFail_('NICHE_NOT_FOUND');return nicheImage_(c,row.Imagem_Drive_ID,p.id,null,false).photo;}
- staffAdmin_(principal);if(request.action==='niches.list'){authControlExact_(p,[]);return {niches:nicheDtos_(ss,table.rows)};}
+ staffSessionAdmin_(principal);if(request.action==='niches.list'){authControlExact_(p,[]);return {niches:nicheDtos_(ss,table.rows)};}
  if(request.action!=='niches.save')failure_('FORBIDDEN');var has=Object.prototype.hasOwnProperty.call(p,'image');authControlExact_(p,['commandId','id','expectedRevision','record','fingerprint'].concat(has?['image']:[]));if(!identityUuid_(p.commandId)||!identityUuid_(p.id)||!Number.isSafeInteger(p.expectedRevision)||p.expectedRevision<0||p.expectedRevision>1000000||!accessHash_(p.fingerprint))nicheFail_();nicheRecord_(p.record);
  var commands=nicheCommands_(ss),prior=commands.filter(function(v){return v.id===p.commandId;});if(prior.length){if(prior[0].actor!==principal.id||prior[0].nicheId!==p.id||prior[0].fingerprint!==p.fingerprint)nicheFail_('NICHE_CONFLICT');return {id:p.id,version:prior[0].revision};}
  var found=table.rows.filter(function(r){return r.ID_Nicho===p.id;}),old=found[0];if(nicheRevision_(ss,p.id)!==p.expectedRevision||!old&&p.expectedRevision!==0)nicheFail_('NICHE_CONFLICT');
@@ -4755,12 +4755,12 @@ function recoverStaff_(c) {
 function staffAdmin_(principal) {
   if(!['ADMIN','SUPER_ADMIN'].includes(principal.role)||!businessAssurance_(principal)||Date.now()-principal.authenticatedAt>300000)failure_('FORBIDDEN');
 }
+function staffSessionAdmin_(principal) { if(!['ADMIN','SUPER_ADMIN'].includes(principal.role))failure_('FORBIDDEN'); }
 function staffOperation_(request,c) {
   recoverStaff_(c);var ss=storage_(c,false).spreadsheet,p=request.payload;
   if(!request.actor||!accessHash_(request.actor.sessionTokenHash))failure_('UNAUTHENTICATED');
   var principal=identitySession_(ss,request.actor.sessionTokenHash,Date.now()).principal;
-  if(['staff.bootstrap','staff.list'].includes(request.action)){if(!['ADMIN','SUPER_ADMIN'].includes(principal.role)||!businessAssurance_(principal))failure_('FORBIDDEN');}
-  else staffAdmin_(principal);
+  staffSessionAdmin_(principal);
   var users=staffUsers_(ss);
   if(request.action==='staff.bootstrap'||request.action==='staff.list'||request.action==='staff.get'){
     if(request.action==='staff.list'||request.action==='staff.bootstrap'){authControlExact_(p,['offset']);if(!Number.isSafeInteger(p.offset)||p.offset<0||p.offset>5000)staffFail_();}

@@ -98,6 +98,9 @@
     $('cart-title').textContent=identified()?'Compra identificada':'Compra sem cadastro';
     $('confirm').textContent = pending ? 'Verificar resultado / tentar novamente' : identified()?'Confirmar venda identificada':'Confirmar venda sem cadastro';
     $('confirm').disabled = !online() || !pending && !fresh() || busy || customerBusy || !!customerPending || !!receipt || !cart.size || !pending&&identified()&&!selectedCustomer || !pending && (!Number.isSafeInteger(total) || [...cart].some(([id, quantity]) => { const p = records.get(id); return !p || !p.active || p.stock < quantity; }));
+    $('pending-sale').hidden = !pending || !!receipt;
+    $('verify-pending-sale').disabled = !pending || !online() || busy || customerBusy || !!customerPending || !!receipt || !cart.size;
+    $('pending-sale-status').textContent = pending ? $('sale-status').textContent : '';
     $('new-sale').disabled = busy || !!pending || customerBusy || !!customerPending;
     document.querySelectorAll('[data-add]').forEach(button => { const p = records.get(button.dataset.add); button.disabled = locked() || !p?.active || p.stock < 1; });
     lockCustomer();
@@ -172,7 +175,7 @@
       catch { $('sale-status').textContent = 'Não foi possível guardar a referência desta compra neste navegador. Libere espaço antes de confirmar. Nenhuma venda foi enviada.'; return; }
       pending = command;
     }
-    busy = true; renderCart(); $('sale-status').textContent = 'Conferindo e registrando a venda…';
+    busy = true; $('sale-status').textContent = 'Conferindo e registrando a venda…'; renderCart();
     try {
       // Fetch a fresh CSRF value and verify the current user before retrying.
       const session = await api('/api/v1/session');
@@ -184,11 +187,11 @@
       catch { $('sale-status').textContent = 'Venda confirmada. Recarregue esta página para recuperar o comprovante antes de iniciar outra compra.'; }
       await refresh();
     } catch (error) {
-      const rejected = ['WORKSPACE_INSUFFICIENT_STOCK', 'WORKSPACE_PRODUCT_UNAVAILABLE', 'WORKSPACE_CUSTOMER_UNAVAILABLE', 'WORKSPACE_SALE_PRICE_CHANGED', 'INVALID_SALE', 'WORKSPACE_INVALID_SALE'].includes(error.code);
+      const rejected = ['INSUFFICIENT_STOCK', 'PRODUCT_UNAVAILABLE', 'CUSTOMER_UNAVAILABLE', 'SALE_PRICE_CHANGED', 'WORKSPACE_INSUFFICIENT_STOCK', 'WORKSPACE_PRODUCT_UNAVAILABLE', 'WORKSPACE_CUSTOMER_UNAVAILABLE', 'WORKSPACE_SALE_PRICE_CHANGED', 'INVALID_SALE', 'WORKSPACE_INVALID_SALE'].includes(error.code);
       if (rejected) {
         try { sessionStorage.removeItem(storageKey); pending = null; }
         catch { $('sale-status').textContent = 'Venda rejeitada. Não foi possível limpar a referência local; confira novamente antes de iniciar outra compra.'; return; }
-        $('sale-status').textContent = error.code === 'WORKSPACE_SALE_PRICE_CHANGED' ? 'O preço mudou. Confira o total atualizado antes de confirmar novamente.' : 'Venda não registrada: confira os livros e as quantidades disponíveis.';
+        $('sale-status').textContent = ['SALE_PRICE_CHANGED','WORKSPACE_SALE_PRICE_CHANGED'].includes(error.code) ? 'O preço mudou. Confira o total atualizado antes de confirmar novamente.' : 'Venda não registrada: confira os livros e as quantidades disponíveis.';
         await refresh();
       } else $('sale-status').textContent = 'Não foi possível confirmar o resultado. Não inicie outra compra para estes itens. Use “Verificar resultado / tentar novamente”, ou retorne a esta página com a mesma conta. ' + (error.status === 401 || error.status === 403 ? message(error) : '');
     } finally { busy = false; renderCart(); }

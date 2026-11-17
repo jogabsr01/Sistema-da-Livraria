@@ -50,7 +50,7 @@ function visible(value, principal) {
 }
 function pending(value, read, history) {
   if (history) return true;
-  return value.type.startsWith('STOCK_') ? value.state !== 'RESOLVIDA' : !read;
+  return !read && (!value.type.startsWith('STOCK_') || value.state !== 'RESOLVIDA');
 }
 function dto(value, read, productValue) {
   if (value.type.startsWith('STOCK_')) {
@@ -73,7 +73,7 @@ export function createFirestoreNotificationService({ db, identityService, config
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now();
       const principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'notifications.self.read', { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'notifications.self.read', { now: currentTime });
       if (!Number.isSafeInteger(payload.offset) || payload.offset < 0 || payload.offset > 5000 || typeof payload.history !== 'boolean') invalid();
       const notificationsSnapshot = await transaction.get(db.collection('notifications'));
       const recipientQuery = db.collection('notificationRecipients').where('userId', '==', principal.id);
@@ -116,13 +116,18 @@ export function createFirestoreNotificationService({ db, identityService, config
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now();
       const principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'notifications.self.read', { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'notifications.self.read', { now: currentTime });
       const notificationSnapshot = await repositories.transaction.get(transaction, 'notifications', payload.id);
       const value = notification(notificationSnapshot);
       if (!value || !visible(value, principal)) throw new ApiError(404, 'NOTIFICATION_NOT_FOUND');
       const ref = repositories.ref('notificationRecipients', `${value.id}:${principal.id}`);
       const prior = await transaction.get(ref);
       if (!prior.exists) transaction.create(ref, { notificationId: value.id, userId: principal.id, readAt: new Date(currentTime), confirmedAt: null, createdAt: new Date(currentTime) });
+      else {
+        const recipient = snapshotValue(prior);
+        if (recipient.notificationId !== value.id || recipient.userId !== principal.id) unavailable();
+        if (!recipient.readAt) transaction.update(ref, { readAt: new Date(currentTime) });
+      }
       return { read: true };
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
   }
@@ -132,7 +137,7 @@ export function createFirestoreNotificationService({ db, identityService, config
     return runFirestoreTransaction(db, async transaction => {
       const currentTime = now();
       const principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
-      requirePermission({ ...principal, ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'notifications.manage', { now: currentTime });
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'notifications.manage', { now: currentTime });
       const command = createCommandMetadata({ domain: 'notifications', commandId: payload.commandId, operation: 'state', actor: principal.id,
         payloadHash: createCommandFingerprint({ id: payload.id, state: payload.state }), now: new Date(currentTime), retentionMs: commandRetention(90) });
       const commandRef = repositories.ref('commands', commandDocumentId('notifications', payload.commandId));

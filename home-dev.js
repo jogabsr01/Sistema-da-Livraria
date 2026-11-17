@@ -17,6 +17,12 @@
     for(const src of ['/account-menu.js','/notification-badge.js']){const script=document.createElement('script');script.src=src;script.defer=true;document.head.append(script);}
   }
   let authenticated=false, destination='/catalogo-dev.html', stream=null, reader=null, generation=0, checking=false;
+  const sessionCacheKey='livraria.navigation.session.v1';
+  function clearSessionCache(){try{sessionStorage.removeItem(sessionCacheKey);}catch{}}
+  function cachedSession(){try{const value=JSON.parse(sessionStorage.getItem(sessionCacheKey)||'null'),now=Date.now();if(value&&typeof value.id==='string'&&value.id&&['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(value.role)&&Number.isFinite(value.at)&&value.at<=now&&now-value.at<60000&&Number.isFinite(value.expiresAt)&&value.expiresAt>now)return value;}catch{}return null;}
+  function cacheSession(user){if(typeof user.id!=='string'||!user.id||!Number.isFinite(user.expiresAt)||user.expiresAt<=Date.now())return;try{sessionStorage.setItem(sessionCacheKey,JSON.stringify({id:user.id,role:user.role,expiresAt:user.expiresAt,at:Date.now()}));}catch{}}
+  function showMember(role){authenticated=true;document.body.dataset.sessionRole=role;window.dispatchEvent(new Event('livraria:session-ready'));$('welcome').hidden=true;$('member-intro').hidden=false;$('account-navigation').hidden=false;document.body.classList.add('is-member');$('home').hidden=false;$('status').textContent='O que você quer fazer agora?';memberAssets();document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=!['SUPER_ADMIN','ADMIN'].includes(role));}
+  function hideMember(){authenticated=false;$('home').hidden=true;$('member-intro').hidden=true;$('account-navigation').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=true);}
   function stopCamera(){
     generation++;reader?.reset();reader=null;
     stream?.getTracks().forEach(track=>track.stop());stream=null;
@@ -63,22 +69,21 @@
     }
   });
   async function load(){
-    if(checking)return;const started=performance.now();let http=0;checking=true;authenticated=false;$('entry-failure').hidden=true;$('sign-in').hidden=true;$('retry').textContent='Tentar novamente';$('home').hidden=true;$('welcome').hidden=true;$('member-intro').hidden=true;$('account-navigation').hidden=true;$('retry').hidden=true;document.body.classList.remove('is-member');delete document.body.dataset.sessionRole;
-    document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=true);
+    if(checking)return;const started=performance.now();let http=0;checking=true;$('entry-failure').hidden=true;$('sign-in').hidden=true;$('retry').textContent='Tentar novamente';$('welcome').hidden=true;$('retry').hidden=true;
     if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço da livraria para continuar.';checking=false;return;}
+    const cached=cachedSession();if(cached)showMember(cached.role);else hideMember();
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
     try{
-      $('status').textContent=recentEntry?'Abrindo sua livraria…':'Conferindo seu acesso…';
+      if(!cached)$('status').textContent=recentEntry?'Abrindo sua livraria…':'Conferindo seu acesso…';
       const response=await fetch('/api/v1/session',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
       http=response.status;
       if((response.headers.get('content-type')||'').includes('text/html')){failedEntry(http,'SESSION_RESPONSE_HTML',Math.round(performance.now()-started));return;}
-      if(response.status===401||response.status===403){if(recentEntry){let code='SESSION_REJECTED';try{const failure=await response.json();if(['UNAUTHENTICATED','WORKSPACE_UNAUTHENTICATED','FORBIDDEN','WORKSPACE_FORBIDDEN','REAUTHENTICATION_REQUIRED'].includes(failure?.error?.code))code=failure.error.code;}catch{}failedEntry(http,code,Math.round(performance.now()-started));return;}$('status').textContent='Entre na sua conta para abrir a livraria.';$('welcome').hidden=false;$('sign-in').hidden=false;return;}
+      if(response.status===401||response.status===403){clearSessionCache();hideMember();window.dispatchEvent(new CustomEvent('livraria:profile-invalidated',{detail:{wipe:true}}));if(recentEntry){let code='SESSION_REJECTED';try{const failure=await response.json();if(['UNAUTHENTICATED','WORKSPACE_UNAUTHENTICATED','FORBIDDEN','WORKSPACE_FORBIDDEN','REAUTHENTICATION_REQUIRED'].includes(failure?.error?.code))code=failure.error.code;}catch{}failedEntry(http,code,Math.round(performance.now()-started));return;}$('status').textContent='Entre na sua conta para abrir a livraria.';$('welcome').hidden=false;$('sign-in').hidden=false;return;}
       if(!response.ok)throw Error('UNAVAILABLE');
       const {data}=await response.json();
       if(!['SUPER_ADMIN','ADMIN','ATENDENTE'].includes(data?.user?.role))throw Error('INVALID_SESSION');
-      authenticated=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));$('welcome').hidden=true;$('member-intro').hidden=false;$('account-navigation').hidden=false;document.body.classList.add('is-member');$('home').hidden=false;$('status').textContent='O que você quer fazer agora?';memberAssets();
-      document.querySelectorAll('[data-admin]').forEach(node=>node.hidden=!['SUPER_ADMIN','ADMIN'].includes(data.user.role));
-    }catch{if(recentEntry)failedEntry(http,'SESSION_UNAVAILABLE',Math.round(performance.now()-started));else{$('status').textContent='Não foi possível conferir seu acesso. Tente novamente.';$('retry').hidden=false;}}
+      if(cached&&cached.id!==data.user.id)window.dispatchEvent(new CustomEvent('livraria:profile-invalidated',{detail:{wipe:true}}));cacheSession(data.user);showMember(data.user.role);
+    }catch{if(cached){$('status').textContent='Não foi possível atualizar a sessão. Tente novamente.';$('retry').hidden=false;}else if(recentEntry)failedEntry(http,'SESSION_UNAVAILABLE',Math.round(performance.now()-started));else{$('status').textContent='Não foi possível conferir seu acesso. Tente novamente.';$('retry').hidden=false;}}
     finally{clearTimeout(timer);checking=false;}
   }
   $('retry').addEventListener('click',load);

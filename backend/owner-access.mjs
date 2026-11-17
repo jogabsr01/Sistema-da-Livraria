@@ -38,6 +38,9 @@ function email(value) {
   return normalized;
 }
 export function loadOwnerAccessSettings(env = process.env) {
+  const flags = ['WORKSPACE_IDENTITY_ACCESS_ENABLED', 'WORKSPACE_IDENTITY_SESSIONS_ENABLED', 'WORKSPACE_IDENTITY_GUARDS_ENABLED', 'WORKSPACE_IDENTITY_PASSKEYS_ENABLED'];
+  const disabled = flags.filter(name => env[name] !== 'true');
+  if (disabled.length && env.APP_ENV === 'prod') console.error(JSON.stringify({ event: 'identity_access_flags_unavailable', variables: disabled }));
   if (env.WORKSPACE_IDENTITY_ACCESS_ENABLED !== 'true') throw new ApiError(503, 'IDENTITY_NOT_ACTIVATED');
   const sessions = loadSessionSettings(env), guards = loadLoginGuardSettings(env);
   loadPasskeySettings(env);
@@ -53,7 +56,9 @@ export function loadOwnerAccessSettings(env = process.env) {
 }
 export function accessCookie(value) {
   if (!canonical(value)) rejected();
-  return `${ACCESS_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=600`;
+  // Match the 15-minute Firestore email proof lifetime; the server still
+  // enforces the authoritative flow expiry independently of the cookie.
+  return `${ACCESS_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=900`;
 }
 function readCookie(request) {
   const header = request.headers.get('cookie') || '';
@@ -160,7 +165,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
     },
     async state(token) {
       try { const f=await read(token);return {stage:f.state==='PASSKEY'&&f.proofReady?'COMMITTING':f.state==='PIN'?'PASSWORD':f.state,purpose:f.purpose,replacementAllowed:f.replacementAllowed===true}; }
-      catch (error) { if (error?.code === 'WORKSPACE_ACCESS_REJECTED') return { stage: 'INITIAL' }; throw error; }
+      catch (error) { if (error instanceof ApiError && error.status === 401 && ['ACCESS_REJECTED', 'WORKSPACE_ACCESS_REJECTED'].includes(error.code)) return { stage: 'INITIAL' }; throw error; }
     },
     async execute(operation, input, token, ip) {
      try {
@@ -259,6 +264,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         const value=identifier(input.email),staff=await staffLookup(value),proof={flowId:randomUUID(),tokenHash:hash(token),codeHash:digest('access.email.v1',[hash(token),code]),code};
         const result=staff ? await client.staffAccess(operation==='recover'?'recover':'start',{...proof,subjectId:staff.subjectId,contactHash:createHash('sha256').update(staff.contact).digest('hex'),delivery:staff.delivery})
           : await client.access(operation==='recover'?'recover':'start', { email:await ownerDelivery(value,operation),...proof });
+        if(result?.outcome==='DELIVERY_UNAVAILABLE')throw new ApiError(503,'ACCESS_EMAIL_DELIVERY_UNAVAILABLE');
         return operation==='start'?acceptedStart(result,value):{stage:'EMAIL',message:'Se houver uma conta elegível, o código será enviado ao e-mail cadastrado.'};
       }
       if (operation === 'login') {
@@ -385,6 +391,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       } else if (['start', 'login','biometric','recover'].includes(operation)) result.headers.set('set-cookie', accessCookie(token));
       return timed(result);
     } catch (error) {
+      if (error instanceof ApiError && error.status >= 500) console.error(JSON.stringify({ event: 'auth_request_failure', requestId, operation: operation || requestedOperation, settingsLoaded, code: error.code, message: error.message }));
       // DEV operator setup only, before any identity/cookie/command processing.
       // This does not relax validation or expose key material on public errors.
       if (!settingsLoaded && operation === 'state' && process.env.APP_ENV === 'dev' &&
@@ -397,7 +404,7 @@ export function createOwnerAccessHandler(dependencies = {}) {
       // flow. Deliver its pre-auth cookie even on error so state can recover it.
       // This is never a session grant; malformed/origin/CSRF denials reach no
       // rotation and no cookie, and completed flows retain Google expiry checks.
-      if(rotatedFlow&&result.status>=500)result.headers.set('set-cookie',accessCookie(token));
+      if(rotatedFlow&&result.status>=500&&error?.code!=='ACCESS_EMAIL_DELIVERY_UNAVAILABLE')result.headers.set('set-cookie',accessCookie(token));
       if (['AUTH_RATE_LIMITED','AUTH_DELIVERY_RATE_LIMITED'].includes(error?.code)) result.headers.set('retry-after', String(error.retryAfterSeconds));
       return timed(result);
     }

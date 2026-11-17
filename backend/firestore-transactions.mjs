@@ -1,4 +1,5 @@
 import { ApiError } from './errors.mjs';
+import { logFirestoreError } from './firestore-error-log.mjs';
 
 export const FIRESTORE_TRANSACTION_MAX_ATTEMPTS = 5;
 const INITIAL_BACKOFF_MS = 25;
@@ -68,6 +69,7 @@ export async function runFirestoreTransaction(db, work, {
       if (kind === 'application') throw error;
       if (!isRetryableFirestoreError(error) || attempt === maxAttempts) {
         onAttempt({ attempt, outcome: kind === 'permanent' ? 'ERROR' : kind.toUpperCase() });
+        logFirestoreError('TRANSACTION', error);
         throw publicTransactionError(kind === 'permanent' ? 'unavailable' : kind, error);
       }
       const delayMs = delayFor(attempt, random);

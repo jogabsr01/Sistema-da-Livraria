@@ -20,6 +20,11 @@ export async function build(root = fileURLToPath(new URL('../', import.meta.url)
   if(createHash('sha256').update(logoBytes).digest('hex')!=='5b1e9aa6d4efbd19a3ae7324146ec835a8e1899eff73d93af99c001f7165a091')throw Error('Changed original church identity');
   await mkdir(resolve(destination,'brand'));
   await copyFile(churchLogo,resolve(destination,'brand/ipb-jardim-bonfiglioli.png'));
+  for(const file of ['favicon.png','social-preview.png']){
+    const input=resolve(root,'public/brand',file),info=await lstat(input);
+    if(!info.isFile()||info.isSymbolicLink())throw Error('Invalid public brand asset');
+    await copyFile(input,resolve(destination,'brand',file));
+  }
   const manifestPath = resolve(root,'data/editorial-covers.json');
   const manifestStat = await lstat(manifestPath).catch(error => {if(error.code !== 'ENOENT')throw error;});
   if(manifestStat){

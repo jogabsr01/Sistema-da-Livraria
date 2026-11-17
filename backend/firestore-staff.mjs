@@ -56,7 +56,7 @@ export function createFirestoreStaffService({ db, identityService, config, now =
         if (!catalogUuid(payload.id)) invalid();
         const target = user(await repositories.transaction.get(transaction, 'users', payload.id));
         if (!target || target.owner) throw new ApiError(404, 'STAFF_NOT_FOUND');
-        if (target.role === 'ADMIN') requirePermission(principal, 'users.admin.manage', { targetRole: 'ADMIN', now: currentTime, localStaffWrite: config?.localLab === true });
+        if (target.role === 'ADMIN') requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'users.admin.manage', { targetRole: 'ADMIN', now: currentTime, localStaffWrite: config?.localLab === true });
         return { user: dto(target) };
       }
       if (!Number.isSafeInteger(payload.offset) || payload.offset < 0 || payload.offset > 5000) invalid();
@@ -107,6 +107,9 @@ export function createFirestoreStaffService({ db, identityService, config, now =
         cpfIndex: payload.cpfIndex, owner: false, authorizationVersion: changedAuthorization ? (current?.authorizationVersion || 1) + 1 : current?.authorizationVersion || 1,
         firstAccessCompleted: changedAuthorization ? false : current?.firstAccessCompleted === true, hasPhoto: current?.hasPhoto === true,
         updatedAt: at, updatedBy: principal.id, reason: payload.reason };
+      // Staff contact is encrypted; do not retain a legacy plaintext address
+      // that could disagree with the newly calculated private index.
+      delete next.email;
       const event = { schemaVersion: 1, type: current ? 'STAFF_UPDATED' : 'STAFF_CREATED', commandId: payload.commandId, commandHash: command.payloadHash,
         actorId: principal.id, actorRole: principal.role, createdAt: at.toISOString(), entityId: payload.id, before: current ? { revision: current.revision, role: current.role, status: current.status } : null,
         after: { revision, role: payload.role, status: payload.status } };
@@ -115,8 +118,8 @@ export function createFirestoreStaffService({ db, identityService, config, now =
       if (payload.delivery && result.reenrollmentRequired && payload.status === 'ATIVO') enqueueEmailDelivery(transaction, repositories, { settings: config.firestore, idempotencyKey: `staff-invite:${payload.commandId}`, to: payload.delivery, subject: 'Convite para a Livraria IPB', text: `Você foi convidado para acessar a Livraria IPB. Abra ${config.environment === 'prod' ? devOrigin({APP_ENV:'prod',VERCEL:process.env.VERCEL}) : devOrigin()}/acesso-dev.html e escolha primeiro acesso para confirmar seu e-mail, criar sua senha e cadastrar sua passkey.`, now: at });
       transaction.set(emailRef, { ownerId: payload.id, kind: 'STAFF_EMAIL', value: payload.emailIndex, active: true, version: revision });
       transaction.set(cpfRef, { ownerId: payload.id, kind: 'STAFF_CPF', value: payload.cpfIndex, active: true, version: revision });
-      if (oldEmailRef && oldEmailSnapshot?.exists) transaction.delete(oldEmailRef);
-      if (oldCpfRef && oldCpfSnapshot?.exists) transaction.delete(oldCpfRef);
+      if (oldEmailRef && oldEmailSnapshot?.exists && snapshotValue(oldEmailSnapshot).ownerId === payload.id) transaction.delete(oldEmailRef);
+      if (oldCpfRef && oldCpfSnapshot?.exists && snapshotValue(oldCpfSnapshot).ownerId === payload.id) transaction.delete(oldCpfRef);
       transaction.create(eventRef, event);
       transaction.create(auditRef, { id: `staff:${payload.commandId}`, at: at.toISOString(), commandId: payload.commandId, actorId: principal.id, role: principal.role,
         operation: event.type, entity: 'Usuarios', entityId: payload.id, result: 'SUCESSO', requestId: payload.commandId, before: event.before, after: event.after, detailsOmitted: true });

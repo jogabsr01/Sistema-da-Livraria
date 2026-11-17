@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFirestoreSalesService } from '../../backend/firestore-sales.mjs';
 import { createFirestoreIdentityService } from '../../backend/firestore-identity.mjs';
+import { createFirestoreWorkspaceClient } from '../../backend/firestore-client.mjs';
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const sessionId = '33333333-3333-4333-8333-333333333333';
@@ -30,7 +31,7 @@ function fakeDb(values) {
       const tx = {
         async get(target) {
           if (target.kind === 'collection' || target.kind === 'query') {
-            const docs = [...store.entries()].filter(([path, value]) => path.startsWith(`${target.collection}/`) &&
+            const docs = [...store.entries()].filter(([path, value]) => path.startsWith(`${target.collection}/`) && path.split('/').length===target.collection.split('/').length+1 &&
               (target.kind === 'collection' || value?.[target.field] === target.value)).map(([path, value]) => ({
                 id: path.split('/').at(-1), ref: { path, id: path.split('/').at(-1) }, exists: true, data: () => structuredClone(value),
               }));
@@ -97,4 +98,29 @@ test('Firestore checkout rejects price changes and insufficient stock without ch
 test('Firestore checkout keeps identified customer validation inside the transaction', async () => {
   const { service } = makeService();
   await assert.rejects(service.checkout({ sessionTokenHash: tokenHash }, command('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')), { code: 'CUSTOMER_UNAVAILABLE', status: 409 });
+});
+
+test('configured administrator password session can complete and safely retry checkout', async () => {
+  const {db}=makeService();
+  db.values.set(`users/${userId}`,{role:'ADMIN',status:'ATIVO',authorizationVersion:2});
+  db.values.set(`sessions/${sessionId}`,{...db.values.get(`sessions/${sessionId}`),assurance:'password'});
+  const identity=createFirestoreIdentityService({db,now:()=>now,config:{adminPasswordLogin:true}});
+  const service=createFirestoreSalesService({db,identityService:identity,config:{adminPasswordLogin:true},now:()=>now});
+  const actor={sessionTokenHash:tokenHash},result=await service.checkout(actor,command());
+  assert.deepEqual(await service.checkout(actor,command()),result);
+  assert.equal(db.values.get(`products/${productId}`).stock,1);
+});
+
+test('completed sale projects zero-stock alert and makes it visible in notification summary', async () => {
+  const {db}=makeService();db.values.set(`products/${productId}`,{...product(),stock:1});
+  db.listCollections=async()=>[];
+  db.values.set(`sessions/${sessionId}`,{...db.values.get(`sessions/${sessionId}`),authenticatedAt:new Date(Date.now()-1000),expiresAt:new Date(Date.now()+3600000)});
+  const config={storageMode:'firestore',firestore:{mode:'firestore'},environment:'dev',installationId:userId,secret:'ab'.repeat(32)};
+  const client=createFirestoreWorkspaceClient(config,{firestoreClient:db});
+  const actor={sessionTokenHash:tokenHash};
+  await client.checkout(actor,command());
+  const alerts=[...db.values.entries()].filter(([path])=>path.startsWith('notifications/'));
+  assert.equal(alerts.length,1);assert.equal(alerts[0][1].type,'STOCK_ZERO');assert.equal(alerts[0][1].title,'Livro');
+  assert.equal((await client.notifications('summary',actor,{})).unread,1);
+  await client.checkout(actor,command());assert.equal([...db.values.keys()].filter(path=>path.startsWith('notifications/')).length,1);
 });

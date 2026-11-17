@@ -5,8 +5,18 @@ import { environment } from './fixtures.mjs';
 import { loadConfig } from '../../backend/config.mjs';
 import { loadFirestoreSettings } from '../../backend/firestore-config.mjs';
 import { safeFailure } from '../../backend/errors.mjs';
+import { loadOwnerAccessSettings } from '../../backend/owner-access.mjs';
 
 const prod = () => environment({ APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' });
+test('identity flag diagnostics disclose only names, never values', () => {
+  const original = console.error, messages = [];
+  console.error = message => messages.push(JSON.parse(message));
+  try {
+    assert.throws(() => loadOwnerAccessSettings({ APP_ENV: 'prod', WORKSPACE_IDENTITY_ACCESS_ENABLED: 'private-invalid-value', WORKSPACE_IDENTITY_SESSIONS_ENABLED: 'true', WORKSPACE_IDENTITY_GUARDS_ENABLED: 'true', WORKSPACE_IDENTITY_PASSKEYS_ENABLED: 'true' }), { code: 'IDENTITY_NOT_ACTIVATED' });
+    assert.deepEqual(messages, [{ event: 'identity_access_flags_unavailable', variables: ['WORKSPACE_IDENTITY_ACCESS_ENABLED'] }]);
+    assert.ok(!JSON.stringify(messages).includes('private-invalid-value'));
+  } finally { console.error = original; }
+});
 test('production diagnostics log fixed missing and invalid variable names, never values or HTTP details', async () => {
   const original = console.error, messages = []; console.error = message => messages.push(JSON.parse(message));
   try {

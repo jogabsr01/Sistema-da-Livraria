@@ -50,11 +50,17 @@ test('local profile HTTP saves CPF with an older password session while retainin
   assert.equal((await response.json()).data.revision, 1);
   const stored = (await db.collection('users').doc(userId).get()).data();
   assert.equal(vault.open('users', userId, stored.contact).cpf, body.cpf);
+  assert.equal(vault.open('users', userId, stored.contact).name, body.displayName);
+  assert.equal(vault.open('users', userId, stored.contact).phone, body.phone);
   assert.equal(stored.cpfIndex, vault.index('cpf', body.cpf));
   assert.equal(stored.hasPhoto, true);
   const bootstrap = await handler(new Request(`${origin}/api/v1/profile/bootstrap`, { headers: { cookie } }));
   assert.equal(bootstrap.status, 200);
   const data = (await bootstrap.json()).data;
+  assert.equal(data.id, userId);
+  assert.equal(data.name, body.displayName);
+  assert.equal(data.phone, body.phone);
+  assert.equal(data.email, 'owner@example.invalid');
   assert.equal(data.cpfMasked, '***.982.247-**');
   assert.equal(data.photoUrl, '/api/v1/profile/photo?v=1');
   const avatar = await handler(new Request(`${origin}${data.photoUrl}`, { headers: { cookie } }));

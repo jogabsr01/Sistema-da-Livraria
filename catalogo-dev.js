@@ -30,7 +30,7 @@
     $('reload-book').disabled = busy || uncertain || !fresh();
     document.querySelectorAll('#book-form input,#book-form select,#book-form textarea').forEach(input => { input.disabled = busy && !reconciling || uncertain; });
     $('active').disabled = busy && !reconciling || uncertain || !canDelete;
-    for (const id of ['isbn-lookup','gallery-open','camera-open','camera-capture','photo-remove']) $(id).disabled = busy || uncertain || id === 'isbn-lookup' && !fresh();
+    for (const id of ['isbn-lookup','gallery-open','camera-open','camera-capture','photo-change','photo-remove']) $(id).disabled = busy || uncertain || id === 'isbn-lookup' && !fresh();
     $('stock-save').disabled = busy || !online() || !pendingStock && !fresh() || other;
     $('stock-quantity').disabled = busy || !!pendingStock; $('stock-reason').disabled = busy || !!pendingStock;
   }
@@ -57,10 +57,11 @@
     if (error.code === 'OFFLINE') return 'Sem conexão. Mantenha a aba aberta e confira a conexão antes de tentar novamente.';
     if (error.code?.includes('COVER_PHOTO')) return 'A foto não pôde ser salva. Use uma imagem JPEG, PNG ou WebP, ou confira se as fotos estão habilitadas nesta instalação.';
     if (error.code?.includes('CONFLICT')) return 'Outro acesso alterou este livro. Carregue a versão mais recente antes de salvar de novo.';
-    if (error.code?.includes('DUPLICATE')) return 'Já existe um livro ativo com esse ISBN ou código interno.';
+    if (error.code?.includes('DUPLICATE')) return 'Este ISBN ou código já está cadastrado. Localize o produto existente no catálogo.';
     if (error.code === 'FORBIDDEN' || error.code === 'WORKSPACE_FORBIDDEN') return 'Somente administradores podem excluir ou alterar a ativação de livros.';
     if (error.code?.includes('STOCK_LIMIT')) return 'Esta entrada excede o limite de um milhão de unidades. Confira a quantidade.';
-    if (error.code === 'INVALID_PRODUCT' || error.code?.includes('CATALOG_INVALID')) return 'Confira ISBN, preço, nichos e link HTTPS da capa. Use valores válidos e ao menos um nicho.';
+    if (error.field === 'nicheIds') return 'Por favor, selecione um nicho válido para o produto antes de salvar.';
+    if (error.code === 'INVALID_PRODUCT' || error.code?.includes('CATALOG_INVALID')) return globalThis.LivrariaMessages?.describe(error) || 'Confira os campos do produto, incluindo ISBN, preço, nicho e link da capa.';
     if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_CATALOG_UNAVAILABLE' || error.code?.includes('CONFIGURATION')) return 'O catálogo compartilhado ainda não está disponível nesta instalação.';
     const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     return 'Não foi possível confirmar o resultado. Confira a conexão e tente novamente; o mesmo pedido não será duplicado.';
@@ -70,12 +71,30 @@
     try { return await requestData('/api/v1/catalog/' + operation + query,body); }
     catch(error) { if(body && error.status===403) reconnectQueued = true; throw error; }
   }
+  function canonicalIsbn(value) {
+    let isbn = value.replace(/[\s-]/g,'').toUpperCase();
+    if (/^\d{9}[\dX]$/.test(isbn) && [...isbn].reduce((sum,n,i)=>sum+(n==='X'?10:Number(n))*(10-i),0)%11===0) {
+      const base='978'+isbn.slice(0,9), sum=[...base].reduce((s,n,i)=>s+Number(n)*(i%2?3:1),0);
+      isbn=base+((10-sum%10)%10);
+    }
+    return /^(978|979)\d{10}$/.test(isbn) && [...isbn].reduce((s,n,i)=>s+Number(n)*(i%2?3:1),0)%10===0 ? isbn : '';
+  }
+  async function checkDuplicateIsbn(value) {
+    const isbn=canonicalIsbn(value); if(!isbn)return;
+    let next=0;
+    do {
+      const page=await api('list',null,'?'+new URLSearchParams({q:isbn,offset:String(next),inactive:'true'}));
+      if(page.products.some(product=>product.id!==editing?.id && canonicalIsbn(product.isbn||'')===isbn)) throw Object.assign(Error('DUPLICATE'),{code:'CATALOG_DUPLICATE',status:409});
+      next=page.nextOffset;
+    } while(next!==null);
+  }
   async function run(action, form = false) {
     if (busy) return; busy = true; controls();
     try { await action(); } catch (error) { const text = explain(error); if (form) { $('form-status').textContent = text; globalThis.LivrariaMessages?.highlight($('book-form'),error,'form-status'); $('reload-book').hidden = !editing || !error.code?.includes('CONFLICT'); } else {message(text);$('catalog-error-actions').hidden=false;} }
     finally { busy = false; controls(); if (reconnectQueued) { reconnectQueued = false; reconnect(); } }
   }
   function cover(url, parent, preview = false) {
+    if (preview) { $('photo-change').hidden=!url; $('photo-remove').hidden=!url; $('camera-open').hidden=!!url; $('gallery-open').hidden=!!url; }
     parent.replaceChildren(); const fallback = document.createElement('span'); fallback.className = 'fallback'; fallback.textContent = preview ? 'Capa não informada' : '📖';
     if (!url) { parent.append(fallback); return; }
     const img = document.createElement('img'); img.alt = 'Capa do livro'; img.referrerPolicy = 'no-referrer'; img.src = url;
@@ -90,7 +109,7 @@
     const data = preloaded || await api('list', null, '?' + params);if(ticket!==listSequence || version!==connectionVersion || !online())return false; nextOffset = data.nextOffset; $('books').replaceChildren();
     data.products.forEach(book => {
       const article = document.createElement('article'); article.className = 'book';
-      const image = document.createElement('span'); cover(book.photoUrl || book.coverUrl, image); const content = document.createElement('div');
+      const image = document.createElement('span'); image.className = 'book-media'; cover(book.photoUrl || book.coverUrl, image); const content = document.createElement('div');
       const title = document.createElement('h2'); title.textContent = book.title;
       const author = document.createElement('p'); author.textContent = book.author || 'Autor não informado';
       const price = document.createElement('p'); price.textContent = money(book.priceCents) + ' · Estoque: ' + book.stock + (book.stock === 0 ? ' · Sem estoque' : '') + (book.active ? '' : ' · Inativo');
@@ -121,6 +140,9 @@
       const label = document.createElement('label'); label.className = 'check'; const input = document.createElement('input'); input.type = 'checkbox'; input.value = niche.id; input.checked = selected.includes(niche.id);
       label.append(input, document.createTextNode(niche.name+(niche.active?'':' (desativado)'))); $('niche-choices').append(label);
     });
+    const empty=!niches.some(n=>n.active||editing?.nicheIds.includes(n.id));
+    $('niche-help').hidden=!empty;$('niche-help').textContent=empty?'Nenhum nicho disponível. Peça à administração para cadastrar um nicho antes de salvar.':'';
+    $('niche-manage').hidden=!empty||!['ADMIN','SUPER_ADMIN'].includes(document.body.dataset.sessionRole);
   }
   function updateProductType(){const book=$('product-type').value==='LIVRO';document.querySelectorAll('[data-book-only]').forEach(node=>{node.hidden=!book;});$('isbn-tools').hidden=!book||!lookupEnabled||$('product-details').hidden;$('isbn').closest('.identifier-card').querySelector('label[for=isbn]').textContent=book?'ISBN ou código de barras':'Código de barras ou SKU';}
   $('product-type').addEventListener('change',()=>{updateProductType();dirty=true;});
@@ -129,7 +151,7 @@
     cancelLookup(); cleanupPhoto(); stopScanner();
     editing = id ? (await api('get', null, '?id=' + encodeURIComponent(id))).product : null; command = null;
     draftId = editing?.id || crypto.randomUUID();
-    $('book-form').reset(); $('product-type-label').hidden=!extendedProducts;$('product-type').value=editing?.productType||'LIVRO'; $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar produto'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = 'A consulta sugere dados e verifica capas disponíveis. Confira a edição antes de salvar.';
+    $('book-form').reset(); $('product-type-label').hidden=!extendedProducts;$('product-type').value=editing?.productType||'LIVRO'; $('editor-title').textContent = editing ? 'Detalhes e edição' : 'Cadastrar produto'; $('form-status').textContent = ''; $('reload-book').hidden = true; $('isbn-status').textContent = '';
     $('product-details').hidden = !editing; $('identifier-confirm').hidden = !!editing; $('manual-product').hidden = !!editing; $('isbn-tools').hidden = !editing || !lookupEnabled;
     const mappings = { isbn:'isbn',title:'title',author:'author',publisher:'publisher',edition:'edition',supplier:'supplier',category:'category',cover:'coverUrl',synopsis:'synopsis' };
     Object.entries(mappings).forEach(([input,key]) => { $(input).value = editing?.[key] || ''; });
@@ -172,6 +194,8 @@
       publisher:isBook?$('publisher').value:'',edition:isBook?$('edition').value:'',supplier:$('supplier').value,priceCents,minimumStock:Number($('minimum-stock').value),category:$('category').value,
       coverUrl:$('cover').value,year:isBook?Number($('year').value):0,pages:isBook?Number($('pages').value):0,synopsis:$('synopsis').value,
       nicheIds:[...document.querySelectorAll('#niche-choices input:checked')].map(input => input.value),active:$('active').checked };
+    if (isbn.trim()) await checkDuplicateIsbn(isbn);
+    if(!fields.nicheIds.length){$('form-status').textContent=niches.some(n=>n.active)?'Por favor, selecione um nicho válido para o produto antes de salvar.':'Nenhum nicho disponível. Peça à administração para cadastrar um nicho antes de salvar.';$('niche-choices').scrollIntoView({block:'center'});return;}
     let initialStock;
     if (extendedProducts) {
       const cost = $('cost').value.trim(), sku = $('sku').value.trim() || (!isBook ? $('isbn').value.trim() : '');
@@ -189,7 +213,7 @@
     const uncertain = command.uncertain === true;
     try { await api('save', command.payload); }
     catch(error) {
-      const rejected = ['INVALID_PRODUCT','INVALID_COVER_PHOTO','COVER_PHOTO_TOO_LARGE','WORKSPACE_CATALOG_INVALID','WORKSPACE_CATALOG_DUPLICATE','WORKSPACE_CATALOG_CONFLICT','FORBIDDEN','WORKSPACE_FORBIDDEN'].includes(error.code);
+      const rejected = ['INVALID_PRODUCT','INVALID_COVER_PHOTO','COVER_PHOTO_TOO_LARGE','CATALOG_DUPLICATE','WORKSPACE_CATALOG_INVALID','WORKSPACE_CATALOG_DUPLICATE','WORKSPACE_CATALOG_CONFLICT','FORBIDDEN','WORKSPACE_FORBIDDEN'].includes(error.code);
       if (rejected && !uncertain) command = null; else command.uncertain = true;
       throw error;
     }
@@ -251,7 +275,7 @@
     const value = $('isbn').value.replace(/[\s-]/g, '');
     if (!$('product-details').hidden && (/^(?:978|979)\d{10}$/.test(value) || /^\d{9}[\dXx]$/.test(value))) lookupTimer = setTimeout(() => { if (!$('isbn-tools').hidden && fresh() && $('editor').open) $('isbn-lookup').click(); }, 650);
   }
-  $('isbn').addEventListener('input',() => { cancelLookup(); $('isbn-status').textContent = 'ISBN alterado. Consulte novamente ou preencha manualmente.'; scheduleLookup(); });
+  $('isbn').addEventListener('input',() => { cancelLookup(); $('isbn-status').textContent = ''; scheduleLookup(); });
   $('isbn').addEventListener('keydown',event => { if (event.key === 'Enter') { event.preventDefault(); if ($('product-details').hidden) $('identifier-confirm').click(); else if (!$('isbn-tools').hidden) $('isbn-lookup').click(); } });
   function showProductDetails(code = '', manual = false) {
     const value = code.trim(), compact = value.replace(/[\s-]/g, '');
@@ -306,7 +330,7 @@
     } catch { if (ticket === scannerGeneration) { stopScanner(); $('barcode-status').dataset.state = 'error'; $('barcode-status').textContent = 'Não foi possível abrir a câmera. Verifique a permissão ou digite o código.'; } }
   });
   function releasePreview() { if (photoPreview) URL.revokeObjectURL(photoPreview); photoPreview = ''; }
-  function cleanupPhoto() { stopCamera(); releasePreview(); pendingPhoto = undefined; $('photo-file').value = ''; $('photo-status').textContent = 'Use a câmera do celular ou a webcam do computador, ou escolha uma imagem.'; }
+  function cleanupPhoto() { stopCamera(); releasePreview(); pendingPhoto = undefined; $('photo-file').value = ''; $('photo-status').textContent = ''; }
   async function acceptPhoto(source) {
     let width = source.width || source.videoWidth, height = source.height || source.videoHeight;
     if (!width || !height) throw Error('EMPTY_IMAGE');
@@ -326,6 +350,7 @@
     cover(photoPreview,$('cover-preview'),true); $('photo-status').textContent = 'Foto pronta. Clique em Salvar livro para enviá-la.';
   }
   $('gallery-open').addEventListener('click', () => { cancelLookup(); stopCamera(); $('photo-file').click(); });
+  $('photo-change').addEventListener('click',()=>{$('photo-change').hidden=true;$('camera-open').hidden=false;$('gallery-open').hidden=false;});
   $('photo-file').addEventListener('change', () => {
     const file = $('photo-file').files[0]; if (!file) return; cancelLookup();
     run(async () => {
@@ -394,7 +419,6 @@
       if (data.metadata) Object.entries(mappings).forEach(([id,key]) => {
         if (!before[id].trim() && $(id).value === before[id] && data.metadata[key]) { $(id).value = String(data.metadata[key]); dirty = true; }
       });
-      const trace = data.sources.map(source => source.name + ': ' + ({found:'dados encontrados',not_found:'sem registro',timeout:'tempo esgotado',unavailable:'sem conexão',invalid_response:'resposta inválida',http_error:'HTTP '+source.httpStatus}[source.status] || 'indisponível')).join(' · ');
       let found = null, preserveCover = before.cover.trim() || (pendingPhoto === undefined ? editing?.hasPhoto : pendingPhoto !== null);
       if (!preserveCover && $('cover').value === before.cover) {
         $('isbn-status').textContent = 'Verificando se as imagens de capa carregam…';
@@ -402,10 +426,10 @@
         const cached = await Promise.all(local.map(testCover)); if (!current()) return; found = cached.find(Boolean);
         if (!found) { const candidates = await Promise.all(data.covers.filter(item => !local.includes(item)).map(testCover)); if (!current()) return; found = candidates.find(Boolean); }
         if ($('cover').value !== before.cover || (pendingPhoto === undefined ? editing?.hasPhoto : pendingPhoto !== null)) { preserveCover = true; found = null; }
-        else if (found) { dirty = true; $('cover').value = found.url; found.image.alt = 'Capa do livro'; $('cover-preview').replaceChildren(found.image); }
+        else if (found) { dirty = true; $('cover').value = found.url; found.image.alt = 'Capa do livro'; $('cover-preview').replaceChildren(found.image); $('photo-change').hidden=false;$('photo-remove').hidden=false;$('camera-open').hidden=true;$('gallery-open').hidden=true; }
       }
       const summary = data.metadata ? 'Sugestões recebidas. Confira os dados e a edição antes de salvar.' : 'Nenhuma ficha exata foi encontrada. Preencha os dados manualmente.';
-      $('isbn-status').textContent = summary + (preserveCover ? ' A capa existente foi preservada.' : found ? ' Capa carregada: '+found.source+'.' : ' Nenhuma capa disponível carregou; use câmera, galeria ou um link, ou continue sem capa.') + (data.cached ? ' Fontes em cache recente: ' : ' Consultas: ') + trace;
+      $('isbn-status').textContent = summary;
     } catch (error) {
       if (current() && error.name !== 'AbortError') $('isbn-status').textContent = 'Falha de conexão na consulta. Seus campos foram preservados; continue manualmente.';
     } finally {

@@ -43,7 +43,7 @@ test('staff creation stores encrypted contact and reason, masks CPF, audits and 
  const changed=await result(await s.http('save',{...c,status:'INATIVO'}));assert.equal(changed.status,409);
 });
 
-test('privilege transitions resolve authoritative roles, protect owner/self and require recent strong authentication',async()=>{
+test('privilege transitions resolve authoritative roles and preserve legacy GAS authorization',async()=>{
  const s=staffFixture(),c=s.command({role:'ADMIN'});assert.equal((await s.http('save',c)).status,200);const admin=s.session(c.id);
  const attendant=s.command({contact:{name:'Outro teste',cpf:'11144477735',email:'outro@example.invalid',phone:''}});assert.equal((await s.http('save',attendant,admin)).status,200);
  for(const command of [{...c,commandId:randomUUID(),expectedRevision:1,role:'ATENDENTE'},{...attendant,commandId:randomUUID(),id:s.master.id},{...attendant,commandId:randomUUID(),id:c.id,expectedRevision:1}])assert.equal((await s.http('save',command,admin)).status,403);
@@ -52,7 +52,8 @@ test('privilege transitions resolve authoritative roles, protect owner/self and 
  await assert.rejects(s.client.staff('save',worker.actor,{}),{code:'WORKSPACE_FORBIDDEN'});
  const table=s.main.getSheetByName('Sessoes'),entry=table.rows.find(r=>r[table.rows[0].indexOf('Token_Hash')]===s.master.tokenHash);entry[table.rows[0].indexOf('Criado_Em')]=new Date(Date.now()-301000).toISOString();
  assert.equal((await s.http('list')).status,200);
- assert.equal((await s.http('save',s.command())).status,401);
+ // A valid administrator session remains sufficient after five minutes.
+ assert.equal((await s.http('save',s.command())).status,409);
 });
 
 test('duplicate identity including inactive users, stale updates and reserved owner address are refused',async()=>{

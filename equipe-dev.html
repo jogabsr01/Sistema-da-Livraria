@@ -2,7 +2,14 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
-<title>Equipe · Livraria IPB</title><link rel="stylesheet" href="/equipe-dev.css"><script src="/equipe-dev.js" defer></script><script src="/notification-badge.js" defer></script>
+<title>Equipe · Livraria IPB</title>
+  <link rel="icon" type="image/png" href="/brand/favicon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Equipe · Livraria IPB">
+  <meta property="og:description" content="Livraria IPB Jardim Bonfiglioli: livros, catálogo e acesso à livraria.">
+  <meta property="og:image" content="https://livraria.ipbjb.com.br/brand/social-preview.png">
+  <meta property="og:image:alt" content="Logo da Igreja Presbiteriana Jardim Bonfiglioli">
+<link rel="stylesheet" href="/equipe-dev.css"><script src="/equipe-dev.js" defer></script><script src="/notification-badge.js" defer></script>
 <link rel="stylesheet" href="/account-menu.css"><script src="/account-menu.js" defer></script><link rel="stylesheet" href="/app-theme.css">
 </head>
 <body class="app-shell page-equipe">
@@ -23,7 +30,6 @@
 <dialog id="editor" aria-labelledby="editor-title">
 <form id="staff-form">
 <div class="dialog-head"><div><p class="eyebrow">EQUIPE</p><h2 id="editor-title">Cadastrar funcionário</h2></div><button id="close-editor" type="button" class="icon secondary" aria-label="Fechar cadastro">×</button></div>
-<p id="edit-note">O acesso só será liberado após a confirmação da identidade.</p>
 <p class="staff-connection" data-staff-connection role="status" aria-live="polite"></p><button type="button" class="secondary" data-staff-refresh>Atualizar dados</button><button id="reload-staff" type="button" class="secondary" hidden>Descartar rascunho e abrir versão atual</button>
 <fieldset id="staff-fields"><legend class="sr-only">Dados e acesso do funcionário</legend>
 <label for="staff-name">Nome completo</label><input id="staff-name" maxlength="160" autocomplete="name" required>

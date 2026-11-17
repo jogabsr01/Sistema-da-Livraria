@@ -22,10 +22,12 @@ export function renderAppHeader(html,file){
   .replace('>Adicionar novo produto</a>','>'+add+'Adicionar novo produto</a>')
   .replace('>Nova compra</a>','>'+cart+'Nova compra</a>')
   .replace('>Histórico e operações</a>','>'+history+'Histórico e operações</a>')
+  .replace('>'+calendar+'Rotina</summary>','>'+calendar+'Rotina <span data-notification-count></span></summary>')
   .replace('>Notificações <span','>'+bell+'Notificações <span')
   .replace('>Organizar nichos</a>','>'+grid+'Organizar nichos</a>');
  html=html.replace(/(<body\b[^>]*>)/i,'$1'+decoratedHeader);
  if(!html.includes('href="/account-menu.css"'))html=html.replace('</head>','<link rel="stylesheet" href="/account-menu.css"></head>');
  if(file!=='home-dev.html'&&!html.includes('src="/account-menu.js"'))html=html.replace('</head>','<script src="/account-menu.js" defer></script></head>');
+ if(file!=='home-dev.html'&&!html.includes('src="/notification-badge.js"'))html=html.replace('</head>','<script src="/notification-badge.js" defer></script></head>');
  return html;
 }
