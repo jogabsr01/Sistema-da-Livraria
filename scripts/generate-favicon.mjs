@@ -18,7 +18,7 @@ export async function generateFavicon() {
     .joinChannel(alpha).png().toBuffer();
   // A fine light outline distinguishes the blue tile on dark browser tabs;
   // rounded transparent corners avoid the appearance of a square block.
-  const background = Buffer.from('<svg width="192" height="192" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="186" height="186" rx="48" fill="#1c3156" stroke="#e4ecf5" stroke-width="6"/></svg>');
+  const background = Buffer.from('<svg width="192" height="192" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="186" height="186" rx="48" fill="#0846a3" stroke="#e4ecf5" stroke-width="6"/></svg>');
   return sharp(background).composite([{ input: emblem, gravity: 'centre' }]).png().toBuffer();
 }
 
