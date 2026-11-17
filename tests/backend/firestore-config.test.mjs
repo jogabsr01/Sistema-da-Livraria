@@ -6,6 +6,7 @@ import { createFirestoreDb } from '../../backend/firestore-client.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateKeyPairSync } from 'node:crypto';
 import { environment } from './fixtures.mjs';
 
 test('Firestore configuration preserves GAS as the default storage mode', () => {
@@ -14,6 +15,57 @@ test('Firestore configuration preserves GAS as the default storage mode', () => 
   assert.equal(config.storageMode, 'gas');
   assert.equal(config.firestore.mode, 'gas');
   assert.match(config.scriptUrl, /^https:\/\/script\.google\.com\//);
+});
+
+test('production password-only admin login requires explicit opt-in and Firestore mode', () => {
+  const base = environment({ APP_ENV: 'prod', CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app' });
+  assert.equal(loadConfig({ ...base, WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED: 'true' }).adminPasswordLogin, false);
+  // The Firestore settings are separately validated with production credentials in integration tests.
+  assert.equal(loadConfig({ ...base, WORKSPACE_ADMIN_PIN_LOGIN_ENABLED: 'true' }).adminPinLogin, false);
+});
+
+test('opt-in environment diagnostics expose presence only, and RSA newlines parse in production', () => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+  const account = JSON.stringify({ project_id: 'livraria-ipb-dev', client_email: 'test@livraria-ipb-dev.iam.gserviceaccount.com', private_key: privateKey });
+  const original = console.info, messages = [];
+  console.info = value => messages.push(JSON.parse(value));
+  try {
+    const env = { APP_ENV: 'prod', WORKSPACE_STORAGE_MODE: 'firestore', WORKSPACE_FIRESTORE_PROJECT_ID: 'livraria-ipb-dev', WORKSPACE_FIRESTORE_LOCATION: 'southamerica-east1', WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: account, WORKSPACE_FIRESTORE_DIAGNOSTICS: 'true' };
+    for (const source of [account, account.replace(/\\n/g, '\n')]) {
+      assert.equal(loadFirestoreSettings({ ...env, WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: source }).credentials.private_key, privateKey);
+    }
+    assert.deepEqual(messages[0], { event: 'firestore_environment_presence', serviceAccountJsonPresent: true, projectIdPresent: true });
+    assert.ok(!JSON.stringify(messages).includes(privateKey));
+    assert.ok(!JSON.stringify(messages).includes('livraria-ipb-dev'));
+    const prod = environment({ ...env, CONTEXT: 'production', BRANCH: 'main', DEPLOY_PRIME_URL: 'https://merry-chimera-49a1f3.netlify.app', WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED: 'true' });
+    assert.equal(loadConfig(prod).adminPasswordLogin, true);
+    assert.equal(loadConfig(prod).adminPinLogin, false);
+    assert.equal(loadConfig({ ...prod, WORKSPACE_ADMIN_PASSWORD_LOGIN_ENABLED: 'false' }).adminPasswordLogin, false);
+  } finally { console.info = original; }
+});
+
+test('inline service account reaches Firestore SDK with normalized RSA key and database', () => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+  const projectId = 'livraria-ipb-dev', clientEmail = `test@${projectId}.iam.gserviceaccount.com`;
+  const account = JSON.stringify({ project_id: projectId, client_email: clientEmail, private_key: privateKey.replace(/\n/g, '\\n') });
+  const settings = loadFirestoreSettings({ APP_ENV: 'prod', WORKSPACE_STORAGE_MODE: 'firestore', WORKSPACE_FIRESTORE_PROJECT_ID: projectId,
+    WORKSPACE_FIRESTORE_DATABASE: '(default)', WORKSPACE_FIRESTORE_LOCATION: 'southamerica-east1', WORKSPACE_FIRESTORE_SERVICE_ACCOUNT_JSON: account });
+  const client = createFirestoreDb(settings);
+  assert.equal(client.projectId, projectId);
+  assert.equal(client._settings.databaseId, '(default)');
+  assert.equal(client._settings.auth.cachedCredential.email, clientEmail);
+  assert.equal(client._settings.auth.cachedCredential.key, privateKey);
+  assert.equal(Object.hasOwn(client._settings, 'credentials'), false);
+});
+
+test('client configuration errors identify missing fields without exposing values', () => {
+  const original = console.error, messages = [];
+  console.error = value => messages.push(JSON.parse(value));
+  try {
+    assert.throws(() => createFirestoreDb({ databaseId: '(default)', credentials: { private_key: 'private-key' } }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
+    assert.deepEqual(messages, [{ event: 'firestore_client_configuration_unavailable', projectIdPresent: false, databaseIdPresent: true, credentialsPresent: true, applicationCredentialsPresent: false, emulatorHostPresent: false }]);
+    assert.ok(!JSON.stringify(messages).includes('private-'));
+  } finally { console.error = original; }
 });
 
 test('project aliases agree and application credential paths reach the Firestore client', () => {
@@ -27,7 +79,7 @@ test('project aliases agree and application credential paths reach the Firestore
   const settings = loadFirestoreSettings(base);
   assert.equal(settings.projectId, 'livraria-ipb-dev');
   assert.equal(settings.credentials.project_id, 'livraria-ipb-dev');
-  assert.equal(createFirestoreDb(settings)._settings.credentials.client_email, 'test@example.invalid');
+  assert.equal(createFirestoreDb(settings)._settings.auth.cachedCredential.email, 'test@example.invalid');
   assert.throws(() => loadFirestoreSettings({ ...base, GCLOUD_PROJECT: 'other-project' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
   assert.throws(() => loadFirestoreSettings({ ...base, GOOGLE_APPLICATION_CREDENTIALS: path + '.missing' }), { code: 'FIRESTORE_CONFIGURATION_UNAVAILABLE' });
   } finally { rmSync(dir, { recursive: true, force: true }); }

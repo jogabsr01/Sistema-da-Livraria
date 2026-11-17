@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "node scripts/build-deployment-metadata.mjs && node scripts/check-google-dev.mjs && node scripts/build-public.mjs",
+    "db:check": "node scripts/check-firestore.mjs",
     "schema:generate": "node scripts/generate-gas-schema.mjs",
     "test": "node --test tests/backend/*.test.mjs",
     "test:browser": "python3 scripts/test-public-build.py",
@@ -55,10 +56,13 @@
   "dependencies": {
     "@google-cloud/firestore": "9.4.0",
     "@simplewebauthn/server": "14.0.3",
+    "dotenv": "^18.0.10",
+    "google-auth-library": "11.3.2",
+    "resend": "^6.38.0",
     "sharp": "0.35.5"
   },
   "optionalDependencies": {
-    "@img/sharp-linux-x64": "0.35.5",
-    "@img/sharp-libvips-linux-x64": "1.3.4"
+    "@img/sharp-libvips-linux-x64": "1.3.4",
+    "@img/sharp-linux-x64": "0.35.5"
   }
 }

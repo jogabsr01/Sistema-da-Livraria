@@ -1,5 +1,10 @@
 import { Firestore } from '@google-cloud/firestore';
+import { GoogleAuth, JWT } from 'google-auth-library';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { ApiError } from './errors.mjs';
+import { logFirestoreError } from './firestore-error-log.mjs';
+import { parseServiceAccountJson } from './firestore-config.mjs';
 import { FIRESTORE_COLLECTIONS, FIRESTORE_SCHEMA_VERSION } from './firestore-schema.mjs';
 import { createFirestoreIdentityService } from './firestore-identity.mjs';
 import { createFirestoreCatalogService } from './firestore-catalog.mjs';
@@ -19,6 +24,7 @@ import { createFirestoreCredentialStore } from './firestore-credential-store.mjs
 import { createFirestoreNicheService } from './firestore-niches.mjs';
 import { createFirestoreKeyManagementService } from './firestore-key-management.mjs';
 import { createFirestoreRateLimitService } from './firestore-rate-limits.mjs';
+import { processPendingFirestoreOutbox } from './firestore-outbox.mjs';
 
 export { FIRESTORE_COLLECTIONS, FIRESTORE_SCHEMA_VERSION } from './firestore-schema.mjs';
 
@@ -34,18 +40,49 @@ function operationNotReady() {
   throw new ApiError(503, 'FIRESTORE_OPERATION_NOT_READY');
 }
 
+const firestoreCacheKey = Symbol.for('livraria.firestore.client.v1');
+
 function createDefaultFirestore(settings) {
-  if (!settings || !settings.projectId || !settings.databaseId) unavailable();
-  const options = { projectId: settings.projectId, databaseId: settings.databaseId };
-  if (settings.credentials) options.credentials = settings.credentials;
-  else if (settings.applicationCredentials) options.keyFilename = settings.applicationCredentials;
+  if (!settings || !settings.projectId) {
+    console.error(JSON.stringify({ event: 'firestore_client_configuration_unavailable',
+      projectIdPresent: !!settings?.projectId, databaseIdPresent: !!settings?.databaseId,
+      credentialsPresent: !!settings?.credentials, applicationCredentialsPresent: !!settings?.applicationCredentials,
+      emulatorHostPresent: !!settings?.emulatorHost }));
+    unavailable();
+  }
+  const options = { projectId: settings.projectId, databaseId: settings.databaseId || '(default)' };
   if (settings.emulatorHost) {
     const separator = settings.emulatorHost.lastIndexOf(':');
     options.host = settings.emulatorHost.slice(0, separator);
     options.port = Number(settings.emulatorHost.slice(separator + 1));
     options.ssl = false;
   }
-  return new Firestore(options);
+  // Credential files can change without their paths changing. Do not cache
+  // those clients (or emulator clients) across independent operations.
+  const construct = () => {
+    try {
+      const credentials = settings.credentials || (settings.applicationCredentials ? parseServiceAccountJson(readFileSync(settings.applicationCredentials, 'utf8')) : null);
+      if (credentials) {
+        const authClient = new JWT({ email: credentials.client_email, key: credentials.private_key });
+        options.auth = new GoogleAuth({ authClient, projectId: settings.projectId });
+      }
+      return new Firestore(options);
+    }
+    catch (error) { logFirestoreError('CONSTRUCTOR', error); throw error; }
+  };
+  if (!settings.credentials || settings.emulatorHost) return construct();
+  const key = createHash('sha256').update(JSON.stringify([options.projectId, options.databaseId,
+    settings.credentials.project_id, settings.credentials.client_email, settings.credentials.private_key])).digest('hex');
+  const cached = globalThis[firestoreCacheKey];
+  if (cached?.key === key) return cached.client;
+  const client = construct();
+  const terminate = client.terminate.bind(client);
+  client.terminate = (...args) => {
+    if (globalThis[firestoreCacheKey]?.client === client) delete globalThis[firestoreCacheKey];
+    return terminate(...args);
+  };
+  globalThis[firestoreCacheKey] = { key, client };
+  return client;
 }
 
 export function createFirestoreDb(config) {
@@ -87,6 +124,7 @@ export function createFirestoreWorkspaceClient(config, {
       return { ready: true, environment: config.environment, schemaVersion: FIRESTORE_SCHEMA_VERSION };
     } catch (error) {
       if (error instanceof ApiError) throw error;
+      logFirestoreError('PING', error);
       firestoreUnavailable();
     }
   }
@@ -207,6 +245,19 @@ export function createFirestoreWorkspaceClient(config, {
   }
 
   const notReady = () => operationNotReady();
+  async function startAndDeliver(start, payload) {
+    const result = await start(payload);
+    if (config.environment !== 'prod' || process.env.VERCEL !== '1' || result?.outcome !== 'SENT') return result;
+    try {
+      const delivery = await processPendingFirestoreOutbox({ db:getDb(), config, emailId:`email:auth:${payload.tokenHash}` });
+      console.info(JSON.stringify({event:'access_email_delivery',outcome:delivery.emailSent?'PROVIDER_ACCEPTED':delivery.uncertain?'UNCERTAIN':'NOT_ACCEPTED'}));
+      if (!delivery.emailSent) return {...result,outcome:'DELIVERY_UNAVAILABLE'};
+    } catch (error) {
+      console.error(JSON.stringify({event:'access_email_delivery',outcome:'ERROR',code:typeof error?.code==='string'&&/^[A-Z][A-Z0-9_]{1,79}$/.test(error.code)?error.code:'OUTBOX_ERROR'}));
+      return {...result,outcome:'DELIVERY_UNAVAILABLE'};
+    }
+    return result;
+  }
   return {
     keys: (operation, actor, payload) => getKeyManagement().execute(operation, actor, payload),
     insights: (operation, actor, payload) => getInsights().execute(operation, actor, payload),
@@ -220,15 +271,28 @@ export function createFirestoreWorkspaceClient(config, {
     operations: (operation, actor, payload) => getOperations().execute(operation, actor, payload),
     customers: (operation, actor, payload) => getCustomers().execute(operation, actor, payload),
     staff: (operation, actor, payload) => getStaff().execute(operation, actor, payload),
-    staffAccess: (operation, payload) => operation === 'lookup' ? getCredentials().lookup({ ...payload, staffLookup: true }).then(account => ({ account })) : operation === 'start' ? getAccess().staffStart(payload) : operation === 'recover' ? getAccess().staffRecover(payload) : notReady(),
-    notifications: (operation, actor, payload) => getNotifications().execute(operation, actor, payload),
+    staffAccess: (operation, payload) => operation === 'lookup' ? getCredentials().lookup({ ...payload, staffLookup: true }).then(account => ({ account })) : operation === 'start' ? startAndDeliver(getAccess().staffStart,payload) : operation === 'recover' ? startAndDeliver(getAccess().staffRecover,payload) : notReady(),
+    notifications: async (operation, actor, payload) => {
+      const result=await getNotifications().execute(operation, actor, payload);
+      if (!['summary','list','bootstrap'].includes(operation)) return result;
+      let changed=false;
+      try {
+        for(let i=0;i<20;i++){const item=await processPendingFirestoreOutbox({db:getDb(),config,stockOnly:true});if(!item.processed)break;changed=true;}
+      } catch(error) { logFirestoreError('STOCK_ALERT_PROJECTION',error); }
+      return changed ? getNotifications().execute(operation, actor, payload) : result;
+    },
     checkoutReceipt: (actor, payload) => getSales().receipt(actor, payload),
-    checkout: (actor, payload) => getSales().checkout(actor, payload),
+    checkout: async (actor, payload) => {
+      const receipt=await getSales().checkout(actor,payload);
+      try { for(let i=0;i<100;i++){const item=await processPendingFirestoreOutbox({db:getDb(),config,stockOnly:true});if(!item.processed)break;} }
+      catch(error) { logFirestoreError('STOCK_ALERT_PROJECTION',error); }
+      return receipt;
+    },
     catalog: (operation, actor, payload) => getCatalog().execute(operation, actor, payload),
     access: (operation, payload) => {
       const service = getAccess();
-      if (operation === 'start') return service.start(payload);
-      if (operation === 'recover') return service.recover(payload);
+      if (operation === 'start') return startAndDeliver(service.start,payload);
+      if (operation === 'recover') return startAndDeliver(service.recover,payload);
       if (operation === 'login') return service.login(payload);
       if (operation === 'passwordLogin') return service.passwordLogin(payload);
       if (operation === 'read') return service.read(payload);
@@ -247,7 +311,7 @@ export function createFirestoreWorkspaceClient(config, {
     registerPasskey: payload => getPasskeys().registerPasskey(payload),
     advancePasskeyCounter: payload => getPasskeys().advanceCounter(payload),
     recordSecurityEvent: async () => ({ recorded: true }),
-    startOwnerAccess: payload => getAccess().start(payload),
+    startOwnerAccess: payload => startAndDeliver(getAccess().start,payload),
     timings: () => Object.freeze({ calls, durationMs: Math.round(durationMs) }),
     verifyAccessEmail: payload => getAccess().email(payload),
     readAccessForPassword: payload => getAccess().read(payload),
