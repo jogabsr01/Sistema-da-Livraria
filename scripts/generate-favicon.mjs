@@ -14,8 +14,9 @@ export async function generateFavicon() {
   // decorative underline and preserve its natural proportions.
   const emblem = await sharp(logo).extract({ left: 0, top: 0, width: 95, height: 70 })
     .resize(150, 150, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } }).png().toBuffer();
-  const background = Buffer.from('<svg width="192" height="192" xmlns="http://www.w3.org/2000/svg"><circle cx="96" cy="96" r="90" fill="#ffffff" stroke="#8ba0b7" stroke-width="4"/></svg>');
-  return sharp(background).composite([{ input: emblem, gravity: 'centre' }]).png().toBuffer();
+  // A fully opaque white canvas stays visible on dark tabs, including corners.
+  return sharp({ create: { width: 192, height: 192, channels: 3, background: '#ffffff' } })
+    .composite([{ input: emblem, gravity: 'centre' }]).removeAlpha().png().toBuffer();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await writeFile(outputPath, await generateFavicon());

@@ -22,12 +22,16 @@ test('public pages advertise the official social preview and favicon', async () 
   }
 });
 
-test('favicon is reproducible and uses a light, bounded contrast background', async () => {
+test('favicon is reproducible, opaque and has a contrasting blue emblem', async () => {
   const icon = await readFile(new URL('../../public/brand/favicon.png', import.meta.url));
   assert.deepEqual(icon, await generateFavicon());
   const { data, info } = await sharp(icon).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const pixel = (x, y) => [...data.subarray((y * info.width + x) * 4, (y * info.width + x) * 4 + 4)];
-  assert.equal(pixel(0, 0)[3], 0);
+  for (let i = 3; i < data.length; i += 4) assert.equal(data[i], 255, 'all pixels must be opaque');
+  assert.deepEqual(pixel(0, 0), [255, 255, 255, 255]);
   const light = pixel(96, 14);
   assert.ok(light[0] > 240 && light[1] > 240 && light[2] > 240 && light[3] === 255);
+  let bluePixels = 0;
+  for (let i = 0; i < data.length; i += 4) if (data[i] < 80 && data[i + 1] < 100 && data[i + 2] > data[i + 1] && data[i + 2] < 150) bluePixels++;
+  assert.ok(bluePixels > 1000, 'visible high-contrast blue emblem');
 });
