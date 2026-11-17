@@ -22,16 +22,17 @@ test('public pages advertise the official social preview and favicon', async () 
   }
 });
 
-test('favicon is reproducible, opaque and has a contrasting blue emblem', async () => {
+test('favicon is reproducible, rounded and has a white emblem on a contrasting blue tile', async () => {
   const icon = await readFile(new URL('../../public/brand/favicon.png', import.meta.url));
   assert.deepEqual(icon, await generateFavicon());
   const { data, info } = await sharp(icon).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const pixel = (x, y) => [...data.subarray((y * info.width + x) * 4, (y * info.width + x) * 4 + 4)];
-  for (let i = 3; i < data.length; i += 4) assert.equal(data[i], 255, 'all pixels must be opaque');
-  assert.deepEqual(pixel(0, 0), [255, 255, 255, 255]);
-  const light = pixel(96, 14);
-  assert.ok(light[0] > 240 && light[1] > 240 && light[2] > 240 && light[3] === 255);
-  let bluePixels = 0;
-  for (let i = 0; i < data.length; i += 4) if (data[i] < 80 && data[i + 1] < 100 && data[i + 2] > data[i + 1] && data[i + 2] < 150) bluePixels++;
-  assert.ok(bluePixels > 1000, 'visible high-contrast blue emblem');
+  assert.equal(pixel(0, 0)[3], 0, 'rounded corners must remain transparent');
+  assert.deepEqual(pixel(96, 20), [28, 49, 86, 255]);
+  let whitePixels = 0;
+  for (let y = 30; y < 162; y++) for (let x = 20; x < 172; x++) {
+    const [r, g, b, a] = pixel(x, y);
+    if (r > 245 && g > 245 && b > 245 && a === 255) whitePixels++;
+  }
+  assert.ok(whitePixels > 1000, 'visible white emblem');
 });
