@@ -36,6 +36,7 @@ function date(value) {
 }
 function userValue(snapshot, userId) {
   const value = snapshotValue(snapshot);
+  if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_user_read', found: !!value, userId, status: value?.status ?? null, role: value?.role ?? null, owner: value?.owner ?? null, authorizationVersion: value?.authorizationVersion ?? null }));
   if (!value || (value.id || userId) !== userId || !ROLES.has(value.role) || value.status !== 'ATIVO' ||
       !Number.isSafeInteger(value.authorizationVersion) || value.authorizationVersion < 1) unavailable();
   return { ...value, id: userId };
@@ -93,11 +94,13 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
   }
   async function findUser(transaction, email) {
     const index = ownerEmailIndex(config, email), result = await transaction.get(db.collection('users').where('emailIndex', '==', index));
+    if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_email_index_lookup', matches: Array.isArray(result?.docs) ? result.docs.length : null }));
     if (!result || !Array.isArray(result.docs) || result.docs.length > 1) unavailable();
     // Owner e-mail changes may have written a personal-data index instead of
     // the bootstrap index. Only the authoritative owner record may fall back
     // to its stored normalized address; never grant ownership based on input.
     const byEmail = await transaction.get(db.collection('users').where('email', '==', email.toLowerCase()));
+    if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_email_fallback_lookup', matches: Array.isArray(byEmail?.docs) ? byEmail.docs.length : null }));
     if (!byEmail || !Array.isArray(byEmail.docs) || byEmail.docs.length > 1) unavailable();
     if (result.docs[0] && byEmail.docs[0] && result.docs[0].id !== byEmail.docs[0].id) unavailable();
     const snapshot = result.docs[0] || byEmail.docs[0];
@@ -107,8 +110,11 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
     return user;
   }
   async function readFlow(transaction, hash) {
-    const value = flowDocument(snapshotValue(await transaction.get(flowRef(hash))));
-    if (!value || value.state === 'REVOKED' || date(value.flowExpiresAt || value.expiresAt).getTime() <= now()) rejected();
+    const stored = snapshotValue(await transaction.get(flowRef(hash)));
+    if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_flow_read', found: !!stored, state: stored?.state ?? null, purpose: stored?.purpose ?? null }));
+    if (!stored) rejected();
+    const value = flowDocument(stored);
+    if (value.state === 'REVOKED' || date(value.flowExpiresAt || value.expiresAt).getTime() <= now()) rejected();
     return value;
   }
   function flowTimes(at) {
@@ -132,6 +138,7 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
         typeof payload.code !== 'string' || !payload.code || !HASH.test(payload.codeHash || '')) invalid();
     return runFirestoreTransaction(db, async transaction => {
       const reference = flowRef(token), prior = snapshotValue(await transaction.get(reference));
+      if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_flow_login_lookup', found: !!prior, state: prior?.state ?? null }));
       if (prior) {
         if (prior.flowId !== payload.flowId || prior.purpose !== purpose || prior.tokenHash !== token) rejected();
         return { accepted: true, outcome: 'SENT' };
@@ -180,6 +187,7 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
       const subject = await readUser(transaction, payload.subjectId);
       if (subject.authorizationVersion !== payload.authorizationVersion) rejected();
       const reference = flowRef(token), prior = snapshotValue(await transaction.get(reference));
+      if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_flow_password_login_lookup', found: !!prior, state: prior?.state ?? null }));
       if (prior) {
         if (prior.flowId !== payload.flowId || prior.subjectId !== payload.subjectId || prior.authorizationVersion !== payload.authorizationVersion || prior.purpose !== 'LOGIN') rejected();
         return { accepted: true };
@@ -277,8 +285,8 @@ export function createFirestoreAccessService({ db, config, now = () => Date.now(
       if (flow.proofReady) return { proofReady: true, flow: flowPublic(flow) };
       const ceremony = flow.ceremonyId ? snapshotValue(await transaction.get(ceremonyRef(flow.ceremonyId))) : null;
       if (!ceremony || ceremony.consumedAt || date(ceremony.expiresAt).getTime() <= now()) rejected();
-      if (!flow.sessionTokenHash) transaction.update(reference, { sessionTokenHash: sessionHash, commitStartedAt: new Date(now()) });
       const key = ceremony.purpose === 'AUTHENTICATE' && payload.credentialId ? snapshotValue(await transaction.get(passkeyRef(flow.subjectId, payload.credentialId))) : null;
+      if (!flow.sessionTokenHash) transaction.update(reference, { sessionTokenHash: sessionHash, commitStartedAt: new Date(now()) });
       return { completed: false, flow: flowPublic(flow), ceremony: { challenge: ceremony.challenge, purpose: ceremony.purpose,
         credential: key ? { id: key.id, publicKey: key.publicKey, counter: key.counter, transports: key.transports || [] } : null } };
     }, authOptions);

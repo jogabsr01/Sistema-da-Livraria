@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { createFirestoreAccessService } from '../../backend/firestore-access.mjs';
+import { createFirestoreCredentialStore } from '../../backend/firestore-credential-store.mjs';
+import { createPersonalDataVault } from '../../backend/personal-data.mjs';
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const flowId = '22222222-2222-4222-8222-222222222222';
@@ -38,6 +40,45 @@ function baseDb() {
   return fakeDb({ [`users/${userId}`]: { id: userId, owner: true, emailIndex, role: 'SUPER_ADMIN', status: 'ATIVO', authorizationVersion: 1, activated: false, firstAccessCompleted: false } });
 }
 function passwordRecord() { return { version: 1, credentialType: 'PASSWORD_V1', algorithm: 'scrypt-N32768-r8-p1', salt: '11'.repeat(32), hash: '22'.repeat(32) }; }
+
+test('staff CPF and normalized email indexes locate the same unactivated account', async () => {
+  const vault = createPersonalDataVault({ config, dataKey: Buffer.alloc(32, 1), indexKey: Buffer.alloc(32, 2) });
+  const contact = { name:'Atendente', cpf:'52998224725', email:'staff@example.invalid', phone:'' };
+  const sealed = vault.seal('users', userId, contact);
+  const db = fakeDb({ [`users/${userId}`]: { id:userId, owner:false, activated:false, authorizationVersion:1, contact:sealed, emailIndex:vault.index('email',contact.email), cpfIndex:vault.index('cpf',contact.cpf) } });
+  const store = createFirestoreCredentialStore({ db, config });
+  const byEmail = await store.lookup({ emailIndex:vault.index('email',contact.email), staffLookup:true });
+  const byCpf = await store.lookup({ cpfIndex:vault.index('cpf',contact.cpf), staffLookup:true });
+  assert.deepEqual(byEmail, byCpf);
+  assert.equal(byEmail.subjectId, userId);
+  assert.equal(byEmail.activated, false);
+  assert.deepEqual(vault.open('users',userId,byEmail.contact), contact);
+});
+
+test('passkey completion reads the credential before scheduling any Firestore write', async () => {
+  const now = Date.parse('2026-01-01T12:00:00.000Z'), ceremonyId = '44444444-4444-4444-8444-444444444444', credentialId = randomBytes(32).toString('base64url');
+  const db = fakeDb({ [`authFlows/${tokenHash}`]: { flowId, subjectId:userId, tokenHash, purpose:'LOGIN', state:'PASSKEY', authorizationVersion:1, ceremonyId, sessionTokenHash:'', expiresAt:new Date(now+60000) },
+    [`authChallenges/passkey:${ceremonyId}`]: { challenge:'A'.repeat(43), purpose:'AUTHENTICATE', expiresAt:new Date(now+60000), consumedAt:null },
+    [`users/${userId}/passkeys/${createHash('sha256').update(credentialId).digest('hex')}`]: { id:credentialId, publicKey:'A'.repeat(43), counter:0, transports:['internal'] } });
+  const original=db.runTransaction;
+  db.runTransaction=work=>original(tx=>{let wrote=false;return work({...tx,get:ref=>{if(wrote)throw Error('READ_AFTER_WRITE');return tx.get(ref);},update:(ref,value)=>{wrote=true;return tx.update(ref,value);}});});
+  const result=await createFirestoreAccessService({db,config,now:()=>now}).prepareCompletion({tokenHash,sessionTokenHash,credentialId});
+  assert.equal(result.done,false);assert.equal(result.ceremony.credential.id,credentialId);
+  assert.equal(db.values.get(`authFlows/${tokenHash}`).sessionTokenHash,sessionTokenHash);
+});
+
+test('absent, expired and revoked access flows are rejected; corrupt flows remain unavailable', async () => {
+  const now = Date.parse('2026-01-01T12:00:00.000Z');
+  const valid = { flowId, subjectId: userId, tokenHash, purpose: 'ACTIVATE', state: 'EMAIL', authorizationVersion: 1, expiresAt: new Date(now + 60000) };
+  for (const [flow, code] of [[undefined, 'ACCESS_REJECTED'], [{ ...valid, expiresAt: new Date(now - 1) }, 'ACCESS_REJECTED'],
+    [{ ...valid, state: 'REVOKED' }, 'ACCESS_REJECTED'], [{ ...valid, flowId: 'corrupt' }, 'IDENTITY_UNAVAILABLE']]) {
+    const db = fakeDb(flow ? { [`authFlows/${tokenHash}`]: flow } : {});
+    const service = createFirestoreAccessService({ db, config, now: () => now });
+    await assert.rejects(service.read({ tokenHash }), { code });
+    await assert.rejects(service.email({ tokenHash, codeHash: 'c'.repeat(64) }), { code });
+    assert.equal(db.values.size, flow ? 1 : 0);
+  }
+});
 
 test('Firestore access stores PASSWORD_V1 activation intent, encrypted delivery and one-use email proof', async () => {
   const db = baseDb(), service = createFirestoreAccessService({ db, config, now: () => Date.parse('2026-01-01T12:00:00.000Z') });

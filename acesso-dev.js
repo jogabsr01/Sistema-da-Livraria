@@ -98,7 +98,6 @@
   }
   async function requestJsonNow(operation, options,queuedAt) {
     const controller = new AbortController(), started = performance.now(),at=new Date().toISOString();
-    const timer = setTimeout(() => controller.abort(), 60000);
     let response,observedCode='OK';
     const failure = code => {
       observedCode=diagnosticCodes.has(code)?code:'ACCESS_RESPONSE_INVALID';
@@ -106,17 +105,19 @@
       error.transport = {operation, status: response?.status || 0, elapsedMs: Math.round(performance.now() - started)};
       return error;
     };
+    let timer;
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(failure('ACCESS_REQUEST_TIMEOUT')); }, operation === 'state' ? 4000 : 60000); });
     try {
-      try { response = await fetch(operation === 'session' ? '/api/v1/session' : '/api/v1/access/' + operation, {...options, signal: controller.signal}); }
-      catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_NETWORK_UNAVAILABLE'); }
+      try { response = await Promise.race([fetch(operation === 'session' ? '/api/v1/session' : '/api/v1/access/' + operation, {...options, signal: controller.signal}), timeout]); }
+      catch (error) { if (error?.transport) throw error; throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_NETWORK_UNAVAILABLE'); }
       if (response.status === 401 && (response.headers.get('content-type') || '').toLowerCase().includes('text/html')) {
-        let body; try { body = await response.text(); } catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
+        let body; try { body = await Promise.race([response.text(), timeout]); } catch (error) { if (error?.transport) throw error; throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
         if (body.length <= 65536 && body.includes('app.netlify.com') && body.includes('edge-access') && body.includes('Login Redirect')) throw failure('HOST_ACCESS_REQUIRED');
         throw failure('ACCESS_RESPONSE_INVALID');
       }
       if (operation === 'session' && [401,403].includes(response.status)) {observedCode='UNAUTHENTICATED';return {response, result:null, failure};}
-      let result; try { result = await response.json(); }
-      catch { throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
+      let result; try { result = await Promise.race([response.json(), timeout]); }
+      catch (error) { if (error?.transport) throw error; throw failure(controller.signal.aborted ? 'ACCESS_REQUEST_TIMEOUT' : 'ACCESS_RESPONSE_INVALID'); }
       if(!response.ok)observedCode=diagnosticCodes.has(result?.error?.code)?result.error.code:'OTHER_REJECTION';
       return {response, result, failure};
     } finally {
@@ -134,7 +135,7 @@
     return pending;
   }
   async function apiNow(operation, body, canRenew = true, openLogin = false, busyAttempt = 0) {
-    if((localLab||production) && operation!=='state' && !csrfToken){
+    if(operation!=='state' && !csrfToken){
       const state=await apiNow('state',undefined,false,true);
       if(state.stage!=='INITIAL'||!csrfToken)throw unavailable('ACCESS_CONTEXT_CHANGED');
     }
@@ -422,7 +423,7 @@
   window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;});
   window.addEventListener('hashchange',()=>{if(localLab || production || location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
   if (!localLab && !production && (location.hostname !== DEV || location.protocol !== 'https:')) { show('UNAVAILABLE'); message('A autenticação ainda não está configurada para este endereço. Procure a administração da livraria.'); return; }
-  if(localLab || production){
+  {
     show('INITIAL');message('');
     const revision=actionRevision;
     api('state',undefined,true,location.hash==='#entrar').then(state=>{
@@ -431,31 +432,7 @@
       if(!['INITIAL','EMAIL','PASSWORD','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage))throw unavailable('ACCESS_RESPONSE_INVALID');
       show(state.stage==='COMPLETE'?'COMMITTING':state.stage);
       if(state.stage!=='INITIAL')message('Continue pela etapa indicada.');
-    }).catch(error=>{if(revision!==actionRevision)return;console.error('[Acesso]',{code:diagnosticCodes.has(error?.code)?error.code:'ACCESS_PAGE_UNAVAILABLE'});if(!production)message(describe(error),'error');});
+    }).catch(error=>{if(revision!==actionRevision)return;console.error('[Acesso]',{code:diagnosticCodes.has(error?.code)?error.code:'ACCESS_PAGE_UNAVAILABLE'});message('Não foi possível conferir a conexão agora. Você pode preencher seus dados e tentar novamente.','error');});
     return;
   }
-  run(async () => {
-    accessPhase = 'STATE';
-    const state = await api('state',undefined,true,location.hash==='#entrar');
-    accessPhase = 'RENDER';
-    if(requestedView(state)){if(!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-senha'){const revision=actionRevision;setTimeout(()=>current(()=>revision===actionRevision).catch(()=>{}),0);}return;}
-    // A session lookup is optional here: never hide a server-confirmed access
-    // flow because that separate read failed. Authentication still happens only
-    // after the session endpoint confirms a passkey-backed principal.
-    accessPhase = 'RENDER';
-    show(state.stage === 'COMPLETE' ? 'COMMITTING' : state.stage);
-    message(state.stage==='INITIAL'?'':'Continue pela etapa indicada.');
-    // A slow optional lookup must not disable the visible form. Ignore late
-    // results after any user action, so they cannot replace the newer flow.
-    if (!['INITIAL','COMPLETE'].includes(state.stage)) return;
-    const openingRevision = actionRevision;
-    setTimeout(() => {
-      if (openingRevision !== actionRevision) return;
-      current(() => openingRevision === actionRevision).catch(error => {
-        if (openingRevision !== actionRevision) return;
-        accessPhase = 'SESSION'; diagnostic(error);
-        message('Não conseguimos conferir se você já estava conectado. Continue pelo formulário de acesso.');
-      });
-    }, 0);
-  });
 })();

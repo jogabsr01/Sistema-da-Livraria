@@ -122,7 +122,7 @@ async function processStockEntry(transaction, { db, repositories, config, entry,
     }
   } else {
     const title = product.title;
-    const message = `Estoque atual: ${product.stock}. Estoque mínimo: ${product.minimumStock}.`;
+    const message = product.stock === 0 ? `Produto com estoque zerado. Estoque mínimo: ${product.minimumStock}.` : `Estoque atual: ${product.stock}. Estoque mínimo: ${product.minimumStock}.`;
     const matching = current.find(item => (item.value.id || item.snapshot.id) === notificationId);
     for (const item of current) {
       const id = item.value.id || item.snapshot.id;
@@ -155,16 +155,19 @@ async function processStockEntry(transaction, { db, repositories, config, entry,
   return { processed: true, notificationChanges: plan.length };
 }
 
-export async function processPendingFirestoreOutbox({ db, config, now = () => Date.now(), transactionOptions, provider = {} } = {}) {
+export async function processPendingFirestoreOutbox({ db, config, now = () => Date.now(), transactionOptions, provider = {}, emailId = null, stockOnly = false } = {}) {
   if (!db || typeof db.runTransaction !== 'function') throw new ApiError(503, 'FIRESTORE_UNAVAILABLE');
+  if (emailId !== null && (typeof emailId !== 'string' || !/^email:auth:[a-f0-9]{64}$/.test(emailId))) throw new ApiError(400, 'INVALID_OUTBOX_REQUEST');
   const repositories = createFirestoreRepositories(db);
   const send = provider.send || sendResendEmail;
   const lookup = provider.lookup || lookupResendEmail;
   const result = await runFirestoreTransaction(db, async transaction => {
     const currentTime = now();
-    const snapshot = await transaction.get(db.collection('outbox'));
-    if (!snapshot || !Array.isArray(snapshot.docs)) unavailable();
-    const candidate = snapshot.docs.map(item => ({ ref: item.ref || repositories.ref('outbox', item.id), value: data(item) }))
+    const snapshot = await transaction.get(emailId ? repositories.ref('outbox', emailId) : stockOnly ? db.collection('outbox').where('type','==','STOCK_ALERT_SYNC') : db.collection('outbox'));
+    if (!snapshot || (emailId ? typeof snapshot.exists !== 'boolean' : !Array.isArray(snapshot.docs))) unavailable();
+    const docs = emailId ? (snapshot.exists ? [snapshot] : []) : snapshot.docs;
+    const candidate = docs.map(item => ({ ref: item.ref || repositories.ref('outbox', item.id), value: data(item) }))
+      .filter(item => !emailId || item.value.type === 'EMAIL_DELIVERY' && item.value.id === emailId)
       .filter(item => ['PENDING', 'UNCERTAIN'].includes(item.value.state) && date(item.value.nextAttemptAt).getTime() <= currentTime)
       .sort((a, b) => date(a.value.nextAttemptAt).getTime() - date(b.value.nextAttemptAt).getTime())[0];
     if (!candidate) return { processed: false, notificationChanges: 0 };
@@ -181,7 +184,7 @@ export async function processPendingFirestoreOutbox({ db, config, now = () => Da
   if (!result.emailPending) return result;
 
   const entry = result.emailPending;
-  const saveState = async (patch) => runFirestoreTransaction(db, transaction => {
+  const saveState = async (patch) => runFirestoreTransaction(db, async transaction => {
     repositories.transaction.update(transaction, 'outbox', entry.id, patch);
   }, { maxAttempts: 3 });
   const saveSuccess = async providerId => {

@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { enqueueStockAlertProjection, enqueueEmailDelivery, processPendingFirestoreOutbox } from '../../backend/firestore-outbox.mjs';
 import { createFirestoreRepositories } from '../../backend/firestore-repositories.mjs';
+import { createFirestoreAccessService } from '../../backend/firestore-access.mjs';
+import { createHmac } from 'node:crypto';
 
 const productId = '66666666-6666-4666-8666-666666666666';
 const now = Date.parse('2026-01-01T12:00:00.000Z');
@@ -30,7 +32,9 @@ function fakeDb(values) {
         update(target, value) { store.set(target.path, { ...store.get(target.path), ...structuredClone(value) }); },
         delete(target) { store.delete(target.path); },
       };
-      return work(tx);
+      const result = work(tx);
+      if (!(result instanceof Promise)) throw Error('You must return a Promise in your transaction()-callback.');
+      return result;
     },
   };
   return db;
@@ -56,6 +60,19 @@ test('stock outbox opens and resolves deterministic alert episodes', async () =>
   assert.equal(latest.state, 'RESOLVIDA');
 });
 
+test('stock-only projection ignores pending emails and creates an alert for zero stock', async () => {
+  const db=fakeDb({[`products/${productId}`]:{title:'Livro de teste',active:true,stock:0,minimumStock:2,version:2},
+    'outbox/email:test':{id:'email:test',type:'EMAIL_DELIVERY',state:'PENDING',attempts:0,nextAttemptAt:new Date(now-1000)}});
+  const repositories=createFirestoreRepositories(db);
+  await db.runTransaction(async tx=>enqueueStockAlertProjection(tx,repositories,{productId,version:2,now:new Date(now)}));
+  const config={installationId:'11111111-1111-4111-8111-111111111111',secret:'ab'.repeat(32)};
+  assert.equal((await processPendingFirestoreOutbox({db,config,now:()=>now,stockOnly:true})).processed,true);
+  const alerts=[...db.values.entries()].filter(([path])=>path.startsWith('notifications/'));
+  assert.equal(alerts.length,1);assert.equal(alerts[0][1].type,'STOCK_ZERO');assert.equal(alerts[0][1].title,'Livro de teste');
+  assert.equal(db.values.get('outbox/email:test').state,'PENDING');
+  assert.equal((await processPendingFirestoreOutbox({db,config,now:()=>now,stockOnly:true})).processed,false);
+});
+
 test('email outbox confirms a provider result found after an uncertain send without sending twice', async () => {
   const db = fakeDb({});
   const repositories = createFirestoreRepositories(db);
@@ -77,6 +94,44 @@ test('email outbox confirms a provider result found after an uncertain send with
   assert.equal(db.values.get('outbox/email:auth:uncertain').state, 'SUCCEEDED');
   assert.equal(db.values.get('outbox/email:auth:uncertain').providerId, '11111111-1111-4111-8111-111111111111');
   assert.equal(JSON.stringify(db.values.get('outbox/email:auth:uncertain')).includes('Código secreto'), false);
+});
+
+test('targeted onboarding delivery processes only its own encrypted outbox entry', async () => {
+  const db=fakeDb({}),repositories=createFirestoreRepositories(db),settings={mode:'firestore',emailDeliveryKey:randomBytes(32),emailProvider:'resend',emailProviderKey:'key',emailFrom:'Livraria <dev@example.invalid>'};
+  const first='auth:'+'a'.repeat(64),second='auth:'+'b'.repeat(64);
+  await db.runTransaction(async tx=>{for(const idempotencyKey of [first,second])enqueueEmailDelivery(tx,repositories,{settings,idempotencyKey,to:'owner@example.invalid',subject:'Código',text:'segredo',now:new Date(now)});});
+  let sends=0;const result=await processPendingFirestoreOutbox({db,config:{firestore:settings},now:()=>now,emailId:'email:'+second,provider:{send:async()=>{sends++;return {id:'provider-id'};}}});
+  assert.equal(result.emailSent,true);assert.equal(sends,1);assert.equal(db.values.get('outbox/email:'+first).state,'PENDING');assert.equal(db.values.get('outbox/email:'+second).state,'SUCCEEDED');
+  await assert.rejects(processPendingFirestoreOutbox({db,config:{firestore:settings},emailId:'email:other'}),{code:'INVALID_OUTBOX_REQUEST'});
+});
+
+test('first access persists flow, sends once, commits outbox and verifies code with Firestore-compatible transactions', async () => {
+  const userId='11111111-1111-4111-8111-111111111111', installationId='33333333-3333-4333-8333-333333333333';
+  const email='owner@example.invalid', secret='ab'.repeat(32), tokenHash='a'.repeat(64), codeHash='b'.repeat(64);
+  const index=createHmac('sha256',Buffer.from(secret,'hex')).update(JSON.stringify(['identity.email.v1','prod',installationId,email])).digest('hex');
+  const settings={mode:'firestore',emailDeliveryKey:randomBytes(32),emailProvider:'resend',emailProviderKey:'key',emailFrom:'Livraria <dev@example.invalid>'};
+  const config={environment:'prod',installationId,secret,firestore:settings};
+  const db=fakeDb({[`users/${userId}`]:{id:userId,owner:true,role:'SUPER_ADMIN',status:'ATIVO',authorizationVersion:1,activated:false,firstAccessCompleted:false,emailIndex:index}});
+  const access=createFirestoreAccessService({db,config,now:()=>now});
+  assert.equal((await access.start({email,flowId:'22222222-2222-4222-8222-222222222222',tokenHash,codeHash,code:'ABCDEFG'})).outcome,'SENT');
+  let sends=0;
+  const result=await processPendingFirestoreOutbox({db,config,now:()=>now,emailId:`email:auth:${tokenHash}`,provider:{send:async payload=>{sends++;assert.equal(payload.to,email);assert.match(payload.text,/ABCDEFG/);return {id:'provider-id'};}}});
+  assert.equal(result.emailSent,true);
+  assert.equal(sends,1);
+  assert.equal(db.values.get(`outbox/email:auth:${tokenHash}`).state,'SUCCEEDED');
+  assert.equal((await access.email({tokenHash,codeHash})).verified,true);
+});
+
+test('provider rejection is persisted and cannot be reported as a successful send', async () => {
+  const db=fakeDb({}), repositories=createFirestoreRepositories(db), tokenHash='f'.repeat(64);
+  const settings={mode:'firestore',emailDeliveryKey:randomBytes(32),emailProvider:'resend',emailProviderKey:'key',emailFrom:'Livraria <dev@example.invalid>'};
+  await db.runTransaction(async tx=>enqueueEmailDelivery(tx,repositories,{settings,idempotencyKey:`auth:${tokenHash}`,to:'staff@example.invalid',subject:'Código',text:'ABCDEFG',now:new Date(now)}));
+  let sends=0;
+  const result=await processPendingFirestoreOutbox({db,config:{firestore:settings},now:()=>now,emailId:`email:auth:${tokenHash}`,provider:{send:async()=>{sends++;throw Object.assign(new Error('provider rejected'),{code:'EMAIL_DELIVERY_UNAVAILABLE'});}}});
+  assert.equal(sends,1);
+  assert.equal(result.emailSent,false);
+  assert.equal(db.values.get(`outbox/email:auth:${tokenHash}`).state,'PENDING');
+  assert.equal(db.values.get(`outbox/email:auth:${tokenHash}`).errorCode,'EMAIL_DELIVERY_UNAVAILABLE');
 });
 
 test('email outbox retries with the same idempotency key only after a definitive provider miss', async () => {
