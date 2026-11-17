@@ -125,9 +125,17 @@
       if(transportSteps.length>40)transportSteps.shift();
     }
   }
-  async function api(operation, body, canRenew = true, openLogin = false, busyAttempt = 0) {
+  // Serialize the complete access operation, not just fetch: a state response
+  // can rotate the HttpOnly cookie and its CSRF token before a queued POST.
+  let accessTail=Promise.resolve();
+  function api(operation, body, canRenew = true, openLogin = false, busyAttempt = 0) {
+    const pending=accessTail.then(()=>apiNow(operation,body,canRenew,openLogin,busyAttempt));
+    accessTail=pending.then(()=>undefined,()=>undefined);
+    return pending;
+  }
+  async function apiNow(operation, body, canRenew = true, openLogin = false, busyAttempt = 0) {
     if((localLab||production) && operation!=='state' && !csrfToken){
-      const state=await api('state',undefined,false,true);
+      const state=await apiNow('state',undefined,false,true);
       if(state.stage!=='INITIAL'||!csrfToken)throw unavailable('ACCESS_CONTEXT_CHANGED');
     }
     if(busy)$('access-progress').querySelector('span:last-child').textContent=({'state':'Preparando acesso…','device-login':'Entrando na livraria…','complete':'Finalizando sua entrada…','cookie':'Conferindo sua sessão…','login':'Conferindo acesso…','continue-login':'Preparando confirmação…','options':'Preparando confirmação…'})[operation]||'Aguarde…';
@@ -139,14 +147,14 @@
       if(response.status===503&&result?.error?.code==='WORKSPACE_BUSY'&&busyAttempt===0){
         if(busy)$('access-progress').querySelector('span:last-child').textContent='Aguardando o serviço liberar sua entrada…';
         await new Promise(resolve=>setTimeout(resolve,500));
-        return api(operation,body,canRenew,openLogin,1);
+        return apiNow(operation,body,canRenew,openLogin,1);
       }
       // Renew only a server-confirmed preflight rejection: no command ran.
       // Never replay a timeout, invalid response, password/code guess or ceremony.
       if (canRenew && response.status === 401 && result?.error?.code === 'ACCESS_CONTEXT_EXPIRED' && ['start','login','recover'].includes(operation)) {
-        const fresh = await api('state', undefined, false);
+        const fresh = await apiNow('state', undefined, false);
         if (fresh.stage !== 'INITIAL') throw failure('ACCESS_CONTEXT_CHANGED');
-        return api(operation, body, false);
+        return apiNow(operation, body, false);
       }
       throw failure(typeof result?.error?.code === 'string' ? result.error.code : 'ACCESS_RESPONSE_INVALID');
     }
@@ -319,7 +327,7 @@
     finally { $('login-password').value = ''; }
   });
   $('biometric-login').addEventListener('click',()=>run(async()=>{
-    if(!window.PublicKeyCredential||!navigator.credentials)throw unavailable('DEVICE_NOT_SUPPORTED');
+    if(!window.PublicKeyCredential||!navigator.credentials){message('Biometria indisponível neste navegador. Use seu CPF ou e-mail e sua senha para entrar.');$('login-password').focus();return;}
     if(!loginDevice||performance.now()-loginDeviceAt>90000){
       await api('state',undefined,true,true);message('Tudo pronto. Toque em “Entrar com biometria” para abrir seu aparelho.');return;
     }
@@ -327,8 +335,8 @@
     const prepared=loginDevice;lastIdentifier=$('login-email').value;
     let credential;
     try{credential=await navigator.credentials.get({publicKey:prepared.options});}
-    catch(error){throw unavailable({NotAllowedError:'DEVICE_NOT_ALLOWED',NotSupportedError:'DEVICE_NOT_SUPPORTED',SecurityError:'DEVICE_SECURITY_ERROR',AbortError:'DEVICE_ABORTED'}[error?.name]||'DEVICE_RESPONSE_INVALID');}
-    if(!credential)throw unavailable('DEVICE_RESPONSE_INVALID');
+    catch {message('Biometria não concluída. Use seu CPF ou e-mail e sua senha para entrar.');$('login-password').focus();return;}
+    if(!credential){message('Biometria não concluída. Use seu CPF ou e-mail e sua senha para entrar.');$('login-password').focus();return;}
     pendingResponse=serialize(credential);loginDevice=null;show('COMMITTING');accessPhase='COMPLETE';
     pendingDeviceCommand={response:pendingResponse,receipt:prepared.receipt};await finish();
   },'login-form'));
@@ -360,7 +368,7 @@
   async function prepareDevice() {
     accessPhase = 'PREPARE';
     $('passkey-button').textContent = 'Preparando confirmação…';
-    if (!window.PublicKeyCredential || !navigator.credentials) throw unavailable('DEVICE_NOT_SUPPORTED');
+    if (!window.PublicKeyCredential || !navigator.credentials) { $('passkey-button').textContent = 'Biometria indisponível'; message('Seu navegador não oferece confirmação pelo aparelho. Você pode voltar à tela de senha; o primeiro acesso ainda pode exigir confirmação adicional.'); return; }
     const data = await api('options', {});applyDeviceOptions(data);
   }
   function applyDeviceOptions(data){
@@ -377,23 +385,28 @@
     // native browser API in the click turn, before any await loses activation.
     if (!preparedDevice || performance.now() - preparedAt > 120000) {
       preparedDevice = null; await prepareDevice();
+      if (!preparedDevice) return;
       message(preparedDevice.kind === 'create' ? 'Tudo pronto. Clique em “Cadastrar Biometria” para continuar.' : 'Tudo pronto. Clique em “Confirmar no meu aparelho” para continuar.'); return;
     }
     const prepared = preparedDevice; preparedDevice = null; accessPhase = 'DEVICE';
     let credential;
     try { credential = await navigator.credentials[prepared.kind]({ publicKey: prepared.options }); }
     catch (error) {
-      const code = {NotAllowedError:'DEVICE_NOT_ALLOWED',NotSupportedError:'DEVICE_NOT_SUPPORTED',SecurityError:'DEVICE_SECURITY_ERROR',InvalidStateError:'DEVICE_ALREADY_REGISTERED',AbortError:'DEVICE_ABORTED'}[error?.name];
-      // Se a biometria falhar ou for recusada, permitimos que o usuário prossiga sem ela
-      message('Biometria indisponível ou cancelada. Insira sua senha novamente para entrar sem biometria.');
-      preparedDevice = null;
-      accessPhase = 'LOGIN';
+      preparedDevice = prepared;
+      message('A confirmação pelo aparelho não foi concluída. Tente novamente ou volte à tela de senha. O primeiro acesso pode exigir confirmação adicional.');
       return;
     }
     if (!credential) { preparedDevice = prepared; throw unavailable('DEVICE_RESPONSE_INVALID'); }
     pendingResponse = serialize(credential);
     show('COMMITTING'); accessPhase = 'COMPLETE'; await finish();
   }));
+  $('password-fallback').addEventListener('click', () => {
+    if (busy) return;
+    clearSecrets(); pendingResponse = null; pendingReceipt = null; pendingDeviceCommand = null; pendingConfirmation = null; pendingLogin = null;
+    show('INITIAL');
+    message('Informe seu CPF ou e-mail e sua senha. Se o primeiro acesso ainda não foi concluído, será necessária confirmação adicional.');
+    $('login-password').focus();
+  });
   $('retry-button').addEventListener('click',()=>run(async()=>{
     if(pendingConfirmation||pendingDeviceCommand||pendingLogin||pendingReceipt){await finish();return;}
     const state=await api('state');

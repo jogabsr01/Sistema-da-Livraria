@@ -12,6 +12,46 @@ ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app'
 
 
 class UnifiedAccess(unittest.TestCase):
+    def test_custom_domain_waits_for_initial_cookie_and_csrf_before_first_access(self):
+        origin = 'https://livraria.ipbjb.com.br'
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(executable_path=os.environ.get('CHROMIUM', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'), args=['--no-sandbox'])
+            try:
+                page = browser.new_page()
+                calls = []
+                page.add_init_script("""(() => { const original=window.fetch; window.releaseAccessState=null; window.fetch=async (...args)=>{ const response=await original(...args); if(String(args[0]).includes('/api/v1/access/state')) await new Promise(resolve=>window.releaseAccessState=resolve); return response; }; })();""")
+                def relay(route):
+                    request = route.request
+                    path = urlsplit(request.url).path
+                    if path == '/api/v1/access/state':
+                        calls.append('state')
+                        route.fulfill(status=200, headers={'content-type':'application/json', 'set-cookie':'__Host-livraria_access=test-flow; Path=/; Secure; HttpOnly; SameSite=Strict'}, body=json.dumps({'data':{'stage':'INITIAL','csrfToken':'csrf-for-test-flow'}}))
+                    elif path == '/api/v1/access/start':
+                        calls.append('start')
+                        self.assertEqual(request.headers.get('x-csrf-token'), 'csrf-for-test-flow')
+                        self.assertIn('__Host-livraria_access=test-flow', request.headers.get('cookie', ''))
+                        self.assertEqual(json.loads(request.post_data), {'email':'pessoa@example.com'})
+                        route.fulfill(json={'data':{'stage':'EMAIL','csrfToken':'next','message':'Confira seu e-mail.'}})
+                    elif path in ('/acesso-dev.html', '/acesso-dev.js', '/acesso-dev.css', '/app-theme.css'):
+                        file = ROOT / path[1:]
+                        body = file.read_bytes()
+                        if path == '/acesso-dev.js':
+                            body = ("globalThis.LivrariaOrigin={production:'" + origin + "'};\n").encode() + body
+                        route.fulfill(content_type={'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]], body=body)
+                    else:
+                        route.fulfill(status=404, body='')
+                page.route('**/*', relay)
+                page.goto(origin+'/acesso-dev.html', wait_until='domcontentloaded')
+                expect(page.locator('#login-form')).to_be_visible()
+                page.locator('#login-email').fill('pessoa@example.com')
+                page.wait_for_function('typeof window.releaseAccessState === "function"')
+                page.locator('#first-access').click()
+                page.evaluate('window.releaseAccessState()')
+                expect(page.locator('#email-form')).to_be_visible()
+                self.assertEqual(calls, ['state','start'])
+            finally:
+                browser.close()
+
     def test_production_retries_state_before_first_access_and_sends_csrf(self):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=os.environ.get('CHROMIUM', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'), args=['--no-sandbox'])
