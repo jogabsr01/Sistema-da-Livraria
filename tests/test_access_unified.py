@@ -115,13 +115,36 @@ class UnifiedAccess(unittest.TestCase):
                 expect(page.locator('#login-email')).to_be_enabled()
                 expect(page.locator('#first-access')).to_be_enabled()
                 page.locator('#login-email').fill('pessoa@example.com')
-                expect(page.locator('#status')).to_contain_text('preencher seus dados', timeout=6000)
+                page.wait_for_timeout(4500)
                 expect(page.locator('#first-access')).to_be_enabled()
                 page.locator('#first-access').click()
                 expect(page.locator('#email-form')).to_be_visible()
                 self.assertEqual(calls, ['state','start'])
             finally:
                 browser.close()
+
+    def test_initial_existing_flow_never_hides_login_and_can_be_resumed(self):
+        origin='https://livraria.ipbjb.com.br'
+        with sync_playwright() as playwright:
+            browser=playwright.chromium.launch(executable_path=os.environ.get('CHROMIUM', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),args=['--no-sandbox'])
+            try:
+                page=browser.new_page()
+                def relay(route):
+                    path=urlsplit(route.request.url).path
+                    if path=='/api/v1/access/state': route.fulfill(json={'data':{'stage':'EMAIL','csrfToken':'csrf'}})
+                    elif path in ('/acesso-dev.html','/acesso-dev.js','/acesso-dev.css','/app-theme.css'):
+                        file=ROOT/path[1:]; body=file.read_bytes()
+                        if path=='/acesso-dev.js': body=("globalThis.LivrariaOrigin={production:'"+origin+"'};\n").encode()+body
+                        route.fulfill(content_type={'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]],body=body)
+                    else: route.fulfill(status=404,body='')
+                page.route('**/*',relay)
+                page.goto(origin+'/acesso-dev.html',wait_until='domcontentloaded')
+                expect(page.locator('#check-step')).to_be_visible()
+                expect(page.locator('#login-email')).to_be_visible()
+                expect(page.locator('#first-access')).to_be_enabled()
+                page.locator('#check-step').click()
+                expect(page.locator('#email-form')).to_be_visible()
+            finally: browser.close()
 
     def test_custom_domain_waits_for_initial_cookie_and_csrf_before_first_access(self):
         origin = 'https://livraria.ipbjb.com.br'

@@ -428,12 +428,10 @@
     show('INITIAL');message('');
     const revision=actionRevision;
     api('state',undefined,true,location.hash==='#entrar').then(state=>{
-      if(revision!==actionRevision||initialEdited)return;
-      if(requestedView(state))return;
+      if(revision!==actionRevision)return;
       if(!['INITIAL','EMAIL','PASSWORD','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage))throw unavailable('ACCESS_RESPONSE_INVALID');
-      show(state.stage==='COMPLETE'?'COMMITTING':state.stage);
-      if(state.stage!=='INITIAL')message('Continue pela etapa indicada.');
-    }).catch(error=>{if(revision!==actionRevision)return;console.error('[Acesso]',{code:diagnosticCodes.has(error?.code)?error.code:'ACCESS_PAGE_UNAVAILABLE'});message('Não foi possível conferir a conexão agora. Você pode preencher seus dados e tentar novamente.','error');});
+      if(state.stage!=='INITIAL'&&!initialEdited){$('check-step').textContent='Continuar tentativa anterior';$('check-step').hidden=false;}
+    }).catch(()=>{});
     return;
   }
 })();
