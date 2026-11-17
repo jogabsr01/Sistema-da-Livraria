@@ -22,14 +22,14 @@ test('dispatcher resolves exact, parameterized and nested routes without exposin
 test('Vercel production accepts its exact origin but rejects a foreign origin', () => {
   const script = `
     const { dispatch } = await import('./api/v1/[...slug].js');
-    for (const [origin, expected] of [['https://livrariaipjb.vercel.app', 503], ['https://attacker.example', 403]]) {
+    for (const [origin, expected] of [['https://livraria.ipbjb.com.br', 503], ['https://livrariaipjb.vercel.app', 403], ['https://attacker.example', 403]]) {
       const response = await dispatch(new Request(origin + '/api/v1/access/state', { headers: { origin } }));
       const body = await response.json();
-      const code = origin === 'https://livrariaipjb.vercel.app' ? 'IDENTITY_NOT_ACTIVATED' : 'FORBIDDEN';
+      const code = origin === 'https://livraria.ipbjb.com.br' ? 'IDENTITY_NOT_ACTIVATED' : 'FORBIDDEN';
       if (response.status !== expected || body.error?.code !== code) throw new Error(origin + ': ' + response.status + ' ' + body.error?.code);
     }
     const { requireSameOriginMutation } = await import('./backend/authorization.mjs');
-    const origin = 'https://livrariaipjb.vercel.app';
+    const origin = 'https://livraria.ipbjb.com.br';
     const request = header => new Request(origin + '/api/v1/access/login', { method: 'POST', headers: { origin: header, 'content-type': 'application/json' }, body: '{}' });
     requireSameOriginMutation(request(origin), origin);
     try { requireSameOriginMutation(request('https://attacker.example'), origin); throw Error('foreign origin accepted'); }
@@ -43,6 +43,23 @@ test('Vercel production accepts its exact origin but rejects a foreign origin', 
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('Vercel browser origin bootstrap only accepts the canonical production origin', () => {
+  const script = `
+    const { originBootstrap } = await import('./scripts/build-public.mjs');
+    const { runInNewContext } = await import('node:vm');
+    const context = {}; runInNewContext(originBootstrap, context);
+    const policy = context.LivrariaOrigin;
+    if (policy.production !== 'https://livraria.ipbjb.com.br' || policy.current(policy.production) !== policy.production) throw Error('canonical origin rejected');
+    for (const origin of ['https://livrariaipjb.vercel.app', 'http://livraria.ipbjb.com.br', 'https://livraria.ipbjb.com.br.attacker.example']) {
+      if (policy.current(origin) !== null) throw Error('untrusted origin accepted');
+    }
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: new URL('../../', import.meta.url), env: { ...process.env, VERCEL: '1' }, encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test('Vercel owner access passes both origin checks after settings load', () => {
   const script = `
     const { createOwnerAccessHandler } = await import('./backend/owner-access.mjs');
@@ -51,8 +68,8 @@ test('Vercel owner access passes both origin checks after settings load', () => 
       loadSettings: () => ({ config: { environment: 'prod' } }),
       createClient: () => { reachedClient = true; throw new Error('STOP_AFTER_ORIGIN_CHECK'); },
     });
-    const url = 'https://livrariaipjb.vercel.app/api/v1/access/state';
-    const response = await handler(new Request(url, { headers: { origin: 'https://livrariaipjb.vercel.app' } }));
+    const url = 'https://livraria.ipbjb.com.br/api/v1/access/state';
+    const response = await handler(new Request(url, { headers: { origin: 'https://livraria.ipbjb.com.br' } }));
     if (!reachedClient || response.status === 403) throw new Error('production origin rejected');
     reachedClient = false;
     const rejected = await handler(new Request('https://attacker.example/api/v1/access/state'));
@@ -74,7 +91,7 @@ test('prepared production WebAuthn registration uses the hosting provider rpId',
     const result = await preparedAccessOptions(input, 'prod');
     if (result.options.rp.id !== process.env.EXPECTED_RP_ID) throw Error('Unexpected rpId: ' + result.options.rp.id);
   `;
-  for (const [vercel, expected] of [['1', 'livrariaipjb.vercel.app'], ['', 'merry-chimera-49a1f3.netlify.app']]) {
+  for (const [vercel, expected] of [['1', 'livraria.ipbjb.com.br'], ['', 'merry-chimera-49a1f3.netlify.app']]) {
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
       cwd: new URL('../../', import.meta.url),
       env: { ...process.env, APP_ENV: 'prod', VERCEL: vercel, WORKSPACE_LOCAL_LAB: '', EXPECTED_RP_ID: expected },
@@ -92,7 +109,7 @@ test('Vercel session service accepts its origin and rejects other origins for re
     const principal = { id: '11111111-1111-4111-8111-111111111111', sessionId: '22222222-2222-4222-8222-222222222222', role: 'SUPER_ADMIN', assurance: 'passkey', authenticatedAt: now - 1000, expiresAt: now + 60000, authorizationVersion: 1 };
     let reads = 0, revocations = 0;
     const service = createSessionService({ config: { environment: 'prod', installationId: '33333333-3333-4333-8333-333333333333' }, tokenKey: randomBytes(32) }, { client: { readSession: async () => { reads++; return principal; }, revokeOtherSessions: async () => { revocations++; } } });
-    const cookie = sessionCookie(raw).split(';')[0], host = 'https://livrariaipjb.vercel.app';
+    const cookie = sessionCookie(raw).split(';')[0], host = 'https://livraria.ipbjb.com.br';
     const session = await service.current(new Request(host + '/api/v1/session', { headers: { cookie } }));
     const response = await service.revokeOthers(new Request(host + '/api/v1/session/revoke-others', { method: 'POST', headers: { cookie, origin: host, 'content-type': 'application/json', 'x-csrf-token': session.csrfToken } }));
     if (!response.revoked || reads !== 2 || revocations !== 1) throw Error('Vercel session failed');
@@ -114,7 +131,7 @@ test('health and unknown routes retain status and JSON responses', async () => {
     ['/api/v1/health', 'POST', 405, { error: { code: 'METHOD_NOT_ALLOWED' } }],
     ['/api/v1/no-such-route', 'GET', 404, { error: { code: 'NOT_FOUND' } }],
   ]) {
-    const response = await dispatch(new Request('https://livrariaipjb.vercel.app' + path, { method }));
+    const response = await dispatch(new Request('https://livraria.ipbjb.com.br' + path, { method }));
     assert.equal(response.status, status);
     assert.deepEqual(await response.json(), body);
   }

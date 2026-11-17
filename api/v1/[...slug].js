@@ -41,6 +41,15 @@ export function selectHandler(pathname) {
 export async function forwardToHandler(request, handler) {
   const address = request.headers.get('x-vercel-forwarded-for');
   const ip = process.env.VERCEL === '1' && address && isIP(address) ? address : undefined;
+  // The Vercel rewrite injects its named path capture into the query string.
+  // Remove only the unambiguous capture for this exact route; other query
+  // parameters remain subject to each handler's validation.
+  const url = new URL(request.url);
+  const capture = url.pathname.startsWith('/api/v1/') ? url.pathname.slice('/api/v1/'.length) : '';
+  if (process.env.VERCEL === '1' && capture && url.searchParams.getAll('match').length === 1 && url.searchParams.get('match') === capture) {
+    url.searchParams.delete('match');
+    request = new Request(url, request);
+  }
   return handler(request, { ip });
 }
 
