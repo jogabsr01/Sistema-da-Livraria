@@ -12,6 +12,79 @@ ORIGIN = 'https://dev--merry-chimera-49a1f3.netlify.app'
 
 
 class UnifiedAccess(unittest.TestCase):
+    def test_immediate_first_access_recovers_after_hung_initial_state(self):
+        origin = 'https://livraria.ipbjb.com.br'
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(executable_path=os.environ.get('CHROMIUM', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'), args=['--no-sandbox'])
+            try:
+                page = browser.new_page()
+                calls = []
+                page.add_init_script("""(() => { const original=fetch; let first=true; window.fetch=(...args)=>{if(first && String(args[0]).includes('/api/v1/access/state')){first=false; return new Promise(()=>{});} return original(...args);};})();""")
+                def relay(route):
+                    request=route.request; path=urlsplit(request.url).path
+                    if path == '/api/v1/access/state':
+                        calls.append('state')
+                        route.fulfill(status=200,headers={'content-type':'application/json','set-cookie':'__Host-livraria_access=test-flow; Path=/; Secure; HttpOnly; SameSite=Strict'},body=json.dumps({'data':{'stage':'INITIAL','csrfToken':'csrf-for-test-flow'}}))
+                    elif path == '/api/v1/access/start':
+                        calls.append('start')
+                        self.assertEqual(request.headers.get('x-csrf-token'),'csrf-for-test-flow')
+                        self.assertIn('__Host-livraria_access=test-flow',request.headers.get('cookie',''))
+                        route.fulfill(json={'data':{'stage':'EMAIL','csrfToken':'next','message':'Confira seu e-mail.'}})
+                    elif path in ('/acesso-dev.html','/acesso-dev.js','/acesso-dev.css','/app-theme.css'):
+                        file=ROOT/path[1:]; body=file.read_bytes()
+                        if path == '/acesso-dev.js': body=("globalThis.LivrariaOrigin={production:'"+origin+"'};\n").encode()+body
+                        route.fulfill(content_type={'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]],body=body)
+                    else: route.fulfill(status=404,body='')
+                page.route('**/*',relay)
+                page.goto(origin+'/acesso-dev.html',wait_until='domcontentloaded')
+                expect(page.locator('#login-email')).to_be_visible()
+                page.locator('#login-email').fill('pessoa@example.com')
+                page.locator('#first-access').click()
+                expect(page.locator('#email-form')).to_be_visible(timeout=8000)
+                self.assertEqual(calls,['state','start'])
+            finally: browser.close()
+
+    def test_form_renders_without_javascript_or_initial_network(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(executable_path=os.environ.get('CHROMIUM', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'), args=['--no-sandbox'])
+            try:
+                page = browser.new_page(java_script_enabled=False)
+                def relay(route):
+                    path = urlsplit(route.request.url).path
+                    if path == '/acesso-dev.html': route.fulfill(content_type='text/html', body=(ROOT/'acesso-dev.html').read_bytes())
+                    else: route.abort()
+                page.route('**/*', relay)
+                page.goto('https://livraria.ipbjb.com.br/acesso-dev.html', wait_until='domcontentloaded')
+                expect(page.locator('#login-email')).to_be_visible()
+                expect(page.locator('#first-access')).to_be_enabled()
+                self.assertIn('JavaScript', page.locator('noscript').text_content())
+            finally: browser.close()
+
+    def test_delayed_existing_flow_does_not_replace_form_after_typing(self):
+        origin='https://livraria.ipbjb.com.br'
+        with sync_playwright() as playwright:
+            browser=playwright.chromium.launch(executable_path=os.environ.get('CHROMIUM', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'), args=['--no-sandbox'])
+            try:
+                page=browser.new_page()
+                page.add_init_script("""(() => {const original=fetch; window.fetch=async (...args)=>{const response=await original(...args);if(String(args[0]).includes('/api/v1/access/state'))await new Promise(resolve=>window.releaseAccessState=resolve);return response;};})();""")
+                def relay(route):
+                    path=urlsplit(route.request.url).path
+                    if path=='/api/v1/access/state': route.fulfill(json={'data':{'stage':'EMAIL','csrfToken':'csrf'}})
+                    elif path in ('/acesso-dev.html','/acesso-dev.js','/acesso-dev.css','/app-theme.css'):
+                        file=ROOT/path[1:];body=file.read_bytes()
+                        if path=='/acesso-dev.js': body=("globalThis.LivrariaOrigin={production:'"+origin+"'};\n").encode()+body
+                        route.fulfill(content_type={'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]],body=body)
+                    else: route.fulfill(status=404,body='')
+                page.route('**/*',relay)
+                page.goto(origin+'/acesso-dev.html',wait_until='domcontentloaded')
+                page.wait_for_function('typeof window.releaseAccessState === "function"')
+                page.locator('#login-email').fill('pessoa@example.com')
+                page.evaluate('window.releaseAccessState()')
+                page.wait_for_timeout(200)
+                expect(page.locator('#login-form')).to_be_visible()
+                expect(page.locator('#login-email')).to_have_value('pessoa@example.com')
+            finally: browser.close()
+
     def test_state_timeout_releases_form_and_retries_with_fresh_csrf(self):
         origin = 'https://livraria.ipbjb.com.br'
         with sync_playwright() as playwright:

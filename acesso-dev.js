@@ -13,7 +13,7 @@
   function enterApp(){rememberIdentifier();$('enter-app').href='/home-dev.html?entrada=confirmada';if(!verificationView)location.replace('/home-dev.html?entrada=confirmada');}
   try{const saved=JSON.parse(localStorage.getItem(identifierStorage)||'null');if(saved&&typeof saved.value==='string'&&saved.value.length<=254&&Number.isFinite(saved.expires)&&saved.expires>Date.now()&&!identifierError(saved.value))$('login-email').value=saved.value;else localStorage.removeItem(identifierStorage);}catch{}
   $('remember-identifier').addEventListener('change',()=>{if(!$('remember-identifier').checked)try{localStorage.removeItem(identifierStorage);}catch{}});
-  let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0;
+  let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0, initialEdited = false;
   const diagnosticCodes = new Set(['LOCAL_FIRESTORE_EMULATOR_UNAVAILABLE','ACCESS_SESSION_COOKIE_MISSING','WORKSPACE_BUSY','ACCESS_CONTINUATION_EXPIRED','HOST_ACCESS_REQUIRED','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE','UPSTREAM_UNTRUSTED','ACCESS_NETWORK_UNAVAILABLE','ACCESS_REQUEST_TIMEOUT','ACCESS_RESPONSE_INVALID','IDENTITY_NOT_ACTIVATED','IDENTITY_CONFIGURATION_UNAVAILABLE','CONFIGURATION_UNAVAILABLE','SERVICE_NOT_ACTIVATED','WORKSPACE_IDENTITY_UNAVAILABLE','AUTH_RATE_LIMITED','ACCESS_REJECTED','WORKSPACE_ACCESS_REJECTED','FORBIDDEN','DEVICE_NOT_ALLOWED','DEVICE_NOT_SUPPORTED','DEVICE_SECURITY_ERROR','DEVICE_ALREADY_REGISTERED','DEVICE_ABORTED','DEVICE_RESPONSE_INVALID','ACCESS_CONTEXT_EXPIRED','ACCESS_CONTEXT_CHANGED']);
   function diagnostic(error) {
     const node = document.getElementById('access-diagnostic');
@@ -232,6 +232,7 @@
     let position=0,seen=0;while(position<input.value.length&&seen<count){if(/\d/.test(input.value[position]))seen++;position++;}input.setSelectionRange(position,position);
   });
   ['login-email','login-password','new-password','confirm-password','recovery-email'].forEach(field => $(field).addEventListener('input', () => {
+    if (['login-email','login-password','recovery-email'].includes(field)) initialEdited = true;
     if ($(field).getAttribute('aria-invalid') === 'true') {
       clearFieldError(field); if (!busy) { $('status').hidden = true; $('status').textContent = ''; }
     }
@@ -427,7 +428,7 @@
     show('INITIAL');message('');
     const revision=actionRevision;
     api('state',undefined,true,location.hash==='#entrar').then(state=>{
-      if(revision!==actionRevision)return;
+      if(revision!==actionRevision||initialEdited)return;
       if(requestedView(state))return;
       if(!['INITIAL','EMAIL','PASSWORD','PASSKEY','COMMITTING','COMPLETE'].includes(state.stage))throw unavailable('ACCESS_RESPONSE_INVALID');
       show(state.stage==='COMPLETE'?'COMMITTING':state.stage);
