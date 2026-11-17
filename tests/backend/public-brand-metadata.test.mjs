@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
+import { generateFavicon } from '../../scripts/generate-favicon.mjs';
+import sharp from 'sharp';
 
 test('public pages advertise the official social preview and favicon', async () => {
   const root = new URL('../../', import.meta.url);
@@ -18,4 +20,14 @@ test('public pages advertise the official social preview and favicon', async () 
     assert.equal(image.readUInt32BE(16),width);
     assert.equal(image.readUInt32BE(20),height);
   }
+});
+
+test('favicon is reproducible and uses a light, bounded contrast background', async () => {
+  const icon = await readFile(new URL('../../public/brand/favicon.png', import.meta.url));
+  assert.deepEqual(icon, await generateFavicon());
+  const { data, info } = await sharp(icon).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const pixel = (x, y) => [...data.subarray((y * info.width + x) * 4, (y * info.width + x) * 4 + 4)];
+  assert.equal(pixel(0, 0)[3], 0);
+  const light = pixel(96, 14);
+  assert.ok(light[0] > 240 && light[1] > 240 && light[2] > 240 && light[3] === 255);
 });

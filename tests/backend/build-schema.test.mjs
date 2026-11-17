@@ -16,6 +16,7 @@ test('public build publishes access at root, preserves the demo and excludes pri
   await mkdir(join(root, 'backend')); await writeFile(join(root, 'backend', 'private.mjs'), 'DO_NOT_PUBLISH');
   await writeFile(join(root, 'backend', 'deployment-metadata.mjs'), 'PRIVATE_BUILD_IDENTITY');
   await build(root);
+  assert.deepEqual(await readFile(join(root, 'dist/brand/favicon.png')), await readFile(join(root, 'public/brand/favicon.png')));
   assert.deepEqual((await readdir(join(root, 'dist'))).sort(), ['acesso-dev.html','brand','index.html','prototipo.html']);
   assert.deepEqual(await readFile(join(root, 'dist', 'index.html')), access);assert.deepEqual(await readFile(join(root, 'dist', 'prototipo.html')), source);
   assert.ok(source.includes(Buffer.from('1357'))); assert.ok(source.includes(Buffer.from('2468')));
