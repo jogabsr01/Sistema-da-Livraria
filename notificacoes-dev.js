@@ -5,19 +5,16 @@
   const date = value => new Date(value).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
   let csrf = '', userId = '', admin = false, offset = 0, nextOffset = null, busy = false, loading = false, refreshAgain = false, report = null;
   let access = false, available = false, ready = false, checkedAt = 0, version = 0, pending = null, expiryTimer, reportTimer;
+  let accessCsrf='',deviceLogin=null,reauthBusy=false,reauthRevision=0,resumeFormat=null;
   const online = () => navigator.onLine !== false;
   const fresh = () => ready && online() && access && performance.now() - checkedAt < 90000;
   function controls() {
     const state=!online()?'offline':fresh()?'ready':loading?'checking':'stale';
     $('notification-connection').dataset.state=state;
-    $('notification-connection').textContent=!online()?'Sem conexão. Nenhuma atualização ou relatório será enviado; mantenha a aba aberta.'
-      :pending?'Há uma atualização com resultado pendente. Confira o pedido original; reconectar não o reenvia.'
-      :report?'Relatório disponível para revisão por até 90 segundos. Cada arquivo ou texto é consultado novamente no servidor.'
-      :fresh()?'Alertas conferidos. Relatórios e arquivos são consultados novamente no servidor a cada solicitação.'
-      :'Confira a conexão e os alertas antes de continuar. Relatórios antigos foram ocultados.';
+    $('notification-connection').textContent=!online()?'Sem conexão.':pending?'Atualização pendente.':fresh()?'Alertas atualizados.':loading?'Atualizando…':'Atualize os alertas.';
     $('pending-update').hidden=!pending;
     $('pending-description').textContent=pending?(access?(pending.operation==='state'?'Situação compartilhada':'Leitura pessoal')+' · '+pending.title+'. Mantenha esta aba aberta até conferir.':'Entre novamente na mesma conta para conferir a atualização original. Mantenha esta aba aberta.'):'';
-    document.querySelectorAll('button').forEach(button=>{button.disabled=busy||loading||!online();});
+    document.querySelectorAll('button:not(#identity-confirm):not(#identity-cancel):not(#identity-open)').forEach(button=>{button.disabled=busy||loading||!online();});
     $('retry-update').disabled=busy||loading||!online()||!access||!pending||pending.operation==='state'&&!admin;
     document.querySelectorAll('#alerts button').forEach(button=>{button.disabled=busy||loading||!!pending||!fresh();if(button.dataset.administrative)button.hidden=!admin;});
     $('generate').disabled=busy||loading||!!pending||!online()||!access||!admin||!available;
@@ -32,6 +29,40 @@
   function identityWarning(error) {
     const needsLogin=error.status===401||error.code==='REAUTHENTICATION_REQUIRED'||error.code==='WORKSPACE_REAUTHENTICATION_REQUIRED';
     if(needsLogin)$('identity-alert').hidden=false;
+  }
+  const decode=value=>Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((value.length+3)%4)),c=>c.charCodeAt(0));
+  const encode=value=>{let text='';for(const byte of new Uint8Array(value))text+=String.fromCharCode(byte);return btoa(text).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
+  async function accessRequest(operation,body,headers={}){
+    const response=await fetch('/api/v1/access/'+operation,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:body===undefined?headers:{'content-type':'application/json','x-csrf-token':accessCsrf,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const result=await response.json();if(!response.ok)throw Object.assign(Error('ACCESS_FAILED'),{code:result?.error?.code,status:response.status});
+    if(typeof result?.data?.csrfToken!=='string')throw Error('INVALID_ACCESS_RESPONSE');accessCsrf=result.data.csrfToken;return result.data;
+  }
+  async function prepareIdentity(){
+    const revision=++reauthRevision;$('identity-confirm').disabled=true;$('identity-status').textContent='Preparando confirmação…';deviceLogin=null;
+    try{const state=await accessRequest('state',undefined,{'x-access-view':'login'}),d=state.deviceLogin;
+      if(revision!==reauthRevision||!$('identity-dialog').open)return;
+      if(!d||typeof d.receipt!=='string'||typeof d.options?.challenge!=='string'||d.options.rpId!==location.hostname||d.options.userVerification!=='required'||!Array.isArray(d.options.allowCredentials)||d.options.allowCredentials.length)throw Error('INVALID_ACCESS_RESPONSE');
+      deviceLogin={receipt:d.receipt,options:{...d.options,challenge:decode(d.options.challenge)}};$('identity-confirm').disabled=false;$('identity-status').textContent='';
+    }catch{if(revision===reauthRevision)$('identity-status').textContent='Não foi possível preparar a confirmação. Feche e tente novamente.';}
+  }
+  async function confirmIdentity(){
+    if(reauthBusy||!deviceLogin)return;const identifier=$('identity-identifier').value.trim();if(!identifier){$('identity-status').textContent='Informe seu CPF ou e-mail.';$('identity-identifier').focus();return;}
+    const prepared=deviceLogin,revision=reauthRevision;reauthBusy=true;$('identity-confirm').disabled=true;$('identity-status').textContent='Confirme no aparelho…';
+    try{
+      const credential=await navigator.credentials.get({publicKey:prepared.options});if(!credential||revision!==reauthRevision)throw Error('CANCELLED');
+      const r=credential.response,response={id:credential.id,rawId:encode(credential.rawId),type:credential.type,clientExtensionResults:credential.getClientExtensionResults(),response:{clientDataJSON:encode(r.clientDataJSON),authenticatorData:encode(r.authenticatorData),signature:encode(r.signature),userHandle:r.userHandle?encode(r.userHandle):null}};
+      if(credential.authenticatorAttachment)response.authenticatorAttachment=credential.authenticatorAttachment;
+      let result=await accessRequest('device-login',{email:identifier,receipt:prepared.receipt,response});
+      if(!result.proofReceipt)throw Error('INVALID_ACCESS_RESPONSE');
+      result=await accessRequest('complete',{response:null,receipt:result.proofReceipt},{'x-access-completion-version':'3','x-access-cookie-mode':'separate'});
+      if(result.stage==='COMMITTING'&&result.proofSaved===true)result=await accessRequest('complete',{response:null,receipt:null},{'x-access-completion-version':'3','x-access-cookie-mode':'separate'});
+      if(result.stage!=='COMPLETE')throw Error('INVALID_ACCESS_RESPONSE');
+      if(result.cookieConfirmationRequired)await accessRequest('cookie',{});
+      const current=await requestData('/api/v1/session');if(!userId||current.user?.id!==userId||!['ADMIN','SUPER_ADMIN'].includes(current.user.role)||current.user.assurance!=='passkey')throw Object.assign(Error('ACCOUNT_CHANGED'),{code:'ACCOUNT_CHANGED'});
+      csrf=current.csrfToken;access=true;admin=true;$('identity-alert').hidden=true;$('identity-dialog').close();await refresh();
+      if(resumeFormat){const format=resumeFormat;resumeFormat=null;await generate(format);}
+    }catch(error){deviceLogin=null;$('identity-status').textContent=error.code==='PASSKEY_ACCOUNT_MISMATCH'||error.code==='ACCOUNT_CHANGED'?'A credencial não pertence à conta anterior. Confirme a conta correta.':'Não foi possível confirmar. Feche e tente novamente.';}
+    finally{reauthBusy=false;}
   }
   function invalidate() { const hadReport=!!report;version++;ready=false;clearTimeout(expiryTimer);clearReport();if(hadReport)$('report-status').textContent='Relatório ocultado. Confira a conexão e gere novamente para revisar os dados atuais.';controls(); }
   async function requestData(path,body) {
@@ -163,13 +194,15 @@
         $('draft').value = lines.join('\n'); $('draft-label').hidden = false; $('draft').focus(); $('draft').select();
       }
       $('report-status').textContent = format === 'copy' ? 'Texto preparado e selecionado. Copie, revise as quantidades e escolha a pessoa para quem deseja encaminhar. Nada foi enviado.' : 'Relatório completo para o filtro selecionado, conferido no servidor. Nenhum pedido foi enviado.';
-    } catch (error) { clearReport(); $('report-status').textContent = explain(error); }
+    } catch (error) { if(error.status===401||error.code==='REAUTHENTICATION_REQUIRED'||error.code==='WORKSPACE_REAUTHENTICATION_REQUIRED')resumeFormat=format;clearReport(); $('report-status').textContent = explain(error); }
     finally { busy = false;$('action-loading').hidden=true;controls();if(refreshAgain){refreshAgain=false;refresh();} }
   }
   $('refresh').addEventListener('click',refresh); $('history').addEventListener('change',()=>{offset=0;refresh();});
   $('next').addEventListener('click',()=>{if (!loading && nextOffset !== null) {offset=nextOffset;refresh();}}); $('previous').addEventListener('click',()=>{if (!loading) {offset=Math.max(0,offset-25);refresh();}});
   $('report-form').addEventListener('submit',event=>{event.preventDefault();generate('view');});
   $('reconnect').addEventListener('click',refresh);$('retry-update').addEventListener('click',()=>mutate());
+  $('identity-open').addEventListener('click',()=>{if(!window.PublicKeyCredential||!navigator.credentials){$('status').textContent='Biometria indisponível neste navegador. Acesse sua conta para confirmar.';return;}try{const saved=JSON.parse(localStorage.getItem('livraria.access.identifier.v1')||'null');$('identity-identifier').value=typeof saved?.value==='string'&&saved.expires>Date.now()?saved.value:'';}catch{}$('identity-dialog').showModal();prepareIdentity();});
+  $('identity-confirm').addEventListener('click',confirmIdentity);$('identity-cancel').addEventListener('click',()=>$('identity-dialog').close());$('identity-dialog').addEventListener('close',()=>{reauthRevision++;deviceLogin=null;});
   $('export').addEventListener('click',()=>generate('csv')); $('print').addEventListener('click',()=>generate('print')); $('copy').addEventListener('click',()=>generate('copy'));
   ['scope','supplier'].forEach(id=>$(id).addEventListener('change',()=>{clearReport();$('report-status').textContent='Filtro alterado. Gere o relatório para conferir a lista atual.';}));
   window.addEventListener('focus',refresh);window.addEventListener('offline',invalidate);window.addEventListener('online',()=>{invalidate();refresh();});

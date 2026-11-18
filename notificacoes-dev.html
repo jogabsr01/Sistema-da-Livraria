@@ -18,7 +18,7 @@
 
     <nav><a class="home-link" href="/home-dev.html">Início</a><a href="/catalogo-dev.html">Catálogo</a> · <a href="/caixa-dev.html">Caixa</a> · <a href="/acesso-dev.html">Minha conta</a> <a href="/escalas-dev.html">Escalas</a></nav>
   </header>
-  <aside id="identity-alert" class="identity-alert no-print" role="alert" hidden><strong>Confirme sua identidade</strong><p>Sua sessão precisa ser confirmada para continuar com segurança.</p><a href="/acesso-dev.html?confirmar=1#entrar">Confirmar identidade</a></aside><div id="action-loading" class="action-loading no-print" role="status" hidden><span class="book-loader" aria-hidden="true"><i></i><i></i><i></i></span><span id="action-loading-text">Preparando…</span></div><p id="status" role="status" aria-live="polite" class="no-print">Conferindo acesso…</p>
+  <aside id="identity-alert" class="identity-alert no-print" role="alert" hidden><strong>Confirme sua identidade</strong><p>Sua sessão precisa ser confirmada para continuar com segurança.</p><button id="identity-open" type="button">Confirmar identidade</button></aside><div id="action-loading" class="action-loading no-print" role="status" hidden><span class="book-loader" aria-hidden="true"><i></i><i></i><i></i></span><span id="action-loading-text">Preparando…</span></div><p id="status" role="status" aria-live="polite" class="no-print">Conferindo acesso…</p>
   <aside id="notification-connection" class="notification-connection no-print" role="status" aria-live="polite">Conferindo conexão e alertas…</aside>
   <button id="reconnect" type="button" class="secondary no-print">Atualizar alertas</button>
   <section id="pending-update" hidden class="notification-connection no-print"><h2>Atualização aguardando confirmação</h2><p id="pending-description"></p><button id="retry-update" type="button">Conferir atualização pendente</button></section>
@@ -40,7 +40,7 @@
   </section>
   <section id="report" hidden aria-labelledby="report-title"><h2 id="report-title">Lista de reposição</h2><p id="report-meta"></p>
     <p id="report-summary"></p><p id="supplier-warning"></p>
-    <p>Quantidade sugerida = unidades necessárias para atingir o estoque mínimo. Sem mínimo definido e com saldo zero, sugere-se uma unidade para revisão. Não é previsão de demanda nem pedido confirmado.</p>
-    <p class="no-print">No celular, deslize a tabela para consultar todas as colunas.</p><div id="report-groups"></div>
+    <p>Quantidades sugeridas para revisão; nenhum pedido é enviado.</p>
+    <div id="report-groups"></div>
   </section>
-</main></body></html>
+</main><dialog id="identity-dialog" aria-labelledby="identity-title"><h2 id="identity-title">Confirmar identidade</h2><p>Informe seu CPF ou e-mail e confirme no aparelho.</p><label for="identity-identifier">CPF ou e-mail</label><input id="identity-identifier" autocomplete="username"><p id="identity-status" role="status" aria-live="polite"></p><div class="toolbar"><button id="identity-confirm" type="button" disabled>Confirmar com biometria</button><button id="identity-cancel" type="button" class="secondary">Cancelar</button></div></dialog></body></html>
