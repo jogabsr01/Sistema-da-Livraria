@@ -68,6 +68,7 @@ export function createFirestoreReportService({ db, identityService, config, now 
       if (!filters || !['SALES', 'STOCK', 'MOVEMENTS'].includes(filters.kind)) invalid();
       const inPeriod = value => value >= filters.from && value <= filters.to;
       const sales = [];
+      const selectedSales = [];
       for (const snapshot of filters.kind === 'SALES' ? salesSnapshot.docs : []) {
         const value = snapshotValue(snapshot), id = value && (value.id || snapshot.id);
         if (!value) unavailable();
@@ -75,7 +76,11 @@ export function createFirestoreReportService({ db, identityService, config, now 
         if (!inPeriod(at)) continue;
         if (!value || !catalogUuid(id) || !catalogUuid(value.attendantId) || value.customerId !== null && value.customerId !== undefined && !catalogUuid(value.customerId) ||
             !Number.isSafeInteger(value.totalCents) || !['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'].includes(value.paymentMethod) || !['CONFIRMADA', 'CANCELADA'].includes(value.status)) unavailable();
-        const itemsSnapshot = await transaction.get(snapshot.ref.collection('items'));
+        selectedSales.push({ snapshot, value, id, at });
+      }
+      const itemSnapshots = await Promise.all(selectedSales.map(({ snapshot }) => transaction.get(snapshot.ref.collection('items'))));
+      for (const [index, { value, id, at }] of selectedSales.entries()) {
+        const itemsSnapshot = itemSnapshots[index];
         if (!itemsSnapshot || !Array.isArray(itemsSnapshot.docs) || !itemsSnapshot.docs.length || itemsSnapshot.docs.length > 100) unavailable();
         const items = itemsSnapshot.docs.map(itemSnapshot => { const item = snapshotValue(itemSnapshot); if (!item || !catalogUuid(item.productId) || !Number.isSafeInteger(item.quantity) || !Number.isSafeInteger(item.unitPriceCents) || !Number.isSafeInteger(item.subtotalCents) || item.subtotalCents !== item.quantity * item.unitPriceCents || typeof item.title !== 'string') unavailable(); return { productId: item.productId, title: item.title, quantity: item.quantity, unitPriceCents: item.unitPriceCents, subtotalCents: item.subtotalCents }; });
         sales.push({ id, at, operatorId: value.attendantId, customerId: value.customerId ?? null, totalCents: value.totalCents,
