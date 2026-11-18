@@ -51,7 +51,7 @@ export function createFirestoreCredentialStore({ db, transactionOptions, config 
       if (!snapshot) return null;
       const value = snapshotValue(snapshot), subjectId = value.id || snapshot.id;
       if (process.env.WORKSPACE_AUTH_DIAGNOSTICS === 'true') console.log(JSON.stringify({ event: 'auth_credential_user_read', found: true, userId: subjectId, status: value.status ?? null, role: value.role ?? null, owner: value.owner ?? null, authorizationVersion: value.authorizationVersion ?? null }));
-      if (!catalogUuid(subjectId)) unavailable();
+      if (!catalogUuid(subjectId) || subjectId !== snapshot.id) unavailable();
       if (staffLookup ? value.owner === true : value.owner !== true) return null;
       if (!staffLookup && email && (value.role !== 'SUPER_ADMIN' || value.email !== undefined && value.email !== email.toLowerCase())) unavailable();
       const credential = staffLookup && value.activated !== true ? null : await getPrimary(transaction, subjectId);

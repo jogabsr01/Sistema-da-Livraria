@@ -76,6 +76,7 @@ export function createFirestoreIdentityService({ db, now = () => Date.now(), tra
     if (!validUuid(index.sessionId) || !validUuid(index.userId)) unavailable();
     const session = requiredData(await repositories.transaction.get(transaction, 'sessions', index.sessionId));
     const user = requiredData(await repositories.transaction.get(transaction, 'users', index.userId));
+    if (session.sessionId !== undefined && session.sessionId !== index.sessionId || user.id !== undefined && user.id !== index.userId) unavailable();
     if (session.sessionId === undefined) session.sessionId = index.sessionId;
     return sessionPrincipal(session, { ...user, id: index.userId }, current);
   }

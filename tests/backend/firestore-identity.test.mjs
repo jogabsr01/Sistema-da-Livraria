@@ -73,6 +73,14 @@ test('Firestore identity fails closed for malformed, expired, revoked or stale s
   await assert.rejects(createFirestoreIdentityService({ db: fakeDb(documents({ revoked: true })), now: () => now }).readSession(tokenHash), { code: 'UNAUTHENTICATED', status: 401 });
 });
 
+test('Firestore session rejects identities or session IDs conflicting with their indexed documents', async () => {
+  for (const changed of [
+    { [`users/${userId}`]: { id:otherUserId, role:'ADMIN', status:'ATIVO', authorizationVersion:2 } },
+    { [`sessions/${sessionId}`]: { ...documents()[`sessions/${sessionId}`], userId:otherUserId } },
+    { [`sessions/${sessionId}`]: { ...documents()[`sessions/${sessionId}`], sessionId:otherSessionId } },
+  ]) await assert.rejects(createFirestoreIdentityService({ db:fakeDb({ ...documents(), ...changed }), now:()=>now }).readSession(tokenHash), { code:'IDENTITY_UNAVAILABLE' });
+});
+
 test('Firestore identity revocation is idempotent and does not revoke another user', async () => {
   const db = fakeDb({
     ...documents(),

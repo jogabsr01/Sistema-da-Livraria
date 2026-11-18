@@ -70,5 +70,5 @@
  }
  logoutButton.addEventListener('click',attemptLogout);
  retryLogoutButton.addEventListener('click',attemptLogout);
- const cachedNavigation=restoreSessionNavigation();restoreProfile();synchronize();if(cachedNavigation||document.body.dataset.sessionRole)refreshProfile();else refreshNavigationSession();
+ synchronize();refreshNavigationSession();
 })();

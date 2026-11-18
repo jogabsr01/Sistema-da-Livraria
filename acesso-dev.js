@@ -10,7 +10,7 @@
   const verificationView=new URLSearchParams(location.search).get('verificar')==='1',forceAuthentication=new URLSearchParams(location.search).get('confirmar')==='1';
   const identifierStorage='livraria.access.identifier.v1';
   function rememberIdentifier(){try{const value=(lastIdentifier||$('login-email').value).trim();if(!$('remember-identifier').checked){localStorage.removeItem(identifierStorage);return;}if(value&&!identifierError(value))localStorage.setItem(identifierStorage,JSON.stringify({value,expires:Date.now()+2592000000}));}catch{}}
-  function enterApp(){rememberIdentifier();$('enter-app').href='/home-dev.html?entrada=confirmada';if(!verificationView)location.replace('/home-dev.html?entrada=confirmada');}
+  function enterApp(){try{sessionStorage.removeItem('livraria.navigation.profile.v1');sessionStorage.removeItem('livraria.navigation.session.v1');}catch{}rememberIdentifier();$('enter-app').href='/home-dev.html?entrada=confirmada';if(!verificationView)location.replace('/home-dev.html?entrada=confirmada');}
   try{const saved=JSON.parse(localStorage.getItem(identifierStorage)||'null');if(saved&&typeof saved.value==='string'&&saved.value.length<=254&&Number.isFinite(saved.expires)&&saved.expires>Date.now()&&!identifierError(saved.value))$('login-email').value=saved.value;else localStorage.removeItem(identifierStorage);}catch{}
   $('remember-identifier').addEventListener('change',()=>{if(!$('remember-identifier').checked)try{localStorage.removeItem(identifierStorage);}catch{}});
   let accessPhase = 'STATE', actionRevision = 0, preparedDevice = null, preparedAt = 0, initialEdited = false;
@@ -65,6 +65,7 @@
     if (code === 'INVALID_PASSWORD') return 'A senha precisa ter de 8 a 40 caracteres Unicode. Preserve os espaços exatamente como digitados.';
     if (code === 'AUTH_RATE_LIMITED') return 'Você fez várias tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente. Se precisar, peça ajuda à administração.';
     if (code === 'DEVICE_NOT_ALLOWED') return 'A confirmação do aparelho não abriu, foi cancelada ou expirou. Tente novamente. Se a janela não abrir, confira se o Chrome está atualizado e se o bloqueio de tela está configurado.';
+    if (code === 'PASSKEY_ACCOUNT_MISMATCH') return 'Credencial não pertence a este usuário. Escolha a chave da conta informada ou use sua senha.';
     if (code === 'DEVICE_NOT_SUPPORTED') return 'Este navegador ou aparelho não oferece a confirmação necessária. Use um navegador atualizado em um aparelho com bloqueio de tela.';
     if (code === 'DEVICE_SECURITY_ERROR') return 'O navegador bloqueou a confirmação neste endereço. Abra o link da livraria diretamente em uma nova aba e tente novamente.';
     if (code === 'DEVICE_ALREADY_REGISTERED') return 'Este aparelho já possui uma chave de acesso para a conta. Volte ao início e tente entrar com seu CPF ou e-mail e password.';
@@ -275,7 +276,6 @@
     if(result.cookieConfirmationRequired){
       try{const checked=await api('cookie',{});if(checked.stage!=='COOKIE_CONFIRMED')throw unavailable('ACCESS_RESPONSE_INVALID');}
       catch(error){
-        if(error.code==='ACCESS_CONTEXT_EXPIRED'&&await current()){pendingConfirmation=null;return;}
         if(error.code==='ACCESS_SESSION_COOKIE_MISSING')pendingConfirmation=null;
         throw error;
       }
@@ -329,18 +329,20 @@
     finally { $('login-password').value = ''; }
   });
   $('biometric-login').addEventListener('click',()=>run(async()=>{
+    if(!validateAccessForm('start-form'))return;
     if(!window.PublicKeyCredential||!navigator.credentials){message('Biometria indisponível neste navegador. Use seu CPF ou e-mail e sua senha para entrar.');$('login-password').focus();return;}
     if(!loginDevice||performance.now()-loginDeviceAt>90000){
       await api('state',undefined,true,true);message('Tudo pronto. Toque em “Entrar com biometria” para abrir seu aparelho.');return;
     }
     // Call WebAuthn synchronously in this click: no Google lookup before prompt.
-    const prepared=loginDevice;lastIdentifier=$('login-email').value;
+    const prepared=loginDevice,identifier=$('login-email').value.trim();lastIdentifier=identifier;
     let credential;
     try{credential=await navigator.credentials.get({publicKey:prepared.options});}
     catch {message('Biometria não concluída. Use seu CPF ou e-mail e sua senha para entrar.');$('login-password').focus();return;}
     if(!credential){message('Biometria não concluída. Use seu CPF ou e-mail e sua senha para entrar.');$('login-password').focus();return;}
+    if($('login-email').value.trim()!==identifier){loginDevice=null;message('O identificador foi alterado. Inicie a confirmação novamente.');return;}
     pendingResponse=serialize(credential);loginDevice=null;show('COMMITTING');accessPhase='COMPLETE';
-    pendingDeviceCommand={response:pendingResponse,receipt:prepared.receipt};await finish();
+    pendingDeviceCommand={response:pendingResponse,receipt:prepared.receipt,email:identifier};await finish();
   },'login-form'));
   async function saveAccessStep(operation, body, expectedStage) {
     try { return await api(operation, body); }
@@ -420,7 +422,7 @@
   }));
   $('restart').addEventListener('click',()=>run(async()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;const state=await api('state',undefined,true,true);show('INITIAL');message('');}));
   function requestedView(state){if(!['#entrar','#recuperar-senha'].includes(location.hash))return false;clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;show('INITIAL');$('recovery-form').hidden=location.hash!=='#recuperar-senha'||!state.recoveryEnabled;message('Confirme sua identidade para continuar.');return true;}
-  window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-senha')run(async()=>{if(!await current()){await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');}});});
+  window.addEventListener('pageshow',event=>{if(event.persisted&&!verificationView&&!forceAuthentication&&location.hash!=='#recuperar-senha')run(async()=>{await api('state',undefined,true,true);show('INITIAL');message('Entre para continuar na livraria.');});});
   window.addEventListener('pagehide',()=>{clearSecrets();pendingResponse=null;pendingReceipt=null;pendingDeviceCommand=null;pendingConfirmation=null;pendingLogin=null;});
   window.addEventListener('hashchange',()=>{if(localLab || production || location.hostname===DEV&&location.protocol==='https:')run(async()=>{accessPhase='STATE';const state=await api('state',undefined,true,location.hash==='#entrar');accessPhase='RENDER';requestedView(state);});});
   if (!localLab && !production && (location.hostname !== DEV || location.protocol !== 'https:')) { show('UNAVAILABLE'); message('A autenticação ainda não está configurada para este endereço. Procure a administração da livraria.'); return; }

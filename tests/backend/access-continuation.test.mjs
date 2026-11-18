@@ -25,6 +25,21 @@ async function activated(){
  const flows=s.priv.getSheetByName('_Identity_Flows'),cols=flows.rows[0];s.storageProof(flows.rows.at(-1)[cols.indexOf('Token_Hash')]);await svc.execute('complete',{},token,ip);
  return {...s,ip};
 }
+test('discoverable passkey must match the supplied account before any credential or session operation',async()=>{
+ const s=await activated(),token=randomBytes(32).toString('base64url'),master=s.gas.props.IDENTITY_OWNER_USER_ID,other='22222222-2222-4222-8222-222222222222';
+ let prepareCalls=0;
+ const client={...s.client,prepareDeviceAccess:async()=>{prepareCalls++;throw Error('must not prepare');}};
+ const svc=createOwnerAccessService(s.settings,{client,segmentedCompletion:true}),issued=svc.deviceOptions(token);
+ const response={id:randomBytes(32).toString('base64url'),response:{userHandle:Buffer.from(other).toString('base64url'),clientDataJSON:Buffer.from(JSON.stringify({type:'webauthn.get',origin:ACCESS_ORIGIN,challenge:issued.options.challenge})).toString('base64url')}};
+ const sessions=s.main.getSheetByName('Sessoes').getLastRow();
+ await assert.rejects(svc.execute('device-login',{email:properties.OWNER_EMAIL,receipt:issued.receipt,response},token,s.ip),{code:'PASSKEY_ACCOUNT_MISMATCH'});
+ assert.notEqual(master,other);assert.equal(prepareCalls,0);assert.equal(s.main.getSheetByName('Sessoes').getLastRow(),sessions);
+ await assert.rejects(svc.execute('device-login',{email:'unknown@example.invalid',receipt:issued.receipt,response},token,s.ip),{code:'ACCESS_REJECTED'});
+ assert.equal(prepareCalls,0);
+ const forged={...response,response:{...response.response,userHandle:Buffer.from(master).toString('base64url')}};
+ const badClient={...s.client,prepareDeviceAccess:async()=>({flow:{subjectId:other,authorizationVersion:1},ceremony:{credential:{id:forged.id}}})};
+ await assert.rejects(createOwnerAccessService(s.settings,{client:badClient}).execute('device-login',{email:properties.OWNER_EMAIL,receipt:issued.receipt,response:forged},token,s.ip),{code:'ACCESS_REJECTED'});
+});
 test('biometric account selection does not verify a PIN or issue a session; continuation is cookie-bound and idempotent',async()=>{
  const s=await activated(),token=randomBytes(32).toString('base64url'),svc=createOwnerAccessService(s.settings,{client:s.client});
  let calls=0;const post=s.gas.post;s.gas.post=e=>{calls++;return post(e);};

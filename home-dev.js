@@ -71,7 +71,7 @@
   async function load(){
     if(checking)return;const started=performance.now();let http=0;checking=true;$('entry-failure').hidden=true;$('sign-in').hidden=true;$('retry').textContent='Tentar novamente';$('welcome').hidden=true;$('retry').hidden=true;
     if(location.origin!==ORIGIN){$('status').textContent='Abra o endereço da livraria para continuar.';checking=false;return;}
-    const cached=cachedSession();if(cached)showMember(cached.role);else hideMember();
+    const cached=null;hideMember();
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
     try{
       if(!cached)$('status').textContent=recentEntry?'Abrindo sua livraria…':'Conferindo seu acesso…';

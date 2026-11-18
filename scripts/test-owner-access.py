@@ -218,7 +218,7 @@ class OwnerAccess(unittest.TestCase):
     def test_biometric_login_uses_registered_device_without_pin(self):
         self.activate();self.logout()
         expect(self.page.locator('#login-email')).to_have_value('owner@example.invalid')
-        self.page.locator('#login-email').fill('')
+        self.page.locator('#login-email').fill('owner@example.invalid')
         self.page.evaluate("""() => {const get=navigator.credentials.get.bind(navigator.credentials);navigator.credentials.get=options=>{window.nativeLoginActive=navigator.userActivation.isActive;return get(options)}}""")
         before=self.step_posts.get('options',0)
         self.page.locator('#biometric-login').click()
@@ -235,7 +235,7 @@ class OwnerAccess(unittest.TestCase):
     def test_discoverable_login_rejects_corrupted_native_signature_without_issuing_session(self):
         self.activate();self.logout();self.corrupt_signature=True
         self.page.locator('#biometric-login').click()
-        expect(self.page.locator('#status')).to_contain_text('Não foi possível confirmar sua identidade')
+        expect(self.page.locator('#status')).to_contain_text('confirmação pelo aparelho não foi aceita')
         self.assertEqual(self.local('/test/state')['sessions'],1)
         self.assertEqual(self.local('/test/state')['activeSessions'],0)
         expect(self.page.locator('#complete')).to_be_hidden()

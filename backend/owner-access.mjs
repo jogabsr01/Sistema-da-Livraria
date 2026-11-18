@@ -171,6 +171,8 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
      try {
       if(operation==='device-login'){
         const issued=accessReceipts(settings,token).open(input.receipt,'device-login');
+        const value=identifier(input.email),isEmail=value.includes('@');
+        await guard.reserveAttempt({identifier:value,originAddress:ip});
         validatePasskeyResponse(input.response);
         const response=input.response,handle=response.response?.userHandle;
         if(typeof response.id!=='string'||!/^[A-Za-z0-9_-]{2,1400}$/.test(response.id))rejected();
@@ -178,7 +180,16 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
         const subjectId=Buffer.from(handle,'base64url').toString('utf8');if(!catalogUuid(subjectId))rejected();
         let browserData;try{browserData=JSON.parse(Buffer.from(response.response.clientDataJSON,'base64url').toString('utf8'));}catch{rejected();}
         if(browserData.type!=='webauthn.get'||browserData.origin!==accessOrigin||browserData.challenge!==issued.challenge)rejected();
+        const result=await client.lookupAccessLogin({...guard.attemptKeys({identifier:value,originAddress:ip}),email:isEmail?value:'',emailIndex:isEmail&&settings.staffEnabled?vault.index('email',value):'',cpfIndex:isEmail?'':vault.index('cpf',value),staffLookup:settings.staffEnabled===true});
+        const account=result?.account;
+        if(!account)rejected();
+        if(result.kind==='STAFF'){
+          let contact;try{contact=normalizeStaffContact(vault.open('users',account.subjectId,account.contact));}catch{throw new ApiError(502,'UPSTREAM_UNTRUSTED');}
+          if((isEmail?contact.email:contact.cpf)!==value)throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+        } else if(result.kind!=='OWNER') throw new ApiError(502,'UPSTREAM_UNTRUSTED');
+        if(account.subjectId!==subjectId)throw new ApiError(401,'PASSKEY_ACCOUNT_MISMATCH');
         const prepared=await client.prepareDeviceAccess({...issued,tokenHash:hash(token),subjectId,credentialId:response.id,staffAllowed:settings.staffEnabled===true,...guard.attemptKeys({identifier:'passkey:'+createHash('sha256').update(response.id||'').digest('hex'),originAddress:ip})});
+        if(prepared?.flow?.subjectId!==account.subjectId||prepared.flow.authorizationVersion!==account.authorizationVersion||prepared.ceremony?.credential?.id!==response.id)rejected();
         const rawToken=digest('access.session.v1',token,'base64url',tokenKey);
         return verifyPreparedProof(prepared,response,token,tokens.hash(rawToken));
       }
@@ -319,7 +330,7 @@ export function createOwnerAccessService(settings, { client, stagedCompletion = 
     },
   };
 }
-const shapes = { cookie:[], 'device-login':['response','receipt'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'password'], email: ['code'], password: ['newPassword'], options: [], complete: ['response'] };
+const shapes = { cookie:[], 'device-login':['response','receipt','email'], biometric:['email'], 'continue-login':['receipt'], rescue:['recoveryCode'],recover:['email'], start: ['email'], login: ['email', 'password'], email: ['code'], password: ['newPassword'], options: [], complete: ['response'] };
 export const OWNER_ACCESS_BUDGET_MS = 55_000;
 export const COMPLETION_REQUEST_BUDGET_MS = 27_000;
 export const OPTIONS_REQUEST_BUDGET_MS = 27_000;
