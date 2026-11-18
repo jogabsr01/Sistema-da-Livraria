@@ -8,7 +8,7 @@
  const resultKey='livraria.reports.result.v1',formFields=['kind','from','to',...textFields,'min-value','max-value'];
  function saveResult(){try{const {proof,...report}=data;sessionStorage.setItem(resultKey,JSON.stringify({userId,at:Date.now(),report,applied,values:Object.fromEntries(formFields.map(id=>[id,$(id).value]))}));}catch{try{sessionStorage.removeItem(resultKey);}catch{}}}
  function saveForm(){try{const cached=JSON.parse(sessionStorage.getItem(resultKey)||'null');if(!cached||cached.userId!==userId)return;cached.values=Object.fromEntries(formFields.map(id=>[id,$(id).value]));sessionStorage.setItem(resultKey,JSON.stringify(cached));}catch{}}
- function restoreResult(){try{const cached=JSON.parse(sessionStorage.getItem(resultKey)||'null');if(!cached||cached.userId!==userId||!Number.isFinite(cached.at)||cached.at>Date.now()||Date.now()-cached.at>3600000||!cached.report||!cached.applied||!cached.values||!Array.isArray(cached.report.rows)||!['SALES','STOCK','MOVEMENTS'].includes(cached.report.kind))return false;for(const id of formFields){const value=cached.values[id];if(typeof value==='string'&&value.length<=300){const field=$(id);if(field.tagName==='SELECT'&&value&&![...field.options].some(option=>option.value===value))field.add(new Option(value,value));field.value=value;}}kindChanged();data=cached.report;applied=cached.applied;page=0;render();$('export-note').textContent='Resultado salvo nesta aba, sujeito a alterações. Consulte novamente para habilitar a exportação.';feedback('Resultado anterior restaurado. Consulte novamente para atualizar ou exportar.');return true;}catch{return false;}}
+ function restoreResult(){try{const cached=JSON.parse(sessionStorage.getItem(resultKey)||'null');if(!cached||cached.userId!==userId||!Number.isFinite(cached.at)||cached.at>Date.now()||Date.now()-cached.at>3600000||!cached.report||!cached.applied||!cached.values||!Array.isArray(cached.report.rows)||!['SALES','STOCK','MOVEMENTS'].includes(cached.report.kind))return false;for(const id of formFields){const value=cached.values[id];if(typeof value==='string'&&value.length<=300){const field=$(id);if(field.tagName==='SELECT'&&value&&![...field.options].some(option=>option.value===value))field.add(new Option(value,value));field.value=value;}}kindChanged();data=cached.report;applied=cached.applied;page=0;render();feedback('Resultado anterior restaurado.','success');return true;}catch{return false;}}
  function saveFilters(){try{if(['cpf','customerId','employeeId','city','productId','nicheId'].some(id=>$(id).value.trim())){sessionStorage.removeItem(savedKey);return;}sessionStorage.setItem(savedKey,JSON.stringify({userId,at:Date.now(),values:Object.fromEntries(safeFields.map(id=>[id,$(id).value]))}));}catch{}}
  function restoreFilters(){try{const saved=JSON.parse(sessionStorage.getItem(savedKey)||'null');if(!saved||saved.userId!==userId||!Number.isFinite(saved.at)||Date.now()-saved.at>3600000||Date.now()<saved.at||!saved.values)return false;for(const id of safeFields)if(typeof saved.values[id]==='string'&&saved.values[id].length<=300)$(id).value=saved.values[id];kindChanged();return true;}catch{return false;}}
  let csrf='',userId='',data=null,applied=null,pending=null,busy=false,page=0,urls=new Set(),peopleChoices=new Map(),nicheChoices=new Map();
@@ -18,7 +18,7 @@
  function feedback(message,state='info',retry=false){$('status').textContent=message;$('report-feedback').dataset.state=state;$('status').setAttribute('role',state==='error'?'alert':'status');$('retry-query').hidden=!retry;}
  function connection(){const state=!online()?'offline':access?'ready':'stale';connectionNode.dataset.state=state;connectionNode.textContent=!online()?'Sem conexão. Os resultados foram ocultados. Mantenha a aba aberta se houver uma exportação pendente.':pending?'Há uma exportação aguardando conferência. Reconectar não baixa o arquivo automaticamente.':access?'Acesso conferido. Faça uma consulta para preparar um arquivo com autorização atual.':'Confira a mesma conta administrativa para continuar. Resultados anteriores foram ocultados.';}
  function invalidate(){version++;clear(true);controls();}
- function armExpiry(expiresAt){clearTimeout(previewTimer);const delay=Math.max(0,Math.min(300000,expiresAt-Date.now()));previewTimer=setTimeout(()=>{version++;clear();controls();$('status').textContent='A autorização da consulta venceu. Consulte novamente. Uma exportação anterior pode já ter sido autorizada no servidor.';},Number.isFinite(delay)?delay:0);}
+ function armExpiry(expiresAt){clearTimeout(previewTimer);const delay=Math.max(0,Math.min(300000,expiresAt-Date.now()));previewTimer=setTimeout(()=>{if(data){data.proof='';controls();}},Number.isFinite(delay)?delay:0);}
  function today(){const p=new Intl.DateTimeFormat('en',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());return ['year','month','day'].map(k=>p.find(v=>v.type===k).value).join('-');}
  function error(e){ if(e.code==='REPORT_TIMEOUT')return 'A consulta demorou mais que o esperado. Confira sua conexão e tente novamente.';if(e.code==='OFFLINE')return 'Sem conexão. Mantenha a aba aberta e confira o acesso ao reconectar.';if(e.code==='CONTEXT_CHANGED')return 'A conexão ou o contexto mudou. Nenhum arquivo foi preparado nesta resposta; confira o pedido pendente ou faça uma nova consulta.';if(e.status===401)return 'Sua sessão não pôde ser confirmada. Entre novamente para continuar.';if(e.status===403)return 'Seu perfil não permite consultar relatórios.';if(e.code?.includes('PREVIEW_EXPIRED'))return 'A consulta venceu. Consulte novamente antes de exportar.';if(e.code?.includes('CHANGED'))return 'Os dados mudaram desde a consulta. Atualize o relatório antes de exportar.';if(e.code?.includes('CAPACITY')||e.code?.includes('EXPORT_LIMIT'))return 'O volume ultrapassou o limite seguro. Reduza o período ou refine os filtros.';if(e.code?.includes('CONFLICT'))return 'Este pedido não corresponde à autorização anterior. Consulte novamente.';if(e.code?.includes('INVALID'))return 'Confira datas, CPF, ISBN e valores. Consulte até um ano por vez e use valores como 45,00.';if(e.code?.includes('NOT_ACTIVATED')||e.code?.includes('UNAVAILABLE'))return 'Os relatórios ainda não estão disponíveis nesta instalação.';const common = globalThis.LivrariaMessages?.describe(e); if (common) return common;return 'Não foi possível confirmar agora. Confira a conexão e tente novamente.';}
  function clear(keepPending=false){
@@ -57,7 +57,7 @@
   for(const el of document.querySelectorAll('#filters input,#filters select,#filters button,#previous,#next,#export-report'))el.disabled=busy||!!pending||!online()||!access||el.dataset.incompatible==='true';
   $('retry-export').disabled=busy||!pending||!online();
   $('discard-export').disabled=busy||!pending;reconnectNode.disabled=busy||!online();$('retry-query').disabled=busy||!!pending||!online();$('pending-export').hidden=!pending;
-  if(data)$('export-report').disabled=busy||!!pending||!online()||!access||dirty()||!data.rows.length||!data.proof||data.expiresAt<=Date.now();
+  if(data)$('export-report').disabled=busy||!!pending||!online()||!access||dirty()||!data.rows.length;
   csvButton.hidden=$('export-report').hidden;csvButton.disabled=$('export-report').disabled;
  }
  function kindChanged(){const k=$('kind').value;for(const[selector,hidden]of [['.period-field',k==='STOCK'],['.employee-field',k==='STOCK'],['.sales-field',k!=='SALES'],['.movement-field',k!=='MOVEMENTS'],['.value-field',k==='MOVEMENTS']])for(const group of document.querySelectorAll(selector)){group.hidden=hidden;for(const el of group.querySelectorAll('input,select')){el.dataset.incompatible=String(hidden);el.disabled=hidden;}}$('kind-note').textContent=k==='SALES'?'Vendas pela data da compra e situação atual, com estornos descontados.':k==='STOCK'?'Uma posição do estoque de agora. O filtro de período não se aplica a este relatório.':'Entradas, saídas, ajustes e estornos pela data do movimento.';$('value-note').textContent=k==='SALES'?'O filtro de valor considera a venda completa. Quando houver filtro de produto, os totais somam os itens selecionados.':k==='STOCK'?'O filtro de valor considera o preço de venda atual do livro. Valor de estoque usa preço de venda e não representa custo ou lucro.':'Movimentações mostram unidades e saldos, sem atribuir valores que não foram registrados.';controls();}
@@ -92,17 +92,25 @@
   finally{busy=false;controls();}
  }
  async function exportFile(format='xlsx'){
-  if(busy||!online()||!pending&&(!access||!data||!data.proof||data.expiresAt<=Date.now()||dirty()))return;
-  if(!pending)pending={commandId:crypto.randomUUID(),filters:{...applied},sourceSnapshot:data.sourceSnapshot,proof:data.proof,expiresAt:data.expiresAt,format};
-  const command=pending,ticket=version;busy=true;controls();
+  if(busy||!online()||!pending&&(!access||!data||dirty()||!data.rows.length))return;
+  const ticket=version;busy=true;controls();let command=pending;
   try{
+   if(!command){
+    if(!data.proof||data.expiresAt<=Date.now()){
+     feedback('Preparando exportação…');const previous=data.sourceSnapshot,renewed=await api('query',{filters:{...applied}});
+     if(ticket!==version||!online()||document.hidden||dirty())throw {code:'CONTEXT_CHANGED'};
+     if(renewed.sourceSnapshot!==previous)throw {code:'REPORT_CHANGED'};
+     data.proof=renewed.proof;data.expiresAt=renewed.expiresAt;armExpiry(data.expiresAt);
+    }
+    command={commandId:crypto.randomUUID(),filters:{...applied},sourceSnapshot:data.sourceSnapshot,proof:data.proof,expiresAt:data.expiresAt,format};pending=command;
+   }
    await session();if(ticket!==version||pending!==command||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};const response=await api('export',command),blob=await response.blob();await session();
    if(ticket!==version||pending!==command||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};
    const url=URL.createObjectURL(blob);urls.add(url);const link=document.createElement('a');link.href=url;link.download='relatorio-livraria-'+command.commandId+'.'+command.format;document.body.append(link);link.click();link.remove();
    setTimeout(()=>{URL.revokeObjectURL(url);urls.delete(url);},10000);pending=null;feedback('Arquivo '+command.format.toUpperCase()+' preparado. A autorização foi registrada na auditoria.','success');
   }catch(e){
    feedback(error(e),'error');
-   if(e.code?.includes('CHANGED')&&e.code!=='CONTEXT_CHANGED'||e.code?.includes('PREVIEW_EXPIRED')||e.code?.includes('INVALID')||e.code?.includes('CONFLICT')){clear();await check(false);feedback(error(e),'error');}
+   if(e.code?.includes('CHANGED')&&e.code!=='CONTEXT_CHANGED'||e.code?.includes('PREVIEW_EXPIRED')||e.code?.includes('INVALID')||e.code?.includes('CONFLICT')){try{sessionStorage.removeItem(resultKey);}catch{}clear();await check(false,false);feedback(error(e),'error');}
    else if(e.status===401||e.status===403){clear(true);$('access-help').hidden=false;}
    else if(e.code==='CONTEXT_CHANGED')clear(true);
   }finally{busy=false;controls();}
@@ -120,7 +128,7 @@
  }
  window.addEventListener('focus',()=>check());
  window.addEventListener('offline',invalidate);window.addEventListener('online',()=>{invalidate();check();});
- document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidate();else check();});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){if(busy)version++;if($('detail').open)$('detail').close();}else check();});
  setInterval(()=>check(true,false),60000);
  window.addEventListener('beforeunload',e=>{if(pending){e.preventDefault();e.returnValue='';}});
  window.addEventListener('pagehide',invalidate);window.addEventListener('pageshow',e=>{if(e.persisted){invalidate();check();}});

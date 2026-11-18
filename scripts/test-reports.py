@@ -36,7 +36,15 @@ class Reports(qa.Operations):
         before=self.local('/test/report-state')['views']
         self.page.goto(ORIGIN+'/caixa-dev.html');self.reports()
         expect(self.page.locator('#kind')).to_have_value('STOCK');expect(self.page.locator('#result')).to_be_visible()
-        expect(self.page.locator('#rows table')).to_be_visible();expect(self.page.locator('#export-report')).to_be_disabled()
+        expect(self.page.locator('#rows table')).to_be_visible();expect(self.page.locator('#export-report')).to_be_enabled()
+        self.assertEqual(self.local('/test/report-state')['views'],before)
+        with self.page.expect_download():self.page.locator('#export-report').click()
+        self.assertEqual(self.errors,[])
+    def test_reports_visibility_return_keeps_table_and_export_ready(self):
+        self.checkout();self.add();self.confirm();self.reports();self.query();before=self.local('/test/report-state')['views']
+        self.page.evaluate("Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.evaluate("Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});document.dispatchEvent(new Event('visibilitychange'))")
+        expect(self.page.locator('#rows table')).to_be_visible();expect(self.page.locator('#export-report')).to_be_enabled()
         self.assertEqual(self.local('/test/report-state')['views'],before);self.assertEqual(self.errors,[])
     def test_reports_query_error_alert_and_retry(self):
         self.checkout();self.add();self.confirm();self.reports()
@@ -66,7 +74,7 @@ class Reports(qa.Operations):
         with self.page.expect_download():self.page.locator('#retry-export').click()
         expect(self.page.locator('#pending-export')).to_be_hidden();self.assertEqual(self.report_exports[0],self.report_exports[1]);self.assertEqual(self.local('/test/report-state')['exports'],1);stored=self.page.evaluate("sessionStorage.getItem('livraria.reports.filters.v1')");self.assertNotIn('proof',stored);self.assertNotIn('cpf',stored);self.assertEqual(self.errors,[])
     def test_reports_changed_stock_refuses_export_until_new_preview(self):
-        self.checkout();self.add();self.confirm();self.reports();self.query();self.local('/test/checkout-price',{});self.page.locator('#export-report').click();expect(self.page.locator('#status')).to_contain_text('dados mudaram');expect(self.page.locator('#export-report')).to_be_disabled();self.query();expect(self.page.locator('#export-report')).to_be_visible();self.assertEqual(self.local('/test/report-state')['exports'],0);self.assertEqual(self.errors,[])
+        self.checkout();self.add();self.confirm();self.reports();self.query();self.local('/test/checkout-price',{});self.page.locator('#export-report').click();expect(self.page.locator('#status')).to_contain_text('dados mudaram');expect(self.page.locator('#export-report')).to_be_hidden();self.query();expect(self.page.locator('#export-report')).to_be_visible();self.assertEqual(self.local('/test/report-state')['exports'],0);self.assertEqual(self.errors,[])
     def test_reports_identified_customer_cpf_city_and_payment_intersect_without_exporting_contacts(self):
         self.checkout();self.local('/test/enable-customers',{});self.page.reload();expect(self.page.locator('#customer-options')).to_be_visible();self.add();self.page.locator('#customer-identified').check();self.page.locator('#customer-search-cpf').fill('529.982.247-25');self.page.locator('#customer-search').click();expect(self.page.locator('#customer-new')).to_be_visible();self.page.locator('#customer-new').click();self.page.locator('#customer-name').fill('Cliente fictício do relatório');self.page.locator('#customer-email').fill('private@example.invalid');self.page.locator('#customer-editor summary').click();self.page.locator('#customer-city').fill('São Paulo');self.page.locator('#customer-state').fill('SP');self.page.locator('#customer-save').click();expect(self.page.locator('#customer-editor')).not_to_be_visible();self.confirm();self.reports();self.page.locator('#advanced summary').first.click();self.page.locator('#cpf').fill('529.982.247-25');self.page.locator('#city').fill('sao paulo');self.page.locator('#paymentMethod').select_option('PIX');self.query();expect(self.page.locator('.report-row')).to_have_count(1);expect(self.page.locator('.report-row')).to_contain_text('Cliente fictício do relatório');
         with self.page.expect_download() as out:self.page.locator('#export-report').click()
