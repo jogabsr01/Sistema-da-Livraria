@@ -7,6 +7,8 @@ import logout from '../../netlify/functions/session-logout.mjs';
 import access from '../../netlify/functions/owner-access.mjs';
 import customers from '../../netlify/functions/customers.mjs';
 import catalog from '../../netlify/functions/catalog.mjs';
+import reports from '../../netlify/functions/reports.mjs';
+import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
 test('dispatcher resolves exact, parameterized and nested routes without exposing the outbox', () => {
@@ -14,9 +16,21 @@ test('dispatcher resolves exact, parameterized and nested routes without exposin
     ['/api/v1/health', health], ['/api/v1/session', session],
     ['/api/v1/session/logout', logout], ['/api/v1/access/state', access],
     ['/api/v1/customers/find', customers], ['/api/v1/catalog/list', catalog],
+    ['/api/v1/reports/query', reports], ['/api/v1/reports/export', reports],
     ['/api/v1/customers/nested/example', customers], ['/api/v1/access/state/extra', null],
     ['/api/v1/firestore-outbox', null], ['/api/v1/unknown', null],
   ]) assert.equal(selectHandler(path), expected, path);
+});
+
+test('Vercel rewrites keep report API routes out of the HTML fallback', async () => {
+  const config = JSON.parse(await readFile(new URL('../../vercel.json', import.meta.url), 'utf8'));
+  assert.deepEqual(config.rewrites[0], { source:'/api/v1/:match*', destination:'/api/v1/[...slug]' });
+  const fallback = config.rewrites.find(rule => rule.destination === '/index.html');
+  assert.ok(fallback);
+  const pattern = new RegExp('^' + fallback.source + '$');
+  assert.equal(pattern.test('/api/v1/reports/query'), false);
+  assert.equal(pattern.test('/api/v1/reports/export'), false);
+  assert.equal(pattern.test('/relatorios-dev.html'), true);
 });
 
 test('Vercel production accepts its exact origin but rejects a foreign origin', () => {

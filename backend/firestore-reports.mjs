@@ -64,19 +64,41 @@ export function createFirestoreReportService({ db, identityService, config, now 
       if (!productsSnapshot || productsSnapshot.docs.length > MAX_PRODUCTS || !salesSnapshot || salesSnapshot.docs.length > MAX_SALES ||
           !movementsSnapshot || movementsSnapshot.docs.length > MAX_MOVEMENTS || !peopleSnapshot || peopleSnapshot.docs.length > MAX_PEOPLE ||
           !customersSnapshot || customersSnapshot.docs.length > MAX_CUSTOMERS || !nichesSnapshot || nichesSnapshot.docs.length > MAX_NICHES) unavailable();
-      const products = productsSnapshot.docs.map(product), people = peopleSnapshot.docs.map(person), customers = customersSnapshot.docs.map(customer), niches = nichesSnapshot.docs.map(niche);
+      const filters = payload?.filters;
+      if (!filters || !['SALES', 'STOCK', 'MOVEMENTS'].includes(filters.kind)) invalid();
+      const inPeriod = value => value >= filters.from && value <= filters.to;
       const sales = [];
-      for (const snapshot of salesSnapshot.docs) {
+      for (const snapshot of filters.kind === 'SALES' ? salesSnapshot.docs : []) {
         const value = snapshotValue(snapshot), id = value && (value.id || snapshot.id);
+        if (!value) unavailable();
+        const at = date(value.createdAt);
+        if (!inPeriod(at)) continue;
         if (!value || !catalogUuid(id) || !catalogUuid(value.attendantId) || value.customerId !== null && value.customerId !== undefined && !catalogUuid(value.customerId) ||
             !Number.isSafeInteger(value.totalCents) || !['PIX', 'DINHEIRO', 'DEBITO', 'CREDITO'].includes(value.paymentMethod) || !['CONFIRMADA', 'CANCELADA'].includes(value.status)) unavailable();
         const itemsSnapshot = await transaction.get(snapshot.ref.collection('items'));
         if (!itemsSnapshot || !Array.isArray(itemsSnapshot.docs) || !itemsSnapshot.docs.length || itemsSnapshot.docs.length > 100) unavailable();
         const items = itemsSnapshot.docs.map(itemSnapshot => { const item = snapshotValue(itemSnapshot); if (!item || !catalogUuid(item.productId) || !Number.isSafeInteger(item.quantity) || !Number.isSafeInteger(item.unitPriceCents) || !Number.isSafeInteger(item.subtotalCents) || item.subtotalCents !== item.quantity * item.unitPriceCents || typeof item.title !== 'string') unavailable(); return { productId: item.productId, title: item.title, quantity: item.quantity, unitPriceCents: item.unitPriceCents, subtotalCents: item.subtotalCents }; });
-        sales.push({ id, at: date(value.createdAt), operatorId: value.attendantId, customerId: value.customerId ?? null, totalCents: value.totalCents,
+        sales.push({ id, at, operatorId: value.attendantId, customerId: value.customerId ?? null, totalCents: value.totalCents,
           paymentMethod: value.paymentMethod, state: value.status, reversedAt: value.status === 'CANCELADA' ? date(value.updatedAt || value.createdAt) : null, items });
       }
-      const movements = movementsSnapshot.docs.map(snapshot => { const value = snapshotValue(snapshot), id = value && (value.id || snapshot.id); if (!value || !id || !date(value.at) || !catalogUuid(value.productId) || !catalogUuid(value.operatorId) || !['ENTRADA', 'SAIDA', 'AJUSTE', 'ESTORNO'].includes(value.type) || !Number.isSafeInteger(value.quantity) || !Number.isSafeInteger(value.stockBefore) || !Number.isSafeInteger(value.stockAfter)) unavailable(); return { id, at: date(value.at), operatorId: value.operatorId, productId: value.productId, type: value.type, quantity: value.quantity, before: value.stockBefore, after: value.stockAfter, saleId: value.saleId || '' }; });
+      const movements = [];
+      for (const snapshot of filters.kind === 'MOVEMENTS' ? movementsSnapshot.docs : []) {
+        const value = snapshotValue(snapshot), id = value && (value.id || snapshot.id);
+        if (!value) unavailable();
+        const at = date(value.at);
+        if (!inPeriod(at)) continue;
+        if (!id || !catalogUuid(value.productId) || !catalogUuid(value.operatorId) || !['ENTRADA', 'SAIDA', 'AJUSTE', 'ESTORNO'].includes(value.type) || !Number.isSafeInteger(value.quantity) || !Number.isSafeInteger(value.stockBefore) || !Number.isSafeInteger(value.stockAfter)) unavailable();
+        movements.push({ id, at, operatorId: value.operatorId, productId: value.productId, type: value.type, quantity: value.quantity, before: value.stockBefore, after: value.stockAfter, saleId: value.saleId || '' });
+      }
+      const productIds = new Set([...sales.flatMap(s => s.items.map(item => item.productId)), ...movements.map(m => m.productId)]);
+      const peopleIds = new Set([...sales.map(s => s.operatorId), ...movements.map(m => m.operatorId)]);
+      const customerIds = new Set(sales.map(s => s.customerId).filter(Boolean));
+      const products = productsSnapshot.docs.filter(s => filters.kind === 'STOCK' || productIds.has(s.id)).map(product);
+      const people = peopleSnapshot.docs.filter(s => peopleIds.has(s.id)).map(person);
+      for (const id of peopleIds) if (!people.some(p => p.id === id)) people.push({ id, owner: false, missing: true, contact: '' });
+      const customers = customersSnapshot.docs.filter(s => customerIds.has(s.id)).map(customer);
+      const nicheIds = new Set(products.flatMap(p => p.nicheIds));
+      const niches = nichesSnapshot.docs.filter(s => nicheIds.has(s.id)).map(niche);
       const sourcePayload = { products, sales, movements, people, customers, niches, legacyExcluded: 0 }, snapshot = sourceSnapshot(config, payload.filters, sourcePayload);
       return { generatedAt: new Date(currentTime).toISOString(), snapshot, legacyExcluded: 0, ...sourcePayload };
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
