@@ -26,6 +26,21 @@ class Reports(qa.Operations):
         self.local('/test/enable-reports',{});self.page.goto(ORIGIN+'/relatorios-dev.html');expect(self.page.locator('#reports')).to_be_visible();expect(self.page.locator('#export-report')).to_be_hidden()
     def query(self):
         self.page.locator('#query-report').click();expect(self.page.locator('#query-report')).to_be_enabled();expect(self.page.locator('#status')).to_have_text('Relatório pronto para conferir.')
+    def test_reports_query_error_alert_and_retry(self):
+        self.checkout();self.add();self.confirm();self.reports()
+        def fail_once(route):
+            route.fulfill(status=502,content_type='application/json',body=json.dumps({'error':{'code':'UPSTREAM_UNTRUSTED'}}))
+        self.page.route(ORIGIN+'/api/v1/reports/query',fail_once,times=1)
+        self.page.locator('#query-report').click()
+        expect(self.page.locator('#report-feedback')).to_have_attribute('data-state','error')
+        expect(self.page.locator('#status')).to_have_attribute('role','alert')
+        expect(self.page.locator('#status')).to_contain_text('Não conseguimos validar')
+        expect(self.page.locator('#result')).to_be_hidden()
+        self.page.locator('#retry-query').click()
+        expect(self.page.locator('#status')).to_have_text('Relatório pronto para conferir.')
+        expect(self.page.locator('#export-report')).to_be_visible()
+        expect(self.page.locator('#result')).to_be_visible()
+        self.assertEqual(self.errors,[])
     def test_reports_mobile_sales_metrics_details_rankings_and_full_excel(self):
         self.checkout();self.add();self.confirm();self.reports();self.query();expect(self.page.locator('#metrics')).to_contain_text('R$ 32,90');expect(self.page.locator('.report-row')).to_have_count(1);expect(self.page.locator('#top-products')).to_contain_text('Livro de teste do Caixa');self.page.locator('.report-row button').click();expect(self.page.locator('#detail')).to_be_visible();expect(self.page.locator('#detail-content')).to_contain_text('Sem cadastro');expect(self.page.locator('#detail-content')).to_contain_text('R$ 32,90');self.page.locator('#close-detail').click()
         with self.page.expect_download() as out:self.page.locator('#export-report').click()

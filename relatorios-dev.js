@@ -6,13 +6,14 @@
  const textFields=['employeeId','customerId','cpf','productId','query','isbn','author','publisher','supplier','nicheId','category','city','paymentMethod','stock','activity','movementType'];
  let csrf='',userId='',data=null,applied=null,pending=null,busy=false,page=0,urls=new Set(),peopleChoices=new Map(),nicheChoices=new Map();
  let access=false,version=0,previewTimer;
- const csvButton=document.createElement('button');csvButton.type='button';csvButton.textContent='↓ Exportar CSV';csvButton.hidden=true;$('export-report').after(csvButton);
+ const csvButton=document.createElement('button');csvButton.type='button';csvButton.className='secondary';csvButton.textContent='Baixar CSV';csvButton.hidden=true;$('export-report').after(csvButton);
  const online=()=>navigator.onLine!==false;
+ function feedback(message,state='info',retry=false){$('status').textContent=message;$('report-feedback').dataset.state=state;$('status').setAttribute('role',state==='error'?'alert':'status');$('retry-query').hidden=!retry;}
  function connection(){const state=!online()?'offline':access?'ready':'stale';connectionNode.dataset.state=state;connectionNode.textContent=!online()?'Sem conexão. Os resultados foram ocultados. Mantenha a aba aberta se houver uma exportação pendente.':pending?'Há uma exportação aguardando conferência. Reconectar não baixa o arquivo automaticamente.':access?'Acesso conferido. Faça uma consulta para preparar um arquivo com autorização atual.':'Confira a mesma conta administrativa para continuar. Resultados anteriores foram ocultados.';}
  function invalidate(){version++;clear(true);controls();}
  function armExpiry(expiresAt){clearTimeout(previewTimer);const delay=Math.max(0,Math.min(300000,expiresAt-Date.now()));previewTimer=setTimeout(()=>{version++;clear();controls();$('status').textContent='A autorização da consulta venceu. Consulte novamente. Uma exportação anterior pode já ter sido autorizada no servidor.';},Number.isFinite(delay)?delay:0);}
  function today(){const p=new Intl.DateTimeFormat('en',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());return ['year','month','day'].map(k=>p.find(v=>v.type===k).value).join('-');}
- function error(e){ if(e.code==='OFFLINE')return 'Sem conexão. Mantenha a aba aberta e confira o acesso ao reconectar.';if(e.code==='CONTEXT_CHANGED')return 'A conexão ou o contexto mudou. Nenhum arquivo foi preparado nesta resposta; confira o pedido pendente ou faça uma nova consulta.';if(e.status===401)return 'Sua sessão não pôde ser confirmada. Entre novamente para continuar.';if(e.status===403)return 'Seu perfil não permite consultar relatórios.';if(e.code?.includes('PREVIEW_EXPIRED'))return 'A consulta venceu. Consulte novamente antes de exportar.';if(e.code?.includes('CHANGED'))return 'Os dados mudaram desde a consulta. Atualize o relatório antes de exportar.';if(e.code?.includes('CAPACITY')||e.code?.includes('EXPORT_LIMIT'))return 'O volume ultrapassou o limite seguro. Reduza o período ou refine os filtros.';if(e.code?.includes('CONFLICT'))return 'Este pedido não corresponde à autorização anterior. Consulte novamente.';if(e.code?.includes('INVALID'))return 'Confira datas, CPF, ISBN e valores. Consulte até um ano por vez e use valores como 45,00.';if(e.code?.includes('NOT_ACTIVATED')||e.code?.includes('UNAVAILABLE'))return 'Os relatórios ainda não estão disponíveis nesta instalação.';const common = globalThis.LivrariaMessages?.describe(e); if (common) return common;return 'Não foi possível confirmar agora. Confira a conexão e tente novamente.';}
+ function error(e){ if(e.code==='REPORT_TIMEOUT')return 'A consulta demorou mais que o esperado. Confira sua conexão e tente novamente.';if(e.code==='OFFLINE')return 'Sem conexão. Mantenha a aba aberta e confira o acesso ao reconectar.';if(e.code==='CONTEXT_CHANGED')return 'A conexão ou o contexto mudou. Nenhum arquivo foi preparado nesta resposta; confira o pedido pendente ou faça uma nova consulta.';if(e.status===401)return 'Sua sessão não pôde ser confirmada. Entre novamente para continuar.';if(e.status===403)return 'Seu perfil não permite consultar relatórios.';if(e.code?.includes('PREVIEW_EXPIRED'))return 'A consulta venceu. Consulte novamente antes de exportar.';if(e.code?.includes('CHANGED'))return 'Os dados mudaram desde a consulta. Atualize o relatório antes de exportar.';if(e.code?.includes('CAPACITY')||e.code?.includes('EXPORT_LIMIT'))return 'O volume ultrapassou o limite seguro. Reduza o período ou refine os filtros.';if(e.code?.includes('CONFLICT'))return 'Este pedido não corresponde à autorização anterior. Consulte novamente.';if(e.code?.includes('INVALID'))return 'Confira datas, CPF, ISBN e valores. Consulte até um ano por vez e use valores como 45,00.';if(e.code?.includes('NOT_ACTIVATED')||e.code?.includes('UNAVAILABLE'))return 'Os relatórios ainda não estão disponíveis nesta instalação.';const common = globalThis.LivrariaMessages?.describe(e); if (common) return common;return 'Não foi possível confirmar agora. Confira a conexão e tente novamente.';}
  function clear(keepPending=false){
   const retained=keepPending?pending:null;data=null;applied=null;pending=retained;csrf='';access=false;page=0;
   if(!retained)clearTimeout(previewTimer);
@@ -31,7 +32,7 @@
    const response=await fetch(path,{credentials:'same-origin',cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify(body)}:{})});
    if(!response.ok){const out=await response.json();throw {status:response.status,code:out.error?.code,field:out.error?.field,readOnly:!body};}
    return responseOnly?response:(await response.json()).data;
-  }catch(e){if(!e.status||e.status===401||e.status===403)invalidate();throw e;}finally{clearTimeout(timer);}
+  }catch(e){if(!e.status||e.status===401||e.status===403)invalidate();if(e.name==='AbortError')throw {code:'REPORT_TIMEOUT'};throw e;}finally{clearTimeout(timer);}
  }
  async function session(){
   const current=await request('/api/v1/session');
@@ -47,7 +48,7 @@
   connection();
   for(const el of document.querySelectorAll('#filters input,#filters select,#filters button,#previous,#next,#export-report'))el.disabled=busy||!!pending||!online()||!access||el.dataset.incompatible==='true';
   $('retry-export').disabled=busy||!pending||!online();
-  $('discard-export').disabled=busy||!pending;reconnectNode.disabled=busy||!online();$('pending-export').hidden=!pending;
+  $('discard-export').disabled=busy||!pending;reconnectNode.disabled=busy||!online();$('retry-query').disabled=busy||!!pending||!online();$('pending-export').hidden=!pending;
   if(data)$('export-report').disabled=busy||!!pending||!online()||!access||dirty()||!data.rows.length;
   csvButton.hidden=$('export-report').hidden;csvButton.disabled=$('export-report').disabled;
  }
@@ -60,13 +61,13 @@
  function detail(r){$('detail-content').replaceChildren();const dl=document.createElement('dl');dl.className='detail-grid';const values=data.kind==='SALES'?[['ID da venda',r.id],['Data',date(r.at)],['Atendente',r.operator],['ID do atendente',r.operatorId],['Cliente',r.customer],['ID do cliente',r.customerId||'Sem cadastro'],['Cidade / UF',[r.city,r.state].filter(Boolean).join(' / ')||'Não informada'],['Situação atual',r.status==='CONFIRMADA'?'Confirmada':'Estornada'],['Estorno',date(r.reversedAt)||'Não se aplica'],['Venda completa',money(r.saleTotalCents)],['Itens selecionados',money(r.valueCents)]]:data.kind==='STOCK'?[['ID do livro',r.id],['Título',r.title],['ISBN',r.isbn||'Não informado'],['Autor',r.author],['Editora',r.publisher],['Fornecedor',r.supplier],['Categoria',r.category],['Nichos',r.niches.join(' · ')],['IDs dos nichos',r.nicheIds.join(' · ')],['Saldo atual',r.stock],['Estoque mínimo',r.minimumStock],['Ativo',r.active?'Sim':'Não']]:[['ID do movimento',r.id],['Data',date(r.at)],['Tipo',types[r.type]],['ID do livro',r.productId],['Título atual',r.title],['Quantidade',r.quantity],['Saldo anterior',r.before],['Saldo posterior',r.after],['Atendente',r.operator],['ID do atendente',r.operatorId],['ID da venda',r.saleId||'Não se aplica']];for(const[k,v]of values)pair(dl,k,v);$('detail-content').append(dl);if(data.kind==='SALES')for(const i of r.items){const item=document.createElement('section'),title=document.createElement('strong'),p=document.createElement('p'),id=document.createElement('small');item.className='sale-item';title.textContent=i.title;p.textContent=i.quantity+' × '+money(i.unitPriceCents)+' = '+money(i.subtotalCents);id.textContent='ID do livro: '+i.productId;item.append(title,p,id);$('detail-content').append(item);}$('detail').showModal();}
  async function query(){
   if(busy||pending||!online()||!access||!$('filters').reportValidity())return;
-  busy=true;data=null;applied=null;clearTimeout(previewTimer);$('result').hidden=true;$('export-report').hidden=true;$('detail-content').replaceChildren();
+  busy=true;data=null;applied=null;clearTimeout(previewTimer);$('result').hidden=true;$('export-report').hidden=true;$('detail-content').replaceChildren();feedback('Consultando relatório…');
   if($('detail').open)$('detail').close();controls();const ticket=version;
   try{
    const f=filters();await session();if(ticket!==version||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};const out=await api('query',{filters:f});await session();
    if(ticket!==version||!online()||document.hidden||JSON.stringify(f)!==JSON.stringify(filters()))throw {code:'CONTEXT_CHANGED'};
-   data=out;applied=f;page=0;render();armExpiry(out.expiresAt);$('reports').hidden=false;$('access-help').hidden=true;$('status').textContent='Relatório pronto para conferir.';
-  }catch(e){$('status').textContent=error(e);if(e.status===401||e.status===403){clear(true);$('access-help').hidden=false;}else{$('export-report').hidden=true;}}
+   data=out;applied=f;page=0;render();armExpiry(out.expiresAt);$('reports').hidden=false;$('access-help').hidden=true;feedback('Relatório pronto para conferir.','success');
+  }catch(e){if(e.status===401||e.status===403){clear(true);$('access-help').hidden=false;}else{$('export-report').hidden=true;}feedback(error(e),'error',e.status!==401&&e.status!==403);}
   finally{busy=false;controls();}
  }
  async function exportFile(format='xlsx'){
@@ -77,22 +78,22 @@
    await session();if(ticket!==version||pending!==command||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};const response=await api('export',command),blob=await response.blob();await session();
    if(ticket!==version||pending!==command||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};
    const url=URL.createObjectURL(blob);urls.add(url);const link=document.createElement('a');link.href=url;link.download='relatorio-livraria-'+command.commandId+'.'+command.format;document.body.append(link);link.click();link.remove();
-   setTimeout(()=>{URL.revokeObjectURL(url);urls.delete(url);},10000);pending=null;$('status').textContent='Arquivo '+command.format.toUpperCase()+' preparado. A autorização foi registrada na auditoria.';
+   setTimeout(()=>{URL.revokeObjectURL(url);urls.delete(url);},10000);pending=null;feedback('Arquivo '+command.format.toUpperCase()+' preparado. A autorização foi registrada na auditoria.','success');
   }catch(e){
-   $('status').textContent=error(e);
-   if(e.code?.includes('CHANGED')&&e.code!=='CONTEXT_CHANGED'||e.code?.includes('PREVIEW_EXPIRED')||e.code?.includes('INVALID')||e.code?.includes('CONFLICT')){clear();await check(false);$('status').textContent=error(e);}
+   feedback(error(e),'error');
+   if(e.code?.includes('CHANGED')&&e.code!=='CONTEXT_CHANGED'||e.code?.includes('PREVIEW_EXPIRED')||e.code?.includes('INVALID')||e.code?.includes('CONFLICT')){clear();await check(false);feedback(error(e),'error');}
    else if(e.status===401||e.status===403){clear(true);$('access-help').hidden=false;}
    else if(e.code==='CONTEXT_CHANGED')clear(true);
   }finally{busy=false;controls();}
  }
  $('filters').addEventListener('submit',e=>{e.preventDefault();query();});$('kind').addEventListener('change',kindChanged);$('filters').addEventListener('input',controls);$('filters').addEventListener('change',controls);$('export-report').addEventListener('click',()=>exportFile('xlsx'));csvButton.addEventListener('click',()=>exportFile('csv'));$('retry-export').addEventListener('click',()=>exportFile());$('previous').addEventListener('click',()=>{if(data&&!busy&&!pending){page--;renderRows();}});$('next').addEventListener('click',()=>{if(data&&!busy&&!pending){page++;renderRows();}});$('close-detail').addEventListener('click',()=>{$('detail').close();$('detail-content').replaceChildren();});
  $('discard-export').addEventListener('click',()=>{if(busy||!pending)return;version++;clear();controls();$('status').textContent='Referência descartada nesta página. Autorizações anteriores permanecem na auditoria. Confira o acesso e faça uma nova consulta.';check();});
- reconnectNode.addEventListener('click',()=>check());
+ reconnectNode.addEventListener('click',()=>check());$('retry-query').addEventListener('click',async()=>{if(!access)await check(false,false);if(access)await query();});
  async function check(skipBusy=true,announce=true){
   if(document.hidden||!online()||skipBusy&&busy){controls();return;}
   const recovering=!access;
-  try{await session();$('reports').hidden=false;$('access-help').hidden=true;if(announce&&recovering&&!data)$('status').textContent=pending?'Acesso conferido. Confira o pedido pendente ou descarte a referência para uma nova consulta.':'Escolha o relatório e aplique os filtros para consultar.';}
-  catch(e){clear(true);$('access-help').hidden=false;$('status').textContent=error(e);}finally{controls();}
+  try{await session();$('reports').hidden=false;$('access-help').hidden=true;if(announce&&recovering&&!data)feedback(pending?'Acesso conferido. Confira o pedido pendente ou descarte a referência para uma nova consulta.':'Escolha o relatório e aplique os filtros para consultar.');}
+  catch(e){clear(true);$('access-help').hidden=false;feedback(error(e),'error');}finally{controls();}
  }
  window.addEventListener('focus',()=>check());
  window.addEventListener('offline',invalidate);window.addEventListener('online',()=>{invalidate();check();});
@@ -100,6 +101,6 @@
  setInterval(()=>check(true,false),60000);
  window.addEventListener('beforeunload',e=>{if(pending){e.preventDefault();e.returnValue='';}});
  window.addEventListener('pagehide',invalidate);window.addEventListener('pageshow',e=>{if(e.persisted){invalidate();check();}});
- async function start(){try{await session();$('reports').hidden=false;$('status').textContent='Escolha o relatório e aplique os filtros para consultar.';}catch(e){clear(true);$('access-help').hidden=false;$('status').textContent=error(e);}finally{controls();}}
+ async function start(){try{await session();$('reports').hidden=false;feedback('Escolha o relatório e aplique os filtros para consultar.');}catch(e){clear(true);$('access-help').hidden=false;feedback(error(e),'error');}finally{controls();}}
  const end=today(),begin=new Date(end+'T12:00Z');begin.setUTCDate(begin.getUTCDate()-30);$('from').value=begin.toISOString().slice(0,10);$('to').value=end;kindChanged();if(location.origin===ORIGIN)start();
 })();
