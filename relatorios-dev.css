@@ -42,6 +42,9 @@
 
 .page-relatorios .report-info-link{padding:4px 0;background:none;border:0;color:#17634c;text-decoration:underline;text-underline-offset:4px;font-size:.88rem;font-weight:600;min-height:40px;cursor:pointer}
 .page-relatorios .report-info-link:hover{color:#0b3e30}.page-relatorios .report-info-dialog,.page-relatorios #detail{border:1px solid #d7e6de;border-radius:20px;padding:clamp(20px,4vw,32px);box-shadow:0 24px 70px #102a2060;background:#fff;color:#203a30}
+.app-shell.page-relatorios #report-info-open,.app-shell.page-relatorios #report-info-open:hover,.app-shell.page-relatorios #report-info-open:active{background:transparent;border:0;box-shadow:none;color:#175a50;padding:4px 0;text-decoration:none;transform:none}
+.app-shell.page-relatorios #report-info-open:hover{text-decoration:underline;text-underline-offset:4px}
+.page-relatorios .detail-hash{display:inline-block;padding:2px 7px;border-radius:6px;background:#edf4f0;color:#49675a;font-size:.72rem}
 .page-relatorios .report-info-dialog::backdrop,.page-relatorios #detail::backdrop{background:#102a20a6}
 .page-relatorios .dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.page-relatorios .dialog-head h2{font-size:1.45rem;line-height:1.25;margin:0 0 20px}.page-relatorios .dialog-head button{flex:none}
 .page-relatorios .report-info-content{display:grid;gap:12px;margin-bottom:20px}.page-relatorios .report-info-content section{border:1px solid #e0ebe5;border-radius:12px;padding:16px;background:#f8fbf9}.page-relatorios .report-info-content h3{font-size:1rem;margin:0 0 6px}.page-relatorios .report-info-content p{font-size:.9rem;line-height:1.6;margin:0;color:#435e51}
