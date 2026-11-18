@@ -119,12 +119,12 @@ test('report is complete beyond notification pagination and the old signed-respo
   const report = (await response.json()).data; assert.equal(report.totalBooks, 400); assert.equal(report.groups.flatMap(g => g.items).length, 400); assert.ok(JSON.stringify(report).length > 180000);
 });
 
-test('reports enforce admin role, recent strong authentication, CSRF and source isolation in Node and GAS', async () => {
+test('stock reports accept established admin sessions and enforce role, CSRF and source isolation in Node and GAS', async () => {
   const s = await setup(), request = { scope: 'zero', supplier: null, format: 'csv' };
   assert.equal((await s.http('report', request, s.attendant)).status, 403); await assert.rejects(s.operation('report', request, s.attendant), { code: 'WORKSPACE_FORBIDDEN' });
   for (const headers of [{ 'x-csrf-token': 'bad' }, { origin: 'https://evil.example' }, { 'content-type': 'text/plain' }]) assert.equal((await s.http('report', request, s.admin, headers)).status, 403);
   const sessions = s.main.getSheetByName('Sessoes'), row = sessions.rows.find(r => r[sessions.rows[0].indexOf('Token_Hash')] === s.admin.tokenHash); row[sessions.rows[0].indexOf('Criado_Em')] = new Date(Date.now()-360000).toISOString();
-  assert.equal((await s.http('report', request)).status, 401); await assert.rejects(s.operation('report', request), { code: 'WORKSPACE_FORBIDDEN' });
+  assert.equal((await s.http('report', request)).status, 200); assert.ok((await s.operation('report', request)).reportId);
   assert.equal((await s.handler(new Request('https://merry-chimera-49a1f3.netlify.app/api/v1/notifications/summary'))).status, 403);
 });
 

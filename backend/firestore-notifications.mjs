@@ -167,7 +167,7 @@ export function createFirestoreNotificationService({ db, identityService, config
     if (!['zero','low'].includes(payload?.scope) || payload.supplier !== null && (typeof payload.supplier !== 'string' || payload.supplier.length > 160) || !['view','csv','print','copy'].includes(payload.format)) invalid();
     return runFirestoreTransaction(db, async transaction => {
       const currentTime=now(), principal=await identityService.readSessionInTransaction(transaction,actor?.sessionTokenHash,currentTime);
-      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin:true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin:true } : {}) },'reports.read',{now:currentTime});
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin:true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin:true } : {}) },'reports.stock.read',{now:currentTime});
       const [products,alerts]=await Promise.all([transaction.get(db.collection('products')),transaction.get(db.collection('notifications'))]);
       if (!Array.isArray(products?.docs) || products.docs.length>5000 || !Array.isArray(alerts?.docs) || alerts.docs.length>MAX_NOTIFICATIONS) unavailable();
       const activeAlerts=new Map();

@@ -11,7 +11,7 @@ const attendant = new Set([
   'notifications.self.read', 'sessions.self.revoke',
 ]);
 const admin = new Set([
-  ...attendant, 'reports.read', 'reports.commercial.read', 'audit.read', 'sales.all.read', 'niches.write', 'schedule.write',
+  ...attendant, 'reports.read', 'reports.commercial.read', 'reports.stock.read', 'audit.read', 'sales.all.read', 'niches.write', 'schedule.write',
   'stock.adjust', 'sales.reverse', 'users.attendant.read', 'users.attendant.manage', 'products.delete', 'notifications.manage', 'schedule.all.read',
 ]);
 const superAdmin = new Set([...admin, 'users.admin.manage', 'config.manage']);
@@ -45,7 +45,7 @@ export function requirePermission(principal, operation, { targetUserId, targetRo
   const businessPin=principal.assurance==='pin'&&principal.adminPinLogin===true;
   const localSelfProfile = (localProfileWrite === true || basicProfileWrite === true) && operation === 'profile.self.write';
   const localStaff = localStaffWrite === true && ['users.attendant.manage', 'users.admin.manage'].includes(operation);
-  const sessionManagement = ['reports.commercial.read', 'sales.all.read', 'niches.write', 'users.attendant.read', 'users.attendant.manage', 'users.admin.manage'].includes(operation);
+  const sessionManagement = ['reports.commercial.read', 'reports.stock.read', 'notifications.self.read', 'notifications.manage', 'sales.all.read', 'niches.write', 'users.attendant.read', 'users.attendant.manage', 'users.admin.manage'].includes(operation);
   if (!localSelfProfile && !localStaff && !sessionManagement && principal.role !== 'ATENDENTE' && !strong.has(principal.assurance)&&!businessPassword&&!businessPin) denied(401, 'REAUTHENTICATION_REQUIRED');
   if (!localSelfProfile && !localStaff && recent.has(operation) && ((!strong.has(principal.assurance)&&!((businessPassword||businessPin)&&operation!=='credentials.self.manage')) || now - principal.authenticatedAt > 300_000)) {
     denied(401, 'REAUTHENTICATION_REQUIRED');

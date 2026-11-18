@@ -45,15 +45,10 @@ class Notifications(qa.Stock):
     def generate(self):
         self.page.locator('#generate').click();expect(self.page.locator('#report')).to_be_visible()
 
-    def test_notifications_reauthentication_displays_prominent_action(self):
-        self.start();self.book();self.notifications()
-        self.page.route(ORIGIN+'/api/v1/notifications/report',lambda route:route.fulfill(status=401,content_type='application/json',body=json.dumps({'error':{'code':'REAUTHENTICATION_REQUIRED'}})),times=1)
-        self.page.locator('#generate').click()
-        expect(self.page.locator('#identity-alert')).to_be_visible()
-        self.page.locator('#identity-open').click();expect(self.page.locator('#identity-dialog')).to_be_visible()
-        expect(self.page.locator('#identity-confirm')).to_be_enabled()
-        self.page.locator('#identity-identifier').fill('owner@example.invalid');self.page.locator('#identity-confirm').click()
-        expect(self.page.locator('#identity-dialog')).to_be_hidden();expect(self.page.locator('#report')).to_be_visible()
+    def test_notifications_generate_without_identity_dialog(self):
+        self.start();self.book();self.notifications();self.generate()
+        expect(self.page.locator('#identity-dialog')).to_have_count(0)
+        expect(self.page.locator('#identity-alert')).to_have_count(0)
         expect(self.page.locator('#generate')).to_be_enabled();self.assertEqual(self.errors,[])
 
     def test_notifications_read_and_handling_are_distinct_and_replenishment_resolves(self):

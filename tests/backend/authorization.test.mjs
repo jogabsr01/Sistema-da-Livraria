@@ -22,6 +22,18 @@ test('reports accept valid administrator sessions without renewed authentication
   assert.throws(()=>check(principal(),'reports.commercial.read'),forbidden);
 });
 
+test('stock notifications and reports use valid sessions without recent assurance', () => {
+  for (const role of ['ADMIN', 'SUPER_ADMIN']) for (const assurance of ['password', 'pin', 'mfa', 'passkey']) {
+    const actor = principal({ role, assurance, authenticatedAt: now - 600_000 });
+    for (const operation of ['notifications.self.read', 'notifications.manage', 'reports.stock.read']) {
+      assert.equal(check(actor, operation), actor);
+      assert.throws(() => check({ ...actor, expiresAt: now }, operation), unauthenticated);
+    }
+  }
+  assert.throws(() => check(principal(), 'reports.stock.read'), forbidden);
+  assert.throws(() => check(principal(), 'notifications.manage'), forbidden);
+});
+
 test('valid administrator sessions manage niches and staff without renewed authentication', () => {
   for (const assurance of ['password', 'pin', 'passkey']) {
     const actor = principal({ role: 'ADMIN', assurance, authenticatedAt: now - 600_000 });

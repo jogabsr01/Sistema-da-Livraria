@@ -2605,7 +2605,7 @@ function nichesOperation_(request,c){
 ;
 // END Niches.gs
 
-// BEGIN Notifications.gs sha256=06fc8e6b25c417652da9d249eb3032b018e2691a4e1101ef70dbbb5b2c2aa3ac
+// BEGIN Notifications.gs sha256=b95582b54d50bce4bca3890223c68b9dbcab4f64d87e98c316563767f06dca3b
 /* DEV stock alerts and replenishment reports. Caller holds ScriptLock. */
 function notificationEnabled_() { return scriptFlag_('NOTIFICATIONS_ENABLED') === 'true'; }
 function notificationTime_(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
@@ -2707,7 +2707,7 @@ function stockReport_(request, ss, principal, notifications) {
   var p = request.payload;
   authControlExact_(p, ['scope', 'supplier', 'format']);
   if (!['zero', 'low'].includes(p.scope) || p.supplier !== null && (typeof p.supplier !== 'string' || p.supplier.length > 160) || !['view', 'csv', 'print', 'copy'].includes(p.format)) failure_('INVALID_NOTIFICATION');
-  if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role) || !businessAssurance_(principal) || Date.now() - principal.authenticatedAt > 300000) failure_('FORBIDDEN');
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(principal.role)) failure_('FORBIDDEN');
   function supplier(value) { catalogText_(value, 160, false); return value.normalize('NFC').replace(/\s+/g, ' ').trim(); }
   var products = catalogProducts_(ss).rows, groups = Object.create(null), count = 0, units = 0, missing = 0;
   products.forEach(function (product) {

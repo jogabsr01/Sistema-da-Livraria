@@ -32,7 +32,7 @@ export function createNotificationHandler(dependencies = {}) {
         return json({data:{items,total:data.total,nextOffset:data.nextOffset,summary:data.summary,user:{id:principal.id,role:principal.role,assurance:principal.assurance,expiresAt:principal.expiresAt},csrfToken:context.csrfToken},requestId});
       }
       const principal = await sessions.authenticate(request);
-      requirePermission(principal, operation === 'report' ? 'reports.read' : operation === 'state' ? 'notifications.manage' : 'notifications.self.read');
+      requirePermission(principal, operation === 'report' ? 'reports.stock.read' : operation === 'state' ? 'notifications.manage' : 'notifications.self.read');
       if (mutation) requireCsrfToken(request, sessions.csrfFor(request,principal));
       let payload = {};
       if (operation === 'list') {
