@@ -5,6 +5,7 @@
   const date = value => new Date(value).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
   let csrf = '', userId = '', admin = false, offset = 0, nextOffset = null, busy = false, loading = false, refreshAgain = false, report = null;
   let access = false, available = false, ready = false, checkedAt = 0, version = 0, pending = null, expiryTimer, reportTimer;
+  let supplierItem = null, supplierCommand = null;
   const online = () => navigator.onLine !== false;
   const fresh = () => ready && online() && access && performance.now() - checkedAt < 90000;
   function controls() {
@@ -40,7 +41,7 @@
   }
   function explain(error) { const common = globalThis.LivrariaMessages?.describe(error); if (common) return common;
     if(error.code==='OFFLINE')return 'Sem conexão. Mantenha a aba aberta e confira novamente ao reconectar.';
-    if (error.status === 401 || error.status === 403) return 'Entre novamente na conta verificada. Relatórios exigem acesso administrativo e autenticação forte recente.';
+    if (error.status === 401 || error.status === 403) return 'Sua sessão ou perfil não permite esta operação. Entre novamente e confira seu acesso.';
     if (error.code?.includes('CAPACITY')) return 'O limite seguro foi atingido. Não foi gerado um relatório parcial. Filtre por fornecedor ou solicite a revisão da capacidade.';
     if (error.code?.includes('NOT_ACTIVATED') || error.code === 'WORKSPACE_NOTIFICATIONS_UNAVAILABLE') return 'As notificações ainda não foram habilitadas nesta instalação.';
     return 'Não foi possível confirmar a operação. Atualize para conferir o estado antes de tentar novamente.';
@@ -51,7 +52,7 @@
     userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);access=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
     $('report-tools').hidden = !admin||!available; if (!admin) clearReport();
   }
-  function clearReport() {clearTimeout(reportTimer);report=null;$('report').hidden=true;$('report-groups').replaceChildren();for(const id of ['report-meta','report-summary','supplier-warning'])$(id).textContent='';$('draft-label').hidden=true;$('draft').value='';['export','print','copy'].forEach(id=>$(id).disabled=true);}
+  function clearReport() {clearTimeout(reportTimer);report=null;$('report').hidden=true;$('report-groups').replaceChildren();$('report-summary').replaceChildren();$('draft-label').hidden=true;$('draft').value='';['export','print','copy'].forEach(id=>$(id).disabled=true);}
   async function refresh() {
     if(location.origin!==ORIGIN){$('status').textContent='Esta tela funciona exclusivamente no endereço autorizado.';return;}
     if(document.hidden||!online()){controls();if(!online())$('status').textContent='Sem conexão. O acesso será conferido ao reconectar.';return;}
@@ -108,19 +109,20 @@
   }
   function showReport(data) {
     report = data; $('report').hidden = false; $('draft-label').hidden = true; $('draft').value = '';
-    $('report-meta').textContent = 'Gerado em ' + date(data.generatedAt) + ' · ' + (data.scope === 'zero' ? 'Somente sem estoque' : 'Sem estoque e abaixo do mínimo');
-    $('report-summary').textContent = data.totalBooks + ' livro(s) · ' + data.groups.length + ' fornecedor(es)/grupo(s) · ' + data.suggestedUnits + ' unidade(s) sugerida(s).';
-    $('supplier-warning').textContent = data.missingSupplier ? data.missingSupplier + ' livro(s) sem fornecedor informado. Complete o cadastro antes de preparar o pedido.' : '';
+    $('report-summary').replaceChildren();
+    for(const [label,value] of [['Livros para repor',data.totalBooks],['Unidades sugeridas',data.suggestedUnits]]){const card=document.createElement('div'),name=document.createElement('span'),number=document.createElement('strong');card.className='report-metric';name.textContent=label;number.textContent=String(value);card.append(name,number);$('report-summary').append(card);}
     $('report-groups').replaceChildren();
     for (const group of data.groups) {
       const section = document.createElement('section'), title = document.createElement('h3'), scroll = document.createElement('div'), table = document.createElement('table');
       title.textContent = group.supplier || 'Fornecedor não informado'; scroll.className = 'report-scroll'; scroll.tabIndex = 0; scroll.setAttribute('aria-label','Livros de '+title.textContent);
       const head = document.createElement('thead'), header = document.createElement('tr');
-      ['Livro','Fornecedor','ISBN / código','Saldo','Mínimo','Qtd. sugerida','Acompanhamento'].forEach(name => { const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = name; header.append(cell); }); head.append(header);
+      ['Livro','Fornecedor','ISBN / código','Saldo','Mínimo','Qtd. sugerida','Ações'].forEach(name => { const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = name; header.append(cell); }); head.append(header);
       const body = document.createElement('tbody');
       for (const item of group.items) {
         const row = document.createElement('tr');
-        [item.title,group.supplier || 'Não informado',item.isbn || item.internalCode,item.stock,item.minimumStock,item.suggestedQuantity,labels[item.alertState]].forEach(value => { const cell = document.createElement('td'); cell.textContent = String(value); row.append(cell); }); body.append(row);
+        const book=document.createElement('td'),cover=document.createElement('img'),name=document.createElement('span');book.className='report-book';cover.src='/api/v1/catalog/cover?id='+encodeURIComponent(item.id);cover.alt='';cover.loading='lazy';cover.addEventListener('error',()=>cover.remove());name.textContent=item.title;book.append(cover,name);row.append(book);
+        [group.supplier || 'Não informado',item.isbn || item.internalCode,item.stock,item.minimumStock,item.suggestedQuantity].forEach(value => { const cell = document.createElement('td'); cell.textContent = String(value); row.append(cell); });
+        const actions=document.createElement('td');if(!group.supplier){const button=document.createElement('button');button.type='button';button.className='secondary supplier-action no-print';button.textContent='+ Vincular fornecedor';button.addEventListener('click',()=>openSupplier(item));actions.append(button);}row.append(actions);body.append(row);
       }
       table.append(head,body); scroll.append(table); section.append(title,scroll); $('report-groups').append(section);
     }
@@ -131,6 +133,37 @@
     }
     ['export','print','copy'].forEach(id => $(id).disabled = false);
     reportTimer=setTimeout(()=>{clearReport();$('report-status').textContent='O prazo de revisão terminou. Gere novamente para conferir os dados atuais.';controls();},90000);
+  }
+  function openSupplier(item) {
+    if(!report||busy||!access||!admin||!online())return;
+    clearTimeout(reportTimer);supplierItem=item;supplierCommand=null;$('supplier-book').textContent=item.title;$('supplier-name').value='';$('supplier-status').textContent='';
+    $('supplier-options').replaceChildren();
+    for(const group of report.groups)if(group.supplier){const option=document.createElement('option');option.value=group.supplier;$('supplier-options').append(option);}
+    $('supplier-dialog').showModal();$('supplier-name').focus();
+  }
+  async function saveSupplier(event) {
+    event.preventDefault();if(busy||!supplierItem||(!report&&!supplierCommand)||!online())return;
+    const name=$('supplier-name').value.trim();if(!name||name.length>160||/^[=+@-]|[\x00-\x1f\x7f]/.test(name)){$('supplier-status').textContent='Informe um nome de fornecedor válido.';return;}
+    if(supplierCommand&&supplierCommand.record.supplier!==name){$('supplier-status').textContent='Confirme primeiro o resultado da tentativa anterior usando o mesmo fornecedor.';return;}
+    busy=true;controls();$('supplier-name').disabled=true;$('supplier-cancel').disabled=true;$('supplier-status').textContent='Salvando…';const ticket=version,productId=supplierItem.id;
+    try {
+      await session();if(!admin||ticket!==version||(!report&&!supplierCommand))throw Object.assign(Error('CONTEXT_CHANGED'),{code:'CONTEXT_CHANGED'});
+      if(!supplierCommand){
+        const product=(await requestData('/api/v1/catalog/get?id='+encodeURIComponent(productId))).product;
+        if(ticket!==version||!report)throw Object.assign(Error('CONTEXT_CHANGED'),{code:'CONTEXT_CHANGED'});
+        if(product.supplier){$('supplier-status').textContent='O livro já possui fornecedor. Gere novamente a lista para conferir.';return;}
+        const keys=['isbn','internalCode','title','author','publisher','edition','supplier','priceCents','minimumStock','category','coverUrl','year','pages','synopsis','nicheIds','active','subtitle','costCents','sku','productType'];
+        const record=Object.fromEntries(keys.filter(key=>product[key]!==undefined).map(key=>[key,product[key]]));record.supplier=name;
+        supplierCommand={commandId:crypto.randomUUID(),id:productId,expectedVersion:product.version,record};
+      }
+      await requestData('/api/v1/catalog/save',supplierCommand);supplierCommand=null;
+      $('supplier-dialog').close();supplierItem=null;
+      if(ticket===version){const data=await api('report',{scope:$('scope').value,supplier:JSON.parse($('supplier').value),format:'view'});if(ticket===version){clearTimeout(reportTimer);showReport(data);$('report-status').textContent='Fornecedor atualizado.';}}
+    } catch(error) {
+      if(error.status===409){supplierCommand=null;$('supplier-status').textContent='O cadastro foi alterado em outra sessão. Gere a lista novamente antes de tentar.';}
+      else if($('supplier-dialog').open)$('supplier-status').textContent=supplierCommand?'Não foi possível confirmar. Tente novamente com o mesmo fornecedor.':explain(error);
+      else {clearReport();$('report-status').textContent='Fornecedor salvo. Gere novamente a lista para atualizá-la.';}
+    } finally {busy=false;$('supplier-name').disabled=false;$('supplier-cancel').disabled=false;controls();}
   }
   // RFC4180 quoting, UTF-8 BOM and formula protection for spreadsheet readers.
   function csvCell(value) { let s = String(value); if (/^[\s\uFEFF]*[=+@-]/u.test(s) || /^[\t\r\n]/.test(s) || /^\d{10,}$/.test(s)) s = "'" + s; return '"' + s.replaceAll('"','""') + '"'; }
@@ -161,6 +194,7 @@
   $('refresh').addEventListener('click',refresh); $('history').addEventListener('change',()=>{offset=0;refresh();});
   $('next').addEventListener('click',()=>{if (!loading && nextOffset !== null) {offset=nextOffset;refresh();}}); $('previous').addEventListener('click',()=>{if (!loading) {offset=Math.max(0,offset-25);refresh();}});
   $('report-form').addEventListener('submit',event=>{event.preventDefault();generate('view');});
+  $('supplier-form').addEventListener('submit',saveSupplier);$('supplier-cancel').addEventListener('click',()=>{if(!busy&&!supplierCommand){$('supplier-dialog').close();if(report){clearReport();$('report-status').textContent='Gere novamente a lista para conferir os dados atuais.';controls();}}});$('supplier-dialog').addEventListener('cancel',event=>{if(busy||supplierCommand)event.preventDefault();else if(report){clearReport();$('report-status').textContent='Gere novamente a lista para conferir os dados atuais.';controls();}});
   $('reconnect').addEventListener('click',refresh);$('retry-update').addEventListener('click',()=>mutate());
   $('export').addEventListener('click',()=>generate('csv')); $('print').addEventListener('click',()=>generate('print')); $('copy').addEventListener('click',()=>generate('copy'));
   ['scope','supplier'].forEach(id=>$(id).addEventListener('change',()=>{clearReport();$('report-status').textContent='Filtro alterado. Gere o relatório para conferir a lista atual.';}));

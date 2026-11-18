@@ -38,9 +38,8 @@
     <p id="report-status" role="status" aria-live="polite"></p>
     <label id="draft-label" hidden>Texto para revisar e copiar<textarea id="draft" rows="10" readonly></textarea></label>
   </section>
-  <section id="report" hidden aria-labelledby="report-title"><h2 id="report-title">Lista de reposição</h2><p id="report-meta"></p>
-    <p id="report-summary"></p><p id="supplier-warning"></p>
-    <p>Quantidades sugeridas para revisão; nenhum pedido é enviado.</p>
+  <section id="report" hidden aria-labelledby="report-title"><h2 id="report-title"><svg class="notification-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-2 7-2 9h16c0-2-2-2-2-9 M10 20a2 2 0 0 0 4 0"/></svg>Lista de reposição</h2>
+    <div id="report-summary" class="report-metrics"></div>
     <div id="report-groups"></div>
   </section>
-</main></body></html>
+</main><dialog id="supplier-dialog" aria-labelledby="supplier-dialog-title"><form id="supplier-form"><h2 id="supplier-dialog-title">Vincular fornecedor</h2><p id="supplier-book"></p><label for="supplier-name">Fornecedor</label><input id="supplier-name" list="supplier-options" maxlength="160" required autocomplete="off"><datalist id="supplier-options"></datalist><p id="supplier-status" role="status" aria-live="polite"></p><div class="toolbar"><button type="submit" id="supplier-save">Salvar fornecedor</button><button type="button" id="supplier-cancel" class="secondary">Cancelar</button></div></form></dialog></body></html>

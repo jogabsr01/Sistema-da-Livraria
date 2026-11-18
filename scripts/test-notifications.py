@@ -61,13 +61,22 @@ class Notifications(qa.Stock):
         self.notifications();expect(self.page.locator('.alert')).to_have_count(0)
         self.page.locator('#history').check();expect(self.page.locator('.alert')).to_contain_text('Resolvida');self.assertEqual(self.errors,[])
 
+    def test_notifications_assign_supplier_without_reload(self):
+        self.start();self.book('Livro sem fornecedor','',2);self.notifications();self.generate()
+        self.page.get_by_role('button',name='+ Vincular fornecedor').click()
+        self.page.locator('#supplier-name').fill('Fornecedor novo');self.page.locator('#supplier-save').click()
+        expect(self.page.locator('#supplier-dialog')).to_be_hidden()
+        expect(self.page.locator('#report-groups')).to_contain_text('Fornecedor novo')
+        expect(self.page.get_by_role('button',name='+ Vincular fornecedor')).to_have_count(0)
+        self.assertEqual(self.errors,[])
+
     def test_notifications_report_groups_suppliers_and_highlights_missing_supplier(self):
         self.start();self.book('Livro A','Fornecedor A',4);self.book('Livro B','Fornecedor B',0);self.book('Sem fornecedor','',2)
-        self.notifications();self.generate();expect(self.page.locator('#report-summary')).to_contain_text('3 livro(s)')
-        expect(self.page.locator('#supplier-warning')).to_contain_text('1 livro(s) sem fornecedor')
+        self.notifications();self.generate();expect(self.page.locator('#report-summary')).to_contain_text('Livros para repor3')
+        expect(self.page.get_by_role('button',name='+ Vincular fornecedor')).to_be_visible()
         self.assertEqual(self.page.locator('#report-groups tbody tr').count(),3)
         self.page.locator('#supplier').select_option(json.dumps('Fornecedor A'));self.generate()
-        expect(self.page.locator('#report-summary')).to_contain_text('1 livro(s)');expect(self.page.locator('#report-groups')).to_contain_text('Livro A')
+        expect(self.page.locator('#report-summary')).to_contain_text('Livros para repor1');expect(self.page.locator('#report-groups')).to_contain_text('Livro A')
         expect(self.page.locator('#report-groups')).not_to_contain_text('Livro B');expect(self.page.locator('#report-groups tbody tr td').nth(1)).to_have_text('Fornecedor A')
 
     def test_notifications_csv_print_and_manual_copy_do_not_send_messages(self):
@@ -82,7 +91,7 @@ class Notifications(qa.Stock):
 
     def test_notifications_spreadsheet_formula_protection_and_plain_text_rendering(self):
         self.start();self.book('<img src=x onerror=window.pwned=true>','Fornecedor seguro',1);self.notifications();self.generate()
-        expect(self.page.locator('#report-groups img')).to_have_count(0);self.assertIsNone(self.page.evaluate('window.pwned'))
+        expect(self.page.locator('#report-groups img')).to_have_count(1);self.assertIsNone(self.page.evaluate('window.pwned'))
         # Explicit client-side hostile-response fixture; not a Google record.
         self.inject_report=True
         with self.page.expect_download() as download:self.page.locator('#export').click()
