@@ -41,6 +41,16 @@ function baseDb() {
 }
 function passwordRecord() { return { version: 1, credentialType: 'PASSWORD_V1', algorithm: 'scrypt-N32768-r8-p1', salt: '11'.repeat(32), hash: '22'.repeat(32) }; }
 
+test('owner CPF index resolves only the existing owner email', async () => {
+  const cpfIndex = 'd'.repeat(64), db = baseDb();
+  db.values.set(`users/${userId}`, { ...db.values.get(`users/${userId}`), cpfIndex, email });
+  const store = createFirestoreCredentialStore({ db, config });
+  assert.deepEqual(await store.ownerLookup({ cpfIndex }), { email });
+  assert.deepEqual(await store.ownerLookup({ cpfIndex: 'e'.repeat(64) }), { email: null });
+  db.values.set(`users/${userId}`, { ...db.values.get(`users/${userId}`), owner: false });
+  assert.deepEqual(await store.ownerLookup({ cpfIndex }), { email: null });
+});
+
 test('staff CPF and normalized email indexes locate the same unactivated account', async () => {
   const vault = createPersonalDataVault({ config, dataKey: Buffer.alloc(32, 1), indexKey: Buffer.alloc(32, 2) });
   const contact = { name:'Atendente', cpf:'52998224725', email:'staff@example.invalid', phone:'' };
@@ -53,6 +63,15 @@ test('staff CPF and normalized email indexes locate the same unactivated account
   assert.equal(byEmail.subjectId, userId);
   assert.equal(byEmail.activated, false);
   assert.deepEqual(vault.open('users',userId,byEmail.contact), contact);
+});
+
+test('pre-registered staff account starts activation without creating another user', async () => {
+  const contact = 'encrypted-contact', db = fakeDb({ [`users/${userId}`]: { id:userId, owner:false, role:'ATENDENTE', status:'ATIVO', activated:false, firstAccessCompleted:false, authorizationVersion:1, contact } });
+  const service = createFirestoreAccessService({ db, config });
+  const result = await service.staffStart({ subjectId:userId, contactHash:createHash('sha256').update(contact).digest('hex'), delivery:'staff@example.invalid', flowId, tokenHash, codeHash:'c'.repeat(64), code:'ABCDEFG' });
+  assert.equal(result.outcome, 'SENT');
+  assert.equal(db.values.get(`authFlows/${tokenHash}`).subjectId, userId);
+  assert.equal([...db.values.keys()].filter(key => /^users\/[^/]+$/.test(key)).length, 1);
 });
 
 test('passkey completion reads the credential before scheduling any Firestore write', async () => {

@@ -290,6 +290,7 @@ export function createFirestoreWorkspaceClient(config, {
     },
     catalog: (operation, actor, payload) => getCatalog().execute(operation, actor, payload),
     access: (operation, payload) => {
+      if (operation === 'ownerLookup') return getCredentials().ownerLookup(payload);
       const service = getAccess();
       if (operation === 'start') return startAndDeliver(service.start,payload);
       if (operation === 'recover') return startAndDeliver(service.recover,payload);

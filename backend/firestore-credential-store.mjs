@@ -59,6 +59,18 @@ export function createFirestoreCredentialStore({ db, transactionOptions, config 
         ...(staffLookup ? { activated: value.activated === true, contact: value.contact || '' } : {}) };
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
   }
+  async function ownerLookup({ cpfIndex } = {}) {
+    if (!HASH.test(cpfIndex || '')) rejected();
+    return runFirestoreTransaction(db, async transaction => {
+      const result = await transaction.get(db.collection('users').where('cpfIndex', '==', cpfIndex));
+      if (!result || !Array.isArray(result.docs) || result.docs.length > 1) unavailable();
+      if (!result.docs.length) return { email: null };
+      const user = snapshotValue(result.docs[0]);
+      if (user.owner !== true) return { email: null };
+      if (user.role !== 'SUPER_ADMIN' || typeof user.email !== 'string' || !user.email) unavailable();
+      return { email: user.email };
+    }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
+  }
   async function loginLookup(payload) {
     const staff = payload?.staffLookup === true;
     let account = staff ? await lookup({ emailIndex: payload?.emailIndex || '', cpfIndex: payload?.cpfIndex || '', staffLookup: true }) : null;
@@ -66,5 +78,5 @@ export function createFirestoreCredentialStore({ db, transactionOptions, config 
     account = await lookup({ email: payload?.email || '', cpfIndex: payload?.cpfIndex || '', staffLookup: false });
     return { allowed: true, kind: 'OWNER', account };
   }
-  return Object.freeze({ getPrimary, lookup, loginLookup });
+  return Object.freeze({ getPrimary, lookup, loginLookup, ownerLookup });
 }

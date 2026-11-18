@@ -377,7 +377,7 @@
     const options=data.options;
     if (!['create', 'get'].includes(data.kind) || !options || typeof options.challenge !== 'string') throw unavailable('ACCESS_RESPONSE_INVALID');
     options.challenge = decode(options.challenge);
-    if (data.kind === 'create') { options.user.id = decode(options.user.id); options.excludeCredentials = (options.excludeCredentials || []).map(key => ({ ...key, id: decode(key.id) })); }
+    if (data.kind === 'create') { options.authenticatorSelection = { ...options.authenticatorSelection, authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' }; options.user.id = decode(options.user.id); options.excludeCredentials = (options.excludeCredentials || []).map(key => ({ ...key, id: decode(key.id) })); }
     else options.allowCredentials = (options.allowCredentials || []).map(key => ({ ...key, id: decode(key.id) }));
     preparedDevice = {kind:data.kind, options}; preparedAt = performance.now();
     $('passkey-button').textContent = data.kind === 'create' ? 'Cadastrar Biometria' : 'Confirmar no meu aparelho';

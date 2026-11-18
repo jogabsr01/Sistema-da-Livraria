@@ -39,7 +39,7 @@ export function createPasskeyService(settings, { client }) {
       const options = await generateRegistrationOptions({ rpName: 'Livraria IPB', rpID: RP_ID,
         userID: new TextEncoder().encode(user.subjectId), userName: user.subjectId, userDisplayName: 'Funcionário',
         attestationType: 'none', supportedAlgorithmIDs: [-7], timeout: 120000,
-        authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' }, excludeCredentials: credentials });
+        authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' }, excludeCredentials: credentials });
       const ceremonyId = randomUUID();
       await client.beginPasskey({ ...user, ceremonyId, purpose: 'REGISTER', challenge: options.challenge });
       return { ceremonyId, options };
@@ -93,7 +93,7 @@ export async function preparedAccessOptions(input, environment = 'dev') {
       input.kind === 'get' && !input.credentials.length) rejected();
   const common = {rpID:RP_ID, userVerification:'required', challenge:new Uint8Array(Buffer.from(input.challenge,'base64url')), timeout:120000};
   const options = input.kind === 'create'
-    ? await generateRegistrationOptions({...common, rpName:'Livraria IPB',userID:new TextEncoder().encode(user.subjectId),userName:user.subjectId,userDisplayName:'Funcionário',attestationType:'none',supportedAlgorithmIDs:[-7],authenticatorSelection:{residentKey:'preferred',userVerification:'required'},excludeCredentials:input.credentials})
+    ? await generateRegistrationOptions({...common, rpName:'Livraria IPB',userID:new TextEncoder().encode(user.subjectId),userName:user.subjectId,userDisplayName:'Funcionário',attestationType:'none',supportedAlgorithmIDs:[-7],authenticatorSelection:{authenticatorAttachment:'platform',residentKey:'preferred',userVerification:'required'},excludeCredentials:input.credentials})
     : await generateAuthenticationOptions({...common,allowCredentials:input.credentials});
   if (options.challenge !== input.challenge) rejected();
   return {stage:'PASSKEY',kind:input.kind,options};

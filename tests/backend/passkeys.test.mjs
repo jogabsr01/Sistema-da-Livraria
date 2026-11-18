@@ -66,6 +66,8 @@ test('registration options pin exact DEV RP, demand user verification and contai
   const s = setup(), result = await s.service.registrationOptions(s.context);
   assert.equal(result.options.rp.id, 'dev--merry-chimera-49a1f3.netlify.app');
   assert.equal(result.options.authenticatorSelection.userVerification, 'required');
+  assert.equal(result.options.authenticatorSelection.authenticatorAttachment, 'platform');
+  assert.equal(result.options.authenticatorSelection.residentKey, 'preferred');
   assert.equal(result.options.attestation, 'none'); assert.deepEqual(result.options.pubKeyCredParams.map(x => x.alg), [-7]);
   assert.ok(!JSON.stringify(result).includes('ADMIN')); assert.equal(s.priv.getSheetByName('_Passkey_Ceremonies').getLastRow(), 2);
   await assert.rejects(s.service.verifyRegistration({ ...s.context, ceremonyId: result.ceremonyId }, {}), { code: 'PASSKEY_REJECTED' });
