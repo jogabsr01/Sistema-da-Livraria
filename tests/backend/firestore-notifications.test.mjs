@@ -88,6 +88,17 @@ test('Firestore notification state is an idempotent administrative transaction',
   assert.deepEqual(await service.execute('state', { sessionTokenHash: tokenHash }, payload), { accepted: true });
 });
 
+test('Firestore stock report uses current products and audits admin access', async () => {
+  const {db,service}=makeService('ADMIN');
+  db.values.set(`products/${productId}`,{id:productId,title:'Livro real',isbn:'',internalCode:'INTBOOK123',supplier:'Fornecedor',active:true,stock:0,minimumStock:2});
+  const result=await service.execute('report',{sessionTokenHash:tokenHash},{scope:'zero',supplier:null,format:'view'});
+  assert.equal(result.totalBooks,1);assert.equal(result.groups[0].items[0].title,'Livro real');assert.equal(result.groups[0].items[0].suggestedQuantity,2);
+  assert.equal(db.values.get(`auditEvents/stock-report:${result.reportId}`).operation,'STOCK_REPORT_VIEW');
+  db.values.set(`products/${productId}`,{...db.values.get(`products/${productId}`),stock:3});
+  assert.equal((await service.execute('report',{sessionTokenHash:tokenHash},{scope:'zero',supplier:null,format:'csv'})).totalBooks,0);
+  const attendant=makeService();await assert.rejects(attendant.service.execute('report',{sessionTokenHash:tokenHash},{scope:'zero',supplier:null,format:'view'}),{status:403});
+});
+
 test('Firestore notification visibility blocks maintenance from attendants', async () => {
   const { db, service } = makeService();
   db.values.set('notifications/99999999-9999-4999-8999-999999999999', { id: '99999999-9999-4999-8999-999999999999', type: 'MAINTENANCE_COMPLETED', priority: 'MEDIA', title: 'Manutenção', message: 'Concluída', referenceId: productId, state: 'ABERTA', createdAt: new Date(), resolvedAt: null, audience: 'ADMINS' });

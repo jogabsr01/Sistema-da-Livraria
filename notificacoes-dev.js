@@ -29,6 +29,10 @@
     access=false;admin=false;available=false;clearReport();$('alerts').replaceChildren();$('unread').textContent='';$('notifications').hidden=true;
     $('supplier').replaceChildren(new Option('Todos os fornecedores','null'));
   }
+  function identityWarning(error) {
+    const needsLogin=error.status===401||error.code==='REAUTHENTICATION_REQUIRED'||error.code==='WORKSPACE_REAUTHENTICATION_REQUIRED';
+    if(needsLogin)$('identity-alert').hidden=false;
+  }
   function invalidate() { const hadReport=!!report;version++;ready=false;clearTimeout(expiryTimer);clearReport();if(hadReport)$('report-status').textContent='Relatório ocultado. Confira a conexão e gere novamente para revisar os dados atuais.';controls(); }
   async function requestData(path,body) {
     if(!online())throw Object.assign(Error('OFFLINE'),{code:'OFFLINE'});
@@ -36,7 +40,7 @@
     try {
       const response=await fetch(path,{credentials:'same-origin',cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'content-type':'application/json','x-csrf-token':csrf},body:JSON.stringify(body)}:{})});
       const result=await response.json();if(!response.ok)throw Object.assign(Error('REQUEST_FAILED'),{code:result.error?.code,field:result.error?.field,readOnly:!body,status:response.status});return result.data;
-    } catch(error) {if(error.status===401||error.status===403)revokeView();if(!error.status||error.status===401||error.status===403)invalidate();throw error;}
+    } catch(error) {identityWarning(error);if(error.status===401||error.status===403)revokeView();if(!error.status||error.status===401||error.status===403)invalidate();throw error;}
     finally {clearTimeout(timer);}
   }
   async function api(operation, body, query = '') {
@@ -64,7 +68,7 @@
     try {
       const data=await api('bootstrap',null,'?'+new URLSearchParams({offset:String(offset),history:String($('history').checked)})),summary=data.summary;
       if(userId&&userId!==data.user.id){revokeView();invalidate();throw Object.assign(Error('SESSION_CHANGED'),{status:401});}
-      userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);access=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
+      userId=data.user.id;csrf=data.csrfToken;admin=['ADMIN','SUPER_ADMIN'].includes(data.user.role);access=true;$('identity-alert').hidden=true;document.body.dataset.sessionRole=data.user.role;window.dispatchEvent(new Event('livraria:session-ready'));
 
       if(ticket!==version||filter!==JSON.stringify([offset,$('history').checked])||!online()||document.hidden)return;
       $('unread').textContent = '(' + summary.unread + ' não lida(s))'; $('alerts').replaceChildren(); nextOffset = data.nextOffset;
@@ -140,7 +144,7 @@
   function csvCell(value) { let s = String(value); if (/^[\s\uFEFF]*[=+@-]/u.test(s) || /^[\t\r\n]/.test(s) || /^\d{10,}$/.test(s)) s = "'" + s; return '"' + s.replaceAll('"','""') + '"'; }
   async function generate(format) {
     if(busy||loading||pending||!online()||!access||!available)return;
-    busy=true;clearReport();controls();
+    busy=true;$('action-loading-text').textContent={view:'Preparando relatório…',csv:'Preparando CSV…',print:'Preparando impressão…',copy:'Preparando texto…'}[format];$('action-loading').hidden=false;$('report-status').textContent=$('action-loading-text').textContent;clearReport();controls();
     const ticket=version,filter=JSON.stringify([$('scope').value,$('supplier').value]);
     try {
       await session(); if (!admin) throw Object.assign(Error('FORBIDDEN'),{status:403});
@@ -160,7 +164,7 @@
       }
       $('report-status').textContent = format === 'copy' ? 'Texto preparado e selecionado. Copie, revise as quantidades e escolha a pessoa para quem deseja encaminhar. Nada foi enviado.' : 'Relatório completo para o filtro selecionado, conferido no servidor. Nenhum pedido foi enviado.';
     } catch (error) { clearReport(); $('report-status').textContent = explain(error); }
-    finally { busy = false;controls();if(refreshAgain){refreshAgain=false;refresh();} }
+    finally { busy = false;$('action-loading').hidden=true;controls();if(refreshAgain){refreshAgain=false;refresh();} }
   }
   $('refresh').addEventListener('click',refresh); $('history').addEventListener('change',()=>{offset=0;refresh();});
   $('next').addEventListener('click',()=>{if (!loading && nextOffset !== null) {offset=nextOffset;refresh();}}); $('previous').addEventListener('click',()=>{if (!loading) {offset=Math.max(0,offset-25);refresh();}});

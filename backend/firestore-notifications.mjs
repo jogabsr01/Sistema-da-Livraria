@@ -1,4 +1,5 @@
 import { ApiError } from './errors.mjs';
+import { randomUUID } from 'node:crypto';
 import { requirePermission } from './authorization.mjs';
 import { catalogUuid } from './catalog-model.mjs';
 import { createFirestoreRepositories } from './firestore-repositories.mjs';
@@ -162,12 +163,38 @@ export function createFirestoreNotificationService({ db, identityService, config
     }, { ...(transactionOptions || {}), maxAttempts: transactionOptions?.maxAttempts || 3 });
   }
 
+  async function report(actor, payload) {
+    if (!['zero','low'].includes(payload?.scope) || payload.supplier !== null && (typeof payload.supplier !== 'string' || payload.supplier.length > 160) || !['view','csv','print','copy'].includes(payload.format)) invalid();
+    return runFirestoreTransaction(db, async transaction => {
+      const currentTime=now(), principal=await identityService.readSessionInTransaction(transaction,actor?.sessionTokenHash,currentTime);
+      requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin:true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin:true } : {}) },'reports.read',{now:currentTime});
+      const [products,alerts]=await Promise.all([transaction.get(db.collection('products')),transaction.get(db.collection('notifications'))]);
+      if (!Array.isArray(products?.docs) || products.docs.length>5000 || !Array.isArray(alerts?.docs) || alerts.docs.length>MAX_NOTIFICATIONS) unavailable();
+      const activeAlerts=new Map();
+      for(const doc of alerts.docs){const value=notification(doc);if(value?.type.startsWith('STOCK_')&&value.state!=='RESOLVIDA'){if(activeAlerts.has(value.referenceId))unavailable();activeAlerts.set(value.referenceId,value);}}
+      const groups=new Map(), supplierKey=value=>value.normalize('NFC').replace(/\s+/g,' ').trim().toLowerCase();let totalBooks=0,suggestedUnits=0,missingSupplier=0;
+      for(const doc of products.docs){const p=snapshotValue(doc),id=p?.id||doc.id;if(!p||p.active!==true)continue;
+        if(!catalogUuid(id)||!Number.isSafeInteger(p.stock)||p.stock<0||!Number.isSafeInteger(p.minimumStock)||p.minimumStock<0)unavailable();
+        if(p.stock!==0&&!(payload.scope==='low'&&p.stock<p.minimumStock))continue;
+        if(typeof p.title!=='string'||!p.title.trim()||typeof (p.supplier??'')!=='string'||typeof (p.isbn??'')!=='string'||typeof (p.internalCode??'')!=='string')unavailable();
+        const supplier=(p.supplier||'').normalize('NFC').replace(/\s+/g,' ').trim(),key=supplierKey(supplier);
+        if(payload.supplier!==null&&key!==supplierKey(payload.supplier))continue;
+        const alert=activeAlerts.get(id);if(!alert)unavailable();
+        if(!groups.has(key))groups.set(key,{supplier,items:[]});const suggestedQuantity=Math.max(1,p.minimumStock-p.stock);
+        groups.get(key).items.push({id,title:p.title,isbn:p.isbn||'',internalCode:p.internalCode||'',stock:p.stock,minimumStock:p.minimumStock,suggestedQuantity,alertState:alert.state,since:alert.createdAt});
+        totalBooks++;suggestedUnits+=suggestedQuantity;if(!supplier)missingSupplier++;
+      }
+      const reportId=randomUUID(),generatedAt=new Date(currentTime).toISOString(),result={reportId,generatedAt,scope:payload.scope,supplier:payload.supplier,groups:[...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([,group])=>({...group,items:group.items.sort((a,b)=>a.title.localeCompare(b.title)||a.id.localeCompare(b.id))})),totalBooks,suggestedUnits,missingSupplier};
+      transaction.create(repositories.ref('auditEvents',`stock-report:${reportId}`),{id:`stock-report:${reportId}`,at:generatedAt,actorId:principal.id,role:principal.role,operation:payload.format==='view'?'STOCK_REPORT_VIEW':'STOCK_REPORT_EXPORT',entity:'Produtos',entityId:reportId,result:'SUCESSO',requestId:reportId,before:null,after:{scope:payload.scope,format:payload.format,books:totalBooks,suggestedUnits},detailsOmitted:true});
+      return result;
+    },{...(transactionOptions||{}),maxAttempts:transactionOptions?.maxAttempts||3});
+  }
   async function execute(operation, actor, payload = {}) {
     if (operation === 'bootstrap' || operation === 'list') return list(operation, actor, payload);
     if (operation === 'summary') return summary(actor);
     if (operation === 'read') return read(actor, payload);
     if (operation === 'state') return state(actor, payload);
-    if (operation === 'report') throw new ApiError(503, 'FIRESTORE_OPERATION_NOT_READY');
+    if (operation === 'report') return report(actor,payload);
     throw new ApiError(400, 'INVALID_NOTIFICATION');
   }
 
