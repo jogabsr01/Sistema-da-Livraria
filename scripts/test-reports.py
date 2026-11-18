@@ -26,6 +26,11 @@ class Reports(qa.Operations):
         self.local('/test/enable-reports',{});self.page.goto(ORIGIN+'/relatorios-dev.html');expect(self.page.locator('#reports')).to_be_visible();expect(self.page.locator('#export-report')).to_be_hidden()
     def query(self):
         self.page.locator('#query-report').click();expect(self.page.locator('#query-report')).to_be_enabled();expect(self.page.locator('#status')).to_have_text('Relatório pronto para conferir.')
+    def test_reports_business_rules_dialog_keyboard(self):
+        self.checkout();self.reports();self.page.locator('#report-info-open').focus();self.page.keyboard.press('Enter')
+        expect(self.page.locator('#report-info')).to_be_visible();expect(self.page.locator('#report-info')).to_contain_text('Estornos')
+        self.page.keyboard.press('Escape');expect(self.page.locator('#report-info')).to_be_hidden()
+        self.assertTrue(self.page.evaluate("document.activeElement.id === 'report-info-open'"));self.assertEqual(self.errors,[])
     def test_reports_restores_safe_filters_after_navigation(self):
         self.checkout();self.reports();self.page.locator('#kind').select_option('STOCK');self.query()
         self.page.goto(ORIGIN+'/caixa-dev.html');self.reports()

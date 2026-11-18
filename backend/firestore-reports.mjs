@@ -58,14 +58,20 @@ export function createFirestoreReportService({ db, identityService, config, now 
       const currentTime = now(), principal = await identityService.readSessionInTransaction(transaction, actor?.sessionTokenHash, currentTime);
       requirePermission({ ...principal, ...(config?.adminPasswordLogin === true ? { adminPasswordLogin: true } : {}), ...(config?.adminPinLogin === true ? { adminPinLogin: true } : {}) }, 'reports.commercial.read', { now: currentTime });
       if (operation === 'record') return record(transaction, { repositories, principal, config, payload, currentTime });
-      const productsSnapshot = await transaction.get(db.collection('products')), salesSnapshot = await transaction.get(db.collection('sales')),
-        movementsSnapshot = await transaction.get(db.collection('stockMovements')), peopleSnapshot = await transaction.get(db.collection('users')),
-        customersSnapshot = await transaction.get(db.collection('customers')), nichesSnapshot = await transaction.get(db.collection('niches'));
+      const filters = payload?.filters;
+      if (!filters || !['SALES', 'STOCK', 'MOVEMENTS'].includes(filters.kind)) invalid();
+      const empty = { docs: [] };
+      const [productsSnapshot, salesSnapshot, movementsSnapshot, peopleSnapshot, customersSnapshot, nichesSnapshot] = await Promise.all([
+        transaction.get(db.collection('products')),
+        filters.kind === 'SALES' ? transaction.get(db.collection('sales')) : empty,
+        filters.kind === 'MOVEMENTS' ? transaction.get(db.collection('stockMovements')) : empty,
+        filters.kind !== 'STOCK' ? transaction.get(db.collection('users')) : empty,
+        filters.kind === 'SALES' ? transaction.get(db.collection('customers')) : empty,
+        transaction.get(db.collection('niches')),
+      ]);
       if (!productsSnapshot || productsSnapshot.docs.length > MAX_PRODUCTS || !salesSnapshot || salesSnapshot.docs.length > MAX_SALES ||
           !movementsSnapshot || movementsSnapshot.docs.length > MAX_MOVEMENTS || !peopleSnapshot || peopleSnapshot.docs.length > MAX_PEOPLE ||
           !customersSnapshot || customersSnapshot.docs.length > MAX_CUSTOMERS || !nichesSnapshot || nichesSnapshot.docs.length > MAX_NICHES) unavailable();
-      const filters = payload?.filters;
-      if (!filters || !['SALES', 'STOCK', 'MOVEMENTS'].includes(filters.kind)) invalid();
       const inPeriod = value => value >= filters.from && value <= filters.to;
       const sales = [];
       const selectedSales = [];

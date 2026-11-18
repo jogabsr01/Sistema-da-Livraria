@@ -106,6 +106,8 @@
  $('filters').addEventListener('submit',e=>{e.preventDefault();query();});$('kind').addEventListener('change',kindChanged);$('filters').addEventListener('input',controls);$('filters').addEventListener('change',controls);$('export-report').addEventListener('click',()=>exportFile('xlsx'));csvButton.addEventListener('click',()=>exportFile('csv'));$('retry-export').addEventListener('click',()=>exportFile());$('previous').addEventListener('click',()=>{if(data&&!busy&&!pending){page--;renderRows();}});$('next').addEventListener('click',()=>{if(data&&!busy&&!pending){page++;renderRows();}});$('close-detail').addEventListener('click',()=>{$('detail').close();$('detail-content').replaceChildren();});
  $('discard-export').addEventListener('click',()=>{if(busy||!pending)return;version++;clear();controls();$('status').textContent='Referência descartada nesta página. Autorizações anteriores permanecem na auditoria. Confira o acesso e faça uma nova consulta.';check();});
  reconnectNode.addEventListener('click',()=>check());$('retry-query').addEventListener('click',async()=>{if(!access)await check(false,false);if(access)await query();});
+ $('report-info-open').addEventListener('click',()=>$('report-info').showModal());
+ for(const id of ['report-info-close','report-info-done'])$(id).addEventListener('click',()=>$('report-info').close());
  async function check(skipBusy=true,announce=true){
   if(document.hidden||!online()||skipBusy&&busy){controls();return;}
   const recovering=!access;

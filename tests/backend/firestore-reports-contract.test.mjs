@@ -7,12 +7,14 @@ import { reportFixture } from '../helpers/report-fixture.mjs';
 
 function database(documents) {
   const values = new Map(Object.entries(documents));
+  const reads = [];
   const collection = path => ({ path, doc: id => reference(`${path}/${id}`) });
   const reference = path => ({ path, id: path.split('/').at(-1), collection: name => collection(`${path}/${name}`) });
   return {
-    collection,
+    collection, reads,
     async runTransaction(work) {
       return work({ async get(ref) {
+        reads.push(ref.path);
         const docs = [...values].filter(([path]) => path.startsWith(ref.path + '/') && path.split('/').length === ref.path.split('/').length + 1)
           .map(([path, value]) => ({ id: path.split('/').at(-1), exists: true, ref: reference(path), data: () => structuredClone(value) }));
         return { docs };
@@ -51,6 +53,9 @@ test('Firestore report endpoint accepts empty periods, unrelated records and nul
   assert.deepEqual(empty.rows, []); assert.equal(empty.summary.salesCount, 0);
   const stock = await query(fixture.reportFilters({ kind:'STOCK', from:'', to:'' }));
   assert.equal(stock.rows.length, 1);
+  db.reads.length=0;
+  await query(fixture.reportFilters({ kind:'STOCK', from:'', to:'' }));
+  assert.deepEqual(db.reads.sort(), ['niches','products']);
   const movements = await query(fixture.reportFilters({ kind:'MOVEMENTS' }));
   assert.equal(movements.rows.length, 1); assert.equal(movements.rows[0].saleId, '');
 });
