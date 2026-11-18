@@ -4,6 +4,7 @@
 
 /* Report feedback and data surfaces intentionally override the shared theme. */
 .page-relatorios .report-feedback{display:flex;align-items:center;gap:14px;margin:20px 0;padding:16px 18px;border:1px solid #cadbd4;border-radius:14px;background:#f2f8f5;color:#214a3c}
+.page-relatorios .report-feedback[hidden]{display:none}
 .page-relatorios .report-feedback #status{flex:1;margin:0;color:inherit;font-size:.94rem;line-height:1.55;font-weight:600;overflow-wrap:anywhere}
 .page-relatorios .report-feedback-icon{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:#dceee5;color:#20563c;font-weight:800}
 .page-relatorios .report-feedback[data-state="error"]{border:2px solid #b93f32;background:#fff1ee;color:#82281f;box-shadow:0 4px 18px #8c2a2014}

@@ -15,7 +15,7 @@
  let access=false,version=0,previewTimer;
  const csvButton=document.createElement('button');csvButton.type='button';csvButton.className='secondary';csvButton.textContent='Baixar CSV';csvButton.hidden=true;$('export-report').after(csvButton);
  const online=()=>navigator.onLine!==false;
- function feedback(message,state='info',retry=false){$('status').textContent=message;$('report-feedback').dataset.state=state;$('status').setAttribute('role',state==='error'?'alert':'status');$('retry-query').hidden=!retry;}
+ function feedback(message,state='info',retry=false){$('status').textContent=message;$('report-feedback').dataset.state=state;$('report-feedback').hidden=!message;$('status').setAttribute('role',state==='error'?'alert':'status');$('retry-query').hidden=!retry;}
  function connection(){const state=!online()?'offline':access?'ready':'stale';connectionNode.dataset.state=state;connectionNode.textContent=!online()?'Sem conexão. Os resultados foram ocultados. Mantenha a aba aberta se houver uma exportação pendente.':pending?'Há uma exportação aguardando conferência. Reconectar não baixa o arquivo automaticamente.':access?'Acesso conferido. Faça uma consulta para preparar um arquivo com autorização atual.':'Confira a mesma conta administrativa para continuar. Resultados anteriores foram ocultados.';}
  function invalidate(){version++;clear(true);controls();}
  function armExpiry(expiresAt){clearTimeout(previewTimer);const delay=Math.max(0,Math.min(300000,expiresAt-Date.now()));previewTimer=setTimeout(()=>{if(data){data.proof='';controls();}},Number.isFinite(delay)?delay:0);}
@@ -87,7 +87,7 @@
   try{
    const f=filters();await session();if(ticket!==version||!online()||document.hidden)throw {code:'CONTEXT_CHANGED'};const out=await api('query',{filters:f});await session();
    if(ticket!==version||!online()||document.hidden||JSON.stringify(f)!==JSON.stringify(filters()))throw {code:'CONTEXT_CHANGED'};
-   data=out;applied=f;page=0;render();armExpiry(out.expiresAt);saveFilters();saveResult();$('reports').hidden=false;$('access-help').hidden=true;feedback('Relatório pronto para conferir.','success');
+   data=out;applied=f;page=0;render();armExpiry(out.expiresAt);saveFilters();saveResult();$('reports').hidden=false;$('access-help').hidden=true;feedback('','success');
   }catch(e){if(e.status===401||e.status===403){clear(true);$('access-help').hidden=false;}else{$('export-report').hidden=true;}feedback(error(e),'error',e.status!==401&&e.status!==403);}
   finally{busy=false;controls();}
  }
