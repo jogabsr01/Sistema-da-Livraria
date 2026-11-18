@@ -52,6 +52,15 @@ class ReportsReconnection(qa.Reports):
         self.prepare();self.lose_report_export=True;self.page.locator('#export-report').click()
         expect(self.page.locator('#pending-export')).to_be_visible();expect(self.page.locator('#retry-export')).to_be_enabled()
 
+    def test_reconnection_query_shows_only_book_loading_indicator(self):
+        self.prepare(False);self.hold='query';self.page.locator('#query-report').click();self.held_response()
+        expect(self.page.locator('#report-loading')).to_be_visible()
+        expect(self.page.locator('#report-loading .book-loader')).to_be_visible()
+        expect(self.page.locator('#report-loading')).to_have_text('Consultando dados…')
+        expect(self.page.locator('#report-feedback')).to_be_hidden()
+        self.release();expect(self.page.locator('#report-loading')).to_be_hidden()
+        expect(self.page.locator('#result')).to_be_visible();self.assertEqual(self.errors,[])
+
     def test_reconnection_offline_erases_results_details_and_sensitive_filters(self):
         self.prepare();self.page.locator('.report-row button').click();expect(self.page.locator('#detail')).to_be_visible()
         self.page.locator('#cpf').evaluate("el=>el.value='529.982.247-25'")
